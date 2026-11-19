@@ -454,6 +454,11 @@ pub fn run(mut config: Config, stop: Arc<AtomicBool>) -> Result<(), Error> {
     let mut netease: Option<netease::Netease> = None;
     let mut netease_state: Option<netease::State> = None;
     let (mut netease_window_open, mut netease_confirming) = (false, false);
+    // Its page, idle (nothing playing) for a long while, is closed: a hidden page costs memory, and the
+    // page opens it again when the cab's app is next used (its cookies stay, so it's still signed in).
+    let mut netease_idle_since: Option<std::time::Instant> = None;
+    let mut netease_idle_close = false;
+    const NETEASE_IDLE_FOR: std::time::Duration = std::time::Duration::from_secs(30 * 60);
     // YouTube Music's web player, the same way (on the cabin page's profile, sharing YouTube's sign-in).
     let mut youtube_music: Option<youtube_music::YouTubeMusic> = None;
     let mut youtube_music_state: Option<youtube_music::State> = None;
@@ -1055,6 +1060,7 @@ pub fn run(mut config: Config, stop: Arc<AtomicBool>) -> Result<(), Error> {
                     }
                 }
                 Some(PageMessage::Netease { command }) => {
+                    netease_idle_since = None;
                     if netease.is_none() && matches!(command, netease::Command::Pause) {
                         // Nothing to pause: NetEase Cloud Music isn't running.
                     } else if let Some(player) = start_netease(&mut netease, &stage, &config) {
@@ -1579,7 +1585,26 @@ pub fn run(mut config: Config, stop: Arc<AtomicBool>) -> Result<(), Error> {
                     let message = netease::state_message(netease_state.as_ref(), signing_in);
                     let _ = webview.post_json(&message);
                 }
+                let playing = netease_state.as_ref().is_some_and(|state| state.playing);
+                if playing {
+                    netease_idle_since = None;
+                } else if netease_idle_since.get_or_insert_with(std::time::Instant::now).elapsed()
+                    >= NETEASE_IDLE_FOR
+                {
+                    netease_idle_close = true;
+                }
             }
+        }
+        if netease_idle_close {
+            netease_idle_close = false;
+            netease_idle_since = None;
+            if let Some(idle) = netease.take() {
+                log!("[netease] idle for a while: closed (it opens again when the app is)");
+                idle.close(&stage);
+            }
+            netease_state = None;
+            (netease_window_open, netease_confirming) = (false, false);
+            let _ = webview.post_json(&netease::state_message(None, false));
         }
 
         // What Player's page says, for the page; its WebView failing closes it, as the game closing does.
