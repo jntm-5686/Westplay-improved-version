@@ -236,6 +236,46 @@ const VOLVO_VNL_2025: &[Speaker] = &[
     speaker([2000.0, OPEN], 0.0, Channel::Right, [0.662, 1.099, -0.957]),
 ];
 
+/// The Freightliner Cascadia (2024's: ATS's, the day cab and the 48, 72 inch raised-roof and 72 inch XT sleepers, all
+/// eight interiors: four cabs, each with classic gauges or the digital dash): a woofer low in the front of each door
+/// and a tweeter at the base of each A-pillar. The interiors mark no speakers: no material's textures name a speaker
+/// grille (`speakersvents_nrm` or `vents_nrm`, as the VNL 2025's do; every one of the interior's materials was read),
+/// and no piece is a grille of its own either. So their places are the trims' where the truck has its units, to a few
+/// centimetres:
+///
+/// - The woofers: the door cards' lower-front panels, under the map pocket's recess and ahead of the seat. In the
+///   interior models (x = 0 the driver's seat, the cab's middle at x 0.60054) the panels' vertices' mean (interior
+///   space, metres) is left (-0.3348, -0.8513, -0.5812), right (1.5358, -0.8513, -0.5812) — the door cards mirrored
+///   about the cab's middle. They are the interiors' plastic-leather piece: piece 61 in `day`, 51 in `day_d` (the
+///   digital dash), 64 in `sl_48xt`, 54 in `sl_48xt_d`, 58 in `sl_72rr_22`, 48 in `sl_72rr_22_d`, 59 in `sl_72xt_22`
+///   and 49 in `sl_72xt_22_d` (material `/automat/28/28868c682c80d3a4.mat` in every one). Approximate to about 5 cm:
+///   the model's door cards have no grille to read the unit's middle from (the real truck's 6.5 inch door speakers'
+///   grilles aren't drawn).
+/// - The tweeters: the A-pillars' trims' lower faces, over the dashboard's top (the model's own; x = 0 the driver's
+///   seat): left (-0.3239, -0.2114, -0.8756), right (1.5307, -0.2199, -0.8684) — the same plastic-leather piece as the
+///   door cards. The model's two pillars aren't quite alike (their means 6 mm apart across), so the pair's mean is
+///   used: x ±0.9273, y 1.1613, z -0.4060 in cab space. Approximate to about 3 cm: the top trims' A-pillar tweeters
+///   aren't drawn either.
+///
+/// Placed in the cab: every chassis model places the interior at its `interior` locator (-0.60054, 2.37159, -1.55435)
+/// and turns on its `cabin` locator (0, 0.9946883, -2.0203545), so cab space (the game's, from the joint the cab turns
+/// on) is the interiors' plus (-0.60054, 1.3769017, 0.4660045) — which is the driver's head by default, the interior
+/// model's origin, as in the ETS2 trucks above and the VNL 2025. Measured with
+/// `cargo run -p westplay-mapdata --example cab_speakers` (its doc says how the models and the locators are read). The
+/// front cab (the doors, the dashboard, the pillars) is the same geometry in all eight models — the same vertices, to
+/// the millimetre — so these four speakers serve every Cascadia 2024 interior; only the dashboard's gauges and the
+/// sleeper behind differ.
+///
+/// A two-way front pair each side, as the VNL 2025's and the Scania S's: the doors everything up to 2 kHz (there's no
+/// bass unit), the pillars the highs from there. Each plays 0.0864 dB louder than the level measured for it: 1%
+/// louder, at the owner's request once heard in the cab (2026-11-19).
+const FREIGHTLINER_CASCADIA_2024: &[Speaker] = &[
+    speaker([OPEN, 2000.0], 0.0864, Channel::Left, [-0.9353, 0.5256, -0.1152]),
+    speaker([OPEN, 2000.0], 0.0864, Channel::Right, [0.9353, 0.5256, -0.1152]),
+    speaker([2000.0, OPEN], 0.0864, Channel::Left, [-0.9273, 1.1613, -0.4060]),
+    speaker([2000.0, OPEN], 0.0864, Channel::Right, [0.9273, 1.1613, -0.4060]),
+];
+
 /// The Renault Magnum (every interior, one model: owner 2026-10-26, in the cab): its main unit in each roof corner
 /// over the side window, and a tweeter under the overhead console's front either side of the mirror. In the interior
 /// model (x = 0 the driver's seat, the cab's middle at x 0.66; the UK one mirrored): the roof's grilles in the
@@ -322,6 +362,8 @@ pub fn in_truck(id: &str) -> Option<&'static [Speaker]> {
         "volvo.fh16" => Some(VOLVO_FH16_2009),
         // The VNL 2025 (ATS's): the same four speakers in every interior (its front cab is one model in all four).
         "volvo.vnl2025" => Some(VOLVO_VNL_2025),
+        // The Cascadia 2024 (ATS's): the same four speakers in every interior (its front cab is one model in all eight).
+        "freightliner.cascadia2024" => Some(FREIGHTLINER_CASCADIA_2024),
         // A mod's DAF XG+ ("DAF 2021 Jasper") keeps the 2021's cab: its head sits 2 cm lower, its seat the same.
         // The XF Electric: the 2021 XF's cab and interior (doors, pillars, overhead console alike), placed alike.
         "daf.2021" | "new_daf.2021" | "daf.xf_electric" => Some(DAF_2021),
@@ -1507,6 +1549,7 @@ mod tests {
             RENAULT_MAGNUM,
             IVECO_HIWAY,
             VOLVO_VNL_2025,
+            FREIGHTLINER_CASCADIA_2024,
         ] {
             // The cab's middle is x = 0 (cab space starts there across).
             for speaker in speakers {
@@ -1585,6 +1628,56 @@ mod tests {
     }
 
     #[test]
+    fn knows_the_freightliner_cascadia_2024_by_its_id_and_places_its_four_speakers() {
+        // The SDK's id, with and without its prefix (ATS's Cascadia 2024, any of its four cabs and eight interiors).
+        let speakers = in_truck("vehicle.freightliner.cascadia2024").expect("the Cascadia 2024");
+        assert_eq!(in_truck("freightliner.cascadia2024"), in_truck("vehicle.freightliner.cascadia2024"));
+        assert_eq!(speakers, FREIGHTLINER_CASCADIA_2024);
+        assert_eq!(speakers.len(), 4);
+        // A two-way pair a side, as measured in the interiors: the door's low end and the A-pillar's highs.
+        for (side, door, tweeter) in [
+            (Channel::Left, [-0.9353, 0.5256, -0.1152], [-0.9273, 1.1613, -0.4060]),
+            (Channel::Right, [0.9353, 0.5256, -0.1152], [0.9273, 1.1613, -0.4060]),
+        ] {
+            let band = |wanted: [f32; 2]| {
+                speakers.iter().find(|s| s.channel == side && s.band == wanted).copied().expect("a speaker")
+            };
+            let found = [(band([OPEN, 2000.0]), door), (band([2000.0, OPEN]), tweeter)];
+            for (speaker, at) in found {
+                for (axis, value) in at.iter().enumerate() {
+                    assert!((speaker.at[axis] - value).abs() < 1e-3, "{speaker:?} at {at:?}");
+                }
+            }
+        }
+        // Each left one has its right one mirrored about the cab's middle (x = 0).
+        for left in speakers.iter().filter(|s| s.channel == Channel::Left) {
+            assert!(
+                speakers.iter().any(|right| right.channel == Channel::Right
+                    && right.band == left.band
+                    && (left.at[0] + right.at[0]).abs() < 1e-6
+                    && left.at[1..] == right.at[1..]),
+                "{left:?}"
+            );
+        }
+        // In the cab (metres from the joint it turns on), within its size, and each 0.8 to 2 m from the driver's
+        // head (the interior model's origin by default).
+        let head = [-0.60054, 1.3769017, 0.4660045];
+        for speaker in speakers {
+            assert!(speaker.at[0].abs() < 1.5 && (-1.0..2.5).contains(&speaker.at[1]), "{speaker:?}");
+            assert!((-1.5..1.5).contains(&speaker.at[2]), "{speaker:?}");
+            let from_head = distance([speaker.at[0] - head[0], speaker.at[1] - head[1], speaker.at[2] - head[2]]);
+            assert!((0.8..2.0).contains(&from_head), "{speaker:?} {from_head}");
+        }
+        for side in [Channel::Left, Channel::Right] {
+            let door = speakers.iter().find(|s| s.channel == side && s.band == [OPEN, 2000.0]).unwrap();
+            let tweeter = speakers.iter().find(|s| s.channel == side && s.band == [2000.0, OPEN]).unwrap();
+            // The pillar's unit above the door's and further forward (the stage's height and depth).
+            assert!(tweeter.at[1] > door.at[1] + 0.2 && tweeter.at[2] < door.at[2] - 0.2, "{side:?}");
+        }
+        assert!(are_sound(speakers));
+    }
+
+    #[test]
     fn reads_only_a_spectrum_of_bars() {
         assert_eq!(read_spectrum(r#"{"spectrum":[0,12,255]}"#), Some(vec![0, 12, 255]));
         assert_eq!(read_spectrum(r#"{"spectrum":[]}"#), Some(vec![]));
@@ -1634,6 +1727,7 @@ mod tests {
             RENAULT_MAGNUM,
             IVECO_HIWAY,
             VOLVO_VNL_2025,
+            FREIGHTLINER_CASCADIA_2024,
         ] {
             let mut bands: Vec<[f32; 2]> = speakers
                 .iter()
