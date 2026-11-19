@@ -161,6 +161,16 @@ export function RefreshGlyph() {
   )
 }
 
+/** My Music's way into the recent songs: a clock, hands and all. */
+export function ClockGlyph() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" strokeWidth="2.1" />
+      <path d="M12 6.6V12l3.8 2.4" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
+    </svg>
+  )
+}
+
 export function BackGlyph() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">

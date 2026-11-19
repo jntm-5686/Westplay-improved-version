@@ -1,10 +1,19 @@
-import type { NeteaseList, NeteasePlayerState, NeteaseSong, NeteaseTrack } from './netease'
+import type {
+  NeteaseHome,
+  NeteaseLibraryGroup,
+  NeteaseLibraryPlaylist,
+  NeteaseList,
+  NeteasePlayerState,
+  NeteaseSong,
+  NeteaseTrack,
+} from './netease'
 
 /**
  * DEVELOPMENT PREVIEW: the invented player a plain browser gets, so the app's whole screen can be looked at
  * without WestPlay's host and NetEase's page running. Twelve recommended playlists, a song playing, and each
- * playlist's songs; the controls work (the preview's own queue, its own clock). Nothing here is anyone's real
- * music, and nothing here is anyone's real account.
+ * playlist's songs; the controls work (the preview's own queue, its own clock). Home's day's songs, My Music's
+ * groups and a search are invented the same way (a slice of those playlists, so a song of them plays). Nothing
+ * here is anyone's real music, and nothing here is anyone's real account.
  */
 
 interface PreviewPlaylist {
@@ -90,6 +99,57 @@ const PLAYLISTS: PreviewPlaylist[] = NAMES.map(([name, playCount], index) => ({
   songs: songsOf(index, name),
 }))
 
+/** Home's day's songs: a slice of one list, so each of them plays in the preview too. */
+const DAY: NeteaseSong[] = PLAYLISTS[2].songs
+
+/** Home, as the host's page would say it: the day's songs, private radar, two personalised playlists and the rest. */
+export function previewHome(): NeteaseHome {
+  return {
+    daily: DAY.slice(0, 18),
+    radar: { id: 'preview-radar', name: '私人雷达', cover: null, playCount: 0 },
+    personal: [PLAYLISTS[3].list, PLAYLISTS[4].list],
+    recommended: PLAYLISTS.slice(5, 11).map((each) => each.list),
+  }
+}
+
+/** My Music's groups (创建的歌单, 收藏的歌单), invented. */
+export function previewLibrary(): NeteaseLibraryGroup[] {
+  const card = (each: PreviewPlaylist, by: string): NeteaseLibraryPlaylist => ({
+    ...each.list,
+    songCount: each.songs.length,
+    by,
+  })
+  return [
+    { title: '创建的歌单', count: 3, playlists: PLAYLISTS.slice(0, 3).map((each) => card(each, '')) },
+    {
+      title: '收藏的歌单',
+      count: 6,
+      playlists: PLAYLISTS.slice(3, 9).map((each, index) => card(each, ARTISTS[index % ARTISTS.length])),
+    },
+  ]
+}
+
+/** The account's recent songs, invented (a slice of one list, so a pressed one plays). */
+export function previewRecent(): NeteaseSong[] {
+  return PLAYLISTS[1].songs.slice(0, 10)
+}
+
+/** A search over the preview's own lists (the v1 app's local filter, as the preview's answer). */
+export function previewSearch(query: string): NeteaseSong[] {
+  const wanted = query.trim().toLocaleLowerCase()
+  if (!wanted) return []
+  const found: NeteaseSong[] = []
+  for (const playlist of PLAYLISTS) {
+    for (const song of playlist.songs) {
+      if (found.some((each) => each.id === song.id)) continue
+      if (song.title.toLocaleLowerCase().includes(wanted) || song.artist.toLocaleLowerCase().includes(wanted)) {
+        found.push(song)
+      }
+    }
+  }
+  return found.slice(0, 30)
+}
+
 /** What a playlist page of the preview is headed with: its playlist, by id. */
 export function previewPlaylists(): NeteaseList[] {
   return PLAYLISTS.map((each) => each.list)
@@ -124,6 +184,14 @@ export interface Preview {
   read(): NeteasePlayerState
   /** A playlist's songs, as an `openPlaylist` answer would give. */
   songs(id: string): NeteaseSong[]
+  /** Home, as a `home` answer would give (its day's songs and shelves). */
+  home(): NeteaseHome
+  /** My Music's playlists, as a `library` answer would give. */
+  library(): NeteaseLibraryGroup[]
+  /** The recent songs, as a `recent` answer would give. */
+  recent(): NeteaseSong[]
+  /** A search's songs, as a `search` answer would give. */
+  search(query: string): NeteaseSong[]
   play(playing: boolean): void
   playPlaylist(id: string): void
   playSong(id: string, song: NeteaseSong): void
@@ -184,6 +252,10 @@ export function createPreview(): Preview {
   return {
     read,
     songs: (id) => PLAYLISTS.find((each) => each.list.id === id)?.songs ?? [],
+    home: () => previewHome(),
+    library: () => previewLibrary(),
+    recent: () => previewRecent(),
+    search: (query) => previewSearch(query),
     play: (next) => {
       fold()
       playing = next

@@ -19,7 +19,9 @@
 //! the driver's head and the camera). The page's own audio element is the sound's source, as its page makes it.
 //!
 //! The app's protocol is its own (`netease` in ui/src/shared/host.ts), not Spotify's: messages are
-//! `{"type":"netease","kind":"state",…}` and `{"type":"netease","kind":"playlist",…}` to the cabin page, and
+//! `{"type":"netease","kind":"state",…}`, `{"type":"netease","kind":"playlist",…}`, `{"type":"netease",
+//! "kind":"home",…}`, `{"type":"netease","kind":"library",…}`, `{"type":"netease","kind":"search",…}` and
+//! `{"type":"netease","kind":"recent",…}` to the cabin page, and
 //! `{"type":"netease","kind":"command","command":{…}}` from it (see [`Command`]).
 
 use std::cell::RefCell;
@@ -64,6 +66,16 @@ pub enum Command {
     OpenPlaylist {
         value: String,
     },
+    /// Home: the account's cards and the day's own songs, answered with (`kind: "home"`).
+    Home,
+    /// The account's own playlists, by group (创建的歌单, 收藏的歌单), answered with (`kind: "library"`).
+    Library,
+    /// The page's own search of these words, whose songs it answers with (`kind: "search"`).
+    Search {
+        value: String,
+    },
+    /// The account's recent songs, answered with (`kind: "recent"`).
+    Recent,
     /// Read the state and the recommended playlists again (a page that reloaded does it itself).
     Refresh,
 }
@@ -107,23 +119,28 @@ impl Songs {
     /// and not more than [`Songs::MOST`] of them (a list of thousands would hold up the page).
     fn checked(mut self) -> Self {
         const MOST: usize = 500;
-        let mut known = std::collections::HashSet::new();
         self.name = short(self.name, 200);
-        self.songs = self
-            .songs
-            .into_iter()
-            .filter(|song| is_id(&song.id) && !song.title.is_empty())
-            .filter(|song| known.insert(song.id.clone()))
-            .take(MOST)
-            .map(|mut song| {
-                song.title = short(song.title, 300);
-                song.artist = short(song.artist, 300);
-                song.duration = finite(song.duration);
-                song
-            })
-            .collect();
+        self.songs = checked_songs(self.songs, MOST);
         self
     }
+}
+
+/// The page's songs cleaned: only songs the app can show and ask to play (a NetEase id, a name), no duplicate, and
+/// not more than `most` of them (a list of thousands would hold up the page).
+fn checked_songs(songs: Vec<Song>, most: usize) -> Vec<Song> {
+    let mut known = std::collections::HashSet::new();
+    songs
+        .into_iter()
+        .filter(|song| is_id(&song.id) && !song.title.is_empty())
+        .filter(|song| known.insert(song.id.clone()))
+        .take(most)
+        .map(|mut song| {
+            song.title = short(song.title, 300);
+            song.artist = short(song.artist, 300);
+            song.duration = finite(song.duration);
+            song
+        })
+        .collect()
 }
 
 /// What plays: the song's id, name, artist and album, its cover (on NetEase's own image hosts), how long it is
@@ -178,7 +195,38 @@ pub struct Playlist {
 
 impl Playlist {
     /// The playlist cleaned, as [`Track`]'s fields: an id and a name it can be shown by, a real play count, and
-    /// only a cover on NetEase's own image hosts.
+    /// only a cover on NetEase's own image hosts. "daily" (每日歌曲推荐, the app's own name for the day's page) is
+    /// a list the app opens as any other; a card without a cover is still one (the day's card has none).
+    fn checked(mut self) -> Option<Self> {
+        if !is_list_id(&self.id) {
+            return None;
+        }
+        self.name = short(self.name, 200);
+        if self.name.is_empty() {
+            return None;
+        }
+        self.cover = self.cover.filter(|cover| is_net_ease_image(cover));
+        Some(self)
+    }
+}
+
+/// A playlist of the account's own (My Music's side): its NetEase id, name and cover, how many songs it has, and
+/// who it's by (a collected one's owner, empty for one the account made).
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LibraryPlaylist {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub cover: Option<String>,
+    #[serde(default)]
+    pub song_count: u64,
+    #[serde(default)]
+    pub by: String,
+}
+
+impl LibraryPlaylist {
+    /// The playlist cleaned, as [`Playlist`]'s fields, its songs' count real and its owner's name short.
     fn checked(mut self) -> Option<Self> {
         if !is_id(&self.id) {
             return None;
@@ -188,7 +236,150 @@ impl Playlist {
             return None;
         }
         self.cover = self.cover.filter(|cover| is_net_ease_image(cover));
+        self.song_count = self.song_count.min(1_000_000);
+        self.by = short(self.by, 60);
         Some(self)
+    }
+}
+
+/// One of My Music's side's groups of playlists (创建的歌单, 收藏的歌单): its title, how many it says it has, and its
+/// playlists.
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LibraryGroup {
+    pub title: String,
+    #[serde(default)]
+    pub count: u64,
+    #[serde(default)]
+    pub playlists: Vec<LibraryPlaylist>,
+}
+
+/// The account's own playlists, by group: the page's answer to the app's `library`.
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Library {
+    #[serde(default)]
+    pub groups: Vec<LibraryGroup>,
+}
+
+impl Library {
+    /// The answer cleaned: a named group (a title, its playlists the app can open), at most [`Library::GROUPS`]
+    /// groups of [`Library::PLAYLISTS`] playlists each, its count read off the playlists it kept.
+    fn checked(mut self) -> Self {
+        const GROUPS: usize = 8;
+        const PLAYLISTS: usize = 500;
+        let mut total = 0;
+        self.groups = self
+            .groups
+            .into_iter()
+            .filter_map(|mut group| {
+                group.title = short(group.title, 80);
+                if group.title.is_empty() {
+                    return None;
+                }
+                let room = PLAYLISTS.saturating_sub(total);
+                group.playlists = group.playlists.into_iter().filter_map(LibraryPlaylist::checked).take(room).collect();
+                if group.playlists.is_empty() {
+                    return None;
+                }
+                total += group.playlists.len();
+                group.count = group.playlists.len() as u64;
+                Some(group)
+            })
+            .take(GROUPS)
+            .collect();
+        self
+    }
+}
+
+/// The day's own songs (每日歌曲推荐), as its page lists them: a playlist's page's answer's songs.
+#[derive(Clone, Debug, Default, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Daily {
+    #[serde(default)]
+    pub songs: Vec<Song>,
+}
+
+/// What Home shows: the day's songs, the account's 私人雷达, its other personalised playlists, and the recommended
+/// playlists — the page's answer to the app's `home`. The day's songs are `null` while its page is still being read
+/// (the cards are answered before them).
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Home {
+    #[serde(default)]
+    pub daily: Option<Daily>,
+    #[serde(default)]
+    pub radar: Option<Playlist>,
+    #[serde(default)]
+    pub personal: Vec<Playlist>,
+    #[serde(default)]
+    pub recommended: Vec<Playlist>,
+}
+
+impl Home {
+    /// What Home shows cleaned: the day's songs (at most [`Home::SONGS`]; none read still `null`), and the playlists
+    /// the app can open, no duplicate (at most [`Home::LISTS`] each shelf).
+    fn checked(mut self) -> Self {
+        const SONGS: usize = 100;
+        const LISTS: usize = 12;
+        self.daily = self.daily.map(|mut daily| {
+            daily.songs = checked_songs(daily.songs, SONGS);
+            daily
+        });
+        self.radar = self.radar.and_then(Playlist::checked);
+        let radar = self.radar.as_ref().map(|list| list.id.clone());
+        let mut known = radar.into_iter().collect::<std::collections::HashSet<_>>();
+        let mut shelf = |mut lists: Vec<Playlist>| {
+            let kept: Vec<Playlist> = lists
+                .drain(..)
+                .filter_map(Playlist::checked)
+                .filter(|list| known.insert(list.id.clone()))
+                .take(LISTS)
+                .collect();
+            kept
+        };
+        self.personal = shelf(self.personal);
+        self.recommended = shelf(self.recommended);
+        self
+    }
+}
+
+/// A search's songs: the words asked, and the page's own results for them — its answer to the app's `search`.
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Search {
+    #[serde(default)]
+    pub query: String,
+    #[serde(default)]
+    pub songs: Vec<Song>,
+}
+
+impl Search {
+    /// The answer cleaned: the words the app typed (short), and the songs it can show and play (at most
+    /// [`Search::MOST`]).
+    fn checked(mut self) -> Self {
+        const MOST: usize = 60;
+        self.query = short(self.query, 60);
+        self.songs = checked_songs(self.songs, MOST);
+        self
+    }
+}
+
+/// The account's recent songs: the page's answer to the app's `recent` (its 听歌排行 for the week, the closest its
+/// web player keeps to 最近播放).
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Recent {
+    #[serde(default)]
+    pub songs: Vec<Song>,
+}
+
+impl Recent {
+    /// The answer cleaned: only songs the app can show and play (at most [`Recent::MOST`]).
+    fn checked(mut self) -> Self {
+        const MOST: usize = 100;
+        self.songs = checked_songs(self.songs, MOST);
+        self
     }
 }
 
@@ -310,6 +501,14 @@ pub enum Report {
     State(State),
     /// A playlist's songs, the page's answer to the app's `openPlaylist`.
     Playlist(Box<Songs>),
+    /// The account's own playlists, by group: the page's answer to the app's `library`.
+    Library(Box<Library>),
+    /// A search's songs: the page's answer to the app's `search`.
+    Search(Box<Search>),
+    /// The account's recent songs: the page's answer to the app's `recent`.
+    Recent(Box<Recent>),
+    /// What Home shows: the page's answer to the app's `home`.
+    Home(Box<Home>),
     /// The sign-in window opened (`true`) or closed.
     SignInWindow(bool),
     /// Signed in in its window, and NetEase's page here is yet to say it's signed in (`true`), or it has (or took
@@ -367,10 +566,11 @@ impl Netease {
                 self.view.delete_cookies()?;
                 self.view.navigate(HOME)
             }
-            // A song, a playlist: only NetEase's own ids (nothing else of the app's goes into the page's own
-            // addresses and lists).
+            // A song, a playlist, a search: only NetEase's own ids and the app's own words go into the page's own
+            // addresses and lists (and a search's words stay short: its own page's search).
             Command::Play { value: Some(value) } if !is_id(value) => Ok(()),
-            Command::OpenPlaylist { value } if !is_id(value) => Ok(()),
+            Command::OpenPlaylist { value } if !is_list_id(value) => Ok(()),
+            Command::Search { value } if value.trim().is_empty() || value.chars().count() > 60 => Ok(()),
             Command::Seek { value } if !value.is_finite() => Ok(()),
             Command::Volume { value } if !value.is_finite() => Ok(()),
             _ if command.for_page() => self.view.post_json(&serde_json::to_string(command).unwrap_or_default()),
@@ -503,6 +703,10 @@ impl Netease {
                     }
                 }
                 Some(Message::Playlist(songs)) => reports.push(Report::Playlist(Box::new(songs.checked()))),
+                Some(Message::Library(library)) => reports.push(Report::Library(Box::new(library.checked()))),
+                Some(Message::Search(search)) => reports.push(Report::Search(Box::new(search.checked()))),
+                Some(Message::Recent(recent)) => reports.push(Report::Recent(Box::new(recent.checked()))),
+                Some(Message::Home(home)) => reports.push(Report::Home(Box::new(home.checked()))),
                 None => {}
             }
         }
@@ -536,6 +740,14 @@ enum Message {
     State(PageState),
     /// A playlist's songs, answered.
     Playlist(Songs),
+    /// The account's own playlists, by group, answered.
+    Library(Library),
+    /// A search's songs, answered.
+    Search(Search),
+    /// The account's recent songs, answered.
+    Recent(Recent),
+    /// What Home shows, answered.
+    Home(Home),
 }
 
 fn read_message(message: &str) -> Option<Message> {
@@ -545,6 +757,18 @@ fn read_message(message: &str) -> Option<Message> {
     }
     if let Some(playlist) = value.get("playlist") {
         return serde_json::from_value::<Songs>(playlist.clone()).ok().map(Message::Playlist);
+    }
+    if let Some(library) = value.get("library") {
+        return serde_json::from_value::<Library>(library.clone()).ok().map(Message::Library);
+    }
+    if let Some(search) = value.get("search") {
+        return serde_json::from_value::<Search>(search.clone()).ok().map(Message::Search);
+    }
+    if let Some(recent) = value.get("recent") {
+        return serde_json::from_value::<Recent>(recent.clone()).ok().map(Message::Recent);
+    }
+    if let Some(home) = value.get("home") {
+        return serde_json::from_value::<Home>(home.clone()).ok().map(Message::Home);
     }
     if let Some(state) = value.get("state") {
         return serde_json::from_value::<PageState>(state.clone()).ok().map(Message::State);
@@ -576,9 +800,63 @@ pub fn playlist_message(songs: &Songs) -> String {
     .to_string()
 }
 
+/// `{"type":"netease","kind":"home","daily":{"songs":[…]},"radar":…,"personal":[…],"recommended":[…]}`: what Home
+/// shows, the page's answer to the app's `home`.
+pub fn home_message(home: &Home) -> String {
+    serde_json::json!({
+        "type": "netease",
+        "kind": "home",
+        "daily": home.daily,
+        "radar": home.radar,
+        "personal": home.personal,
+        "recommended": home.recommended,
+    })
+    .to_string()
+}
+
+/// `{"type":"netease","kind":"library","groups":[{"title","count","playlists":[…]}]}`: the account's own playlists,
+/// by group, the page's answer to the app's `library`.
+pub fn library_message(library: &Library) -> String {
+    serde_json::json!({
+        "type": "netease",
+        "kind": "library",
+        "groups": library.groups,
+    })
+    .to_string()
+}
+
+/// `{"type":"netease","kind":"search","query":"…","songs":[…]}`: a search's songs, the page's answer to the app's
+/// `search`.
+pub fn search_message(search: &Search) -> String {
+    serde_json::json!({
+        "type": "netease",
+        "kind": "search",
+        "query": search.query,
+        "songs": search.songs,
+    })
+    .to_string()
+}
+
+/// `{"type":"netease","kind":"recent","songs":[…]}`: the account's recent songs, the page's answer to the app's
+/// `recent`.
+pub fn recent_message(recent: &Recent) -> String {
+    serde_json::json!({
+        "type": "netease",
+        "kind": "recent",
+        "songs": recent.songs,
+    })
+    .to_string()
+}
+
 /// A NetEase song's or playlist's id: digits (`5269469196`), nothing else.
 fn is_id(id: &str) -> bool {
     (1..=20).contains(&id.len()) && id.bytes().all(|b| b.is_ascii_digit())
+}
+
+/// An id the app opens a list by: NetEase's own (digits), or "daily" (每日歌曲推荐, the day's page the app names
+/// itself: its card has no playlist id of NetEase's).
+fn is_list_id(id: &str) -> bool {
+    id == "daily" || is_id(id)
 }
 
 /// A cover on NetEase's own image hosts (`https://p2.music.126.net/…`, `http://s4.music.126.net/…`): its CDN's
@@ -831,6 +1109,170 @@ mod tests {
         assert_eq!(value["name"], "歌单名");
         assert_eq!(value["songs"][0]["playable"], true);
         assert_eq!(value["songs"][0]["duration"], 240.5);
+    }
+
+    /// The v2 commands (Home, My Music's own playlists, a search, the recent songs): read from the app, passed to
+    /// the page in its own action names; "daily" (每日歌曲推荐) is a list the app opens by its own name.
+    #[test]
+    fn reads_and_passes_the_apps_new_commands() {
+        assert_eq!(serde_json::from_str::<Command>(r#"{"action":"home"}"#).unwrap(), Command::Home);
+        assert_eq!(serde_json::from_str::<Command>(r#"{"action":"library"}"#).unwrap(), Command::Library);
+        assert_eq!(serde_json::from_str::<Command>(r#"{"action":"recent"}"#).unwrap(), Command::Recent);
+        assert_eq!(
+            serde_json::from_str::<Command>(r#"{"action":"search","value":"周杰伦"}"#).unwrap(),
+            Command::Search { value: "周杰伦".into() }
+        );
+        assert_eq!(serde_json::to_string(&Command::Home).unwrap(), r#"{"action":"home"}"#);
+        assert_eq!(serde_json::to_string(&Command::Library).unwrap(), r#"{"action":"library"}"#);
+        assert_eq!(serde_json::to_string(&Command::Recent).unwrap(), r#"{"action":"recent"}"#);
+        assert_eq!(
+            serde_json::to_string(&Command::Search { value: "泰勒".into() }).unwrap(),
+            r#"{"action":"search","value":"泰勒"}"#
+        );
+        for command in [Command::Home, Command::Library, Command::Recent, Command::Search { value: "x".into() }] {
+            assert!(command.for_page(), "{command:?} is the page's");
+        }
+        // A list the app opens by its id: NetEase's own (digits), or the day's page's own name.
+        assert!(is_list_id("3778678") && is_list_id("daily"));
+        assert!(!is_list_id("") && !is_list_id("Daily") && !is_list_id("daily/../x") && !is_list_id("12a"));
+        // The day's own card (no cover, its own id): a playlist the app can show and open.
+        let daily = Playlist {
+            id: "daily".into(),
+            name: "每日歌曲推荐".into(),
+            cover: None,
+            play_count: 0,
+        }
+        .checked()
+        .expect("the day's own card");
+        assert_eq!((daily.id.as_str(), daily.cover), ("daily", None));
+    }
+
+    /// The page's v2 answers: Home (its cards, then its day's songs), My Music's groups, a search and the recent
+    /// songs — read as the app shows them (a NetEase id and a name, real times, NetEase's own covers), no duplicate.
+    #[test]
+    fn reads_the_pages_new_answers_cleaned() {
+        // Home's cards first: the day's songs are still to come (`daily` null in that answer).
+        let Some(Message::Home(home)) = read_message(
+            r##"{"home":{"radar":{"id":"3136952023","name":"私人雷达",
+                "cover":"https://p1.music.126.net/a.jpg?param=300y300","playCount":0},
+                "personal":[{"id":"14060074166","name":"霸道总裁夜晚飙车进行曲","cover":null,"playCount":704},
+                    {"id":"not-an-id","name":"x"}],
+                "recommended":[{"id":"952897240","name":"热门歌单","cover":"https://evil.example/a.jpg","playCount":120000}]}}"##,
+        ) else {
+            panic!("not a home answer")
+        };
+        let home = home.checked();
+        assert!(home.daily.is_none(), "the day's songs come after the cards");
+        assert_eq!(home.radar.as_ref().expect("a radar").id, "3136952023");
+        assert_eq!(home.personal.len(), 1, "only the playlist the app can open: {home:?}");
+        assert_eq!(home.recommended[0].play_count, 120000);
+        assert_eq!(home.recommended[0].cover, None, "not NetEase's image host");
+        // The day's songs: cleaned (a NetEase id, a name), no duplicate, and the card's own cover kept away.
+        let Some(Message::Home(home)) = read_message(
+            r##"{"home":{"daily":{"songs":[{"id":"1","title":"歌","artist":"人","duration":200,"playable":true},
+                {"id":"","title":"no id"},{"id":"1","title":"repeat"}]},
+                "radar":{"id":"daily","name":"每日歌曲推荐","cover":null}}}"##,
+        ) else {
+            panic!("not a home answer")
+        };
+        let home = home.checked();
+        assert_eq!(home.daily.expect("the day's songs").songs.len(), 1);
+        assert_eq!(home.radar.expect("the day's card").id, "daily");
+        // My Music's groups: named groups of playlists the app can open, their count read off what's kept.
+        let Some(Message::Library(library)) = read_message(
+            r##"{"library":{"groups":[
+                {"title":"创建的歌单","count":5,"playlists":[
+                    {"id":"2772893759","name":"我喜欢的音乐","cover":"https://p1.music.126.net/a.jpg?param=40y40",
+                     "songCount":2747,"by":""},
+                    {"id":"bad","name":"no id"}]},
+                {"title":"","count":1,"playlists":[]},
+                {"title":"收藏的歌单","count":19,"playlists":[
+                    {"id":"14049111724","name":"欧美优质hiphop","cover":null,"songCount":129,"by":"微雨染尘埃"}]}]}}"##,
+        ) else {
+            panic!("not a library answer")
+        };
+        let library = library.checked();
+        assert_eq!(library.groups.len(), 2, "a named group with playlists: {library:?}");
+        assert_eq!(library.groups[0].title, "创建的歌单");
+        assert_eq!(library.groups[0].count, 1, "read off the playlists kept");
+        assert_eq!(library.groups[1].playlists[0].song_count, 129);
+        assert_eq!(library.groups[1].playlists[0].by, "微雨染尘埃");
+        // A search's songs: the page's own answer, at most 60.
+        let songs: String = (1..=70).map(|n| format!(r#"{{"id":"{n}","title":"歌{n}","duration":60,"playable":true}}"#)).collect::<Vec<_>>().join(",");
+        let Some(Message::Search(search)) = read_message(&format!(r#"{{"search":{{"query":"周杰伦","songs":[{songs}]}}}}"#))
+        else {
+            panic!("not a search answer")
+        };
+        let search = search.checked();
+        assert_eq!(search.query, "周杰伦");
+        assert_eq!(search.songs.len(), 60, "a search's answer is capped");
+        // The recent songs: cleaned the same way, at most 100.
+        let Some(Message::Recent(recent)) = read_message(
+            r#"{"recent":{"songs":[{"id":"1","title":"歌","artist":"人","duration":201,"playable":true},
+                {"id":"","title":"no id"}]}}"#,
+        ) else {
+            panic!("not a recent answer")
+        };
+        assert_eq!(recent.checked().songs.len(), 1);
+        assert!(read_message(r#"{"library":"no"}"#).is_none() && read_message(r#"{"home":"no"}"#).is_none());
+    }
+
+    /// The v2 answers to the cabin page: its protocol's own (`type`/`kind`), each kind with its own fields only.
+    #[test]
+    fn says_the_new_answers_the_way_the_app_reads_them() {
+        let song = Song { id: "1".into(), title: "歌".into(), artist: "人".into(), duration: 200.0, playable: true };
+        let lists = Library {
+            groups: vec![LibraryGroup {
+                title: "创建的歌单".into(),
+                count: 1,
+                playlists: vec![LibraryPlaylist {
+                    id: "2772893759".into(),
+                    name: "我喜欢的音乐".into(),
+                    cover: None,
+                    song_count: 2747,
+                    by: String::new(),
+                }],
+            }],
+        }
+        .checked();
+        let value: serde_json::Value = serde_json::from_str(&library_message(&lists)).unwrap();
+        assert_eq!((value["type"].as_str(), value["kind"].as_str()), (Some("netease"), Some("library")));
+        assert_eq!(value["groups"][0]["title"], "创建的歌单");
+        assert_eq!(value["groups"][0]["playlists"][0]["songCount"], 2747);
+
+        let search = Search { query: "周杰伦".into(), songs: vec![song.clone()] }.checked();
+        let value: serde_json::Value = serde_json::from_str(&search_message(&search)).unwrap();
+        assert_eq!(value["kind"], "search");
+        assert_eq!(value["query"], "周杰伦");
+        assert_eq!(value["songs"][0]["title"], "歌");
+
+        let recent = Recent { songs: vec![song.clone()] }.checked();
+        let value: serde_json::Value = serde_json::from_str(&recent_message(&recent)).unwrap();
+        assert_eq!(value["kind"], "recent");
+        assert_eq!(value["songs"][0]["duration"], 200.0);
+
+        // Home: the day's songs are still null in the answer its cards come in, then a list (empty for a signed-out
+        // account, never the cards' own null).
+        let home = Home {
+            daily: Some(Daily { songs: vec![song] }),
+            radar: Some(Playlist {
+                id: "3136952023".into(),
+                name: "私人雷达".into(),
+                cover: None,
+                play_count: 0,
+            }),
+            personal: vec![],
+            recommended: vec![],
+        }
+        .checked();
+        let value: serde_json::Value = serde_json::from_str(&home_message(&home)).unwrap();
+        assert_eq!(value["kind"], "home");
+        assert_eq!(value["daily"]["songs"][0]["title"], "歌");
+        assert_eq!(value["radar"]["id"], "3136952023");
+        assert_eq!(value["personal"].as_array().map(Vec::len), Some(0));
+        let cards_only = Home { daily: None, radar: None, personal: vec![], recommended: vec![] }.checked();
+        let value: serde_json::Value = serde_json::from_str(&home_message(&cards_only)).unwrap();
+        assert!(value["daily"].is_null(), "the cards' answer: its day's songs still to come");
     }
 
     #[test]

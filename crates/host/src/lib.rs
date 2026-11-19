@@ -1577,6 +1577,20 @@ pub fn run(mut config: Config, stop: Arc<AtomicBool>) -> Result<(), Error> {
                         netease::Report::Playlist(songs) => {
                             let _ = webview.post_json(&netease::playlist_message(&songs));
                         }
+                        // What Home shows, the account's own playlists, a search's songs and the account's
+                        // recent ones: straight on to the page (never logged).
+                        netease::Report::Home(home) => {
+                            let _ = webview.post_json(&netease::home_message(&home));
+                        }
+                        netease::Report::Library(library) => {
+                            let _ = webview.post_json(&netease::library_message(&library));
+                        }
+                        netease::Report::Search(search) => {
+                            let _ = webview.post_json(&netease::search_message(&search));
+                        }
+                        netease::Report::Recent(recent) => {
+                            let _ = webview.post_json(&netease::recent_message(&recent));
+                        }
                         netease::Report::SignInWindow(open) => {
                             netease_window_open = open;
                             state_changed = true;

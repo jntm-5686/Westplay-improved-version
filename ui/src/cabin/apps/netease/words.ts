@@ -14,11 +14,33 @@ export interface NeteaseWords {
   recommended: string
   recommendedHint: string
   refresh: string
+  /** Home's day's own songs (每日歌曲推荐). */
+  daily: string
+  dailyHint: string
+  dailyFailed: string
+  dailyEmpty: string
+  dailyEmptyHint: string
+  /** Home's shelves. */
+  radar: string
+  radarHint: string
+  personal: string
+  personalHint: string
+  recommendedHot: string
+  recommendedHotHint: string
+  homeFailed: string
   /** A playlist and its numbers. */
   playlist: string
   playAll: string
   plays: (count: number) => string
   songs: (count: number) => string
+  /** My Music's own playlists. */
+  myPlaylistsHint: string
+  createdPlaylists: string
+  collectedPlaylists: string
+  by: (name: string) => string
+  libraryFailed: string
+  libraryEmpty: string
+  libraryEmptyHint: string
   /** Pages that are still coming, or couldn't. */
   loading: string
   failed: string
@@ -28,19 +50,25 @@ export interface NeteaseWords {
   /** A playlist with no songs in it at all. */
   emptyPlaylist: string
   emptyPlaylistHint: string
-  /** Search (v1: what the app already holds). */
+  /** Search (the page's own). */
   searchHint: string
   searchNote: string
   searchHot: string
+  searchHotHint: string
+  searching: string
+  searchFailed: string
   searchEmpty: string
   searchEmptyHint: string
   searchPlaylists: string
   searchSongs: string
-  /** Your music (v1: the account and this session's plays). */
+  /** Your music. */
   recent: string
+  recentSource: string
   recentHint: string
   recentHost: string
   recentEmpty: string
+  recentEmptyHint: string
+  recentFailed: string
   account: string
   signedIn: string
   signedOut: string
@@ -68,7 +96,7 @@ export interface NeteaseWords {
   style: string
   styleFollow: string
   styleRed: string
-  /** A song pressed in a playlist: the hidden page is asked to play it by id. */
+  /** A song pressed: the hidden page is asked to play it by id. */
   queued: string
   /** The host hasn't answered at all. */
   notConnected: string
@@ -93,6 +121,7 @@ export function neteaseWords(locale: string): NeteaseWords {
   const plays = (count: number) =>
     zh ? `${compact(count, locale, true)}次播放` : `${compact(count, locale, false)} plays`
   const songs = (count: number) => (zh ? `${count} 首` : `${count} songs`)
+  const by = (name: string) => (zh ? `by ${name}` : `by ${name}`)
   if (zh) {
     return {
       brand: '网易云音乐',
@@ -101,13 +130,32 @@ export function neteaseWords(locale: string): NeteaseWords {
       search: '搜索',
       now: '正在播放',
       back: '返回',
-      recommended: '推荐歌单',
-      recommendedHint: '随时点开一张，路上不寂寞。',
+      recommended: '今日推荐',
+      recommendedHint: '账号自己的推荐，就从今天的歌开始。',
       refresh: '换一批',
+      daily: '每日歌曲推荐',
+      dailyHint: '根据你的口味生成，每天更新',
+      dailyFailed: '今天的推荐没有读到',
+      dailyEmpty: '今天还没有推荐',
+      dailyEmptyHint: '网易云的页面今天没有给这个账号推荐歌曲，稍后点「换一批」再试。',
+      radar: '私人雷达',
+      radarHint: '根据你的口味持续更新',
+      personal: '个性化歌单',
+      personalHint: '按你的口味挑出来的歌单',
+      recommendedHot: '热门推荐',
+      recommendedHotHint: '大家都在听的歌单',
+      homeFailed: '首页没有全部读到。点「换一批」再试一次。',
       playlist: '歌单',
       playAll: '播放全部',
       plays,
       songs,
+      myPlaylistsHint: '账号里的全部歌单，按网易云自己的分组。',
+      createdPlaylists: '创建的歌单',
+      collectedPlaylists: '收藏的歌单',
+      by,
+      libraryFailed: '歌单没有读到',
+      libraryEmpty: '还没有读到歌单',
+      libraryEmptyHint: '网易云的「我的音乐」页没有读到这个账号的歌单，稍后点「重试」。',
       loading: LOADING.zh,
       failed: '歌单没有打开',
       retry: '重试',
@@ -115,17 +163,23 @@ export function neteaseWords(locale: string): NeteaseWords {
       emptyListsHint: '网易云的页面还没有把首页的歌单读出来，稍后点「换一批」再试。',
       emptyPlaylist: '这个歌单是空的',
       emptyPlaylistHint: '网易云的页面没有读到它下面的歌曲。',
-      searchHint: '搜索歌单或歌曲',
-      searchNote: 'v1 先在已读取的歌单里查找；完整在线搜索在后续版本。',
-      searchHot: '大家都在听',
+      searchHint: '搜索歌曲',
+      searchNote: '在网易云自己的搜索页里找歌，结果来自它的网页。',
+      searchHot: '试试这些歌单',
+      searchHotHint: '点一个名字，就能搜到歌',
+      searching: '正在搜索…',
+      searchFailed: '搜索没有结果回来',
       searchEmpty: '没有找到',
       searchEmptyHint: '换一个词试试。',
       searchPlaylists: '歌单',
       searchSongs: '歌曲',
       recent: '最近播放',
-      recentHint: '本次打开车机以来听过的歌。',
-      recentHost: '点歌请到歌单里；这里只做记录。',
-      recentEmpty: '还没有听过歌。',
+      recentSource: '最近一周的听歌排行',
+      recentHint: '网易云网页版没有单独的「最近播放」页，这里读的是它账号的「听歌排行」（最近一周）。',
+      recentHost: '最近一周在网易云听过的歌。',
+      recentEmpty: '这一周还没有听过歌',
+      recentEmptyHint: '网易云的这个账号最近一周没有播放记录。',
+      recentFailed: '最近播放没有读到',
       account: '账户',
       signedIn: '已登录',
       signedOut: '未登录',
@@ -162,13 +216,32 @@ export function neteaseWords(locale: string): NeteaseWords {
     search: 'Search',
     now: 'Now Playing',
     back: 'Back',
-    recommended: 'Recommended playlists',
-    recommendedHint: 'Open one and keep the road company.',
+    recommended: 'For you',
+    recommendedHint: 'The account’s own picks, starting with today’s songs.',
     refresh: 'Refresh',
+    daily: 'Daily picks',
+    dailyHint: 'Made for you, new every day',
+    dailyFailed: 'Today’s picks didn’t come',
+    dailyEmpty: 'No picks today',
+    dailyEmptyHint: 'NetEase’s page made none for this account today. Try Refresh in a moment.',
+    radar: 'Private Radar',
+    radarHint: 'Kept in step with your taste',
+    personal: 'Made for you',
+    personalHint: 'Playlists picked by your taste',
+    recommendedHot: 'Popular playlists',
+    recommendedHotHint: 'What everyone is playing',
+    homeFailed: 'Home didn’t all come. Try Refresh again.',
     playlist: 'Playlist',
     playAll: 'Play all',
     plays,
     songs,
+    myPlaylistsHint: 'Every playlist of the account, in NetEase’s own groups.',
+    createdPlaylists: 'Created by you',
+    collectedPlaylists: 'Collected',
+    by,
+    libraryFailed: 'The playlists didn’t come',
+    libraryEmpty: 'No playlists read yet',
+    libraryEmptyHint: 'NetEase’s My Music page read none for this account. Try again in a moment.',
     loading: LOADING.en,
     failed: 'The playlist didn’t open',
     retry: 'Try again',
@@ -176,17 +249,23 @@ export function neteaseWords(locale: string): NeteaseWords {
     emptyListsHint: 'NetEase’s page hasn’t read Home’s playlists yet. Try Refresh in a moment.',
     emptyPlaylist: 'This playlist is empty',
     emptyPlaylistHint: 'NetEase’s page didn’t read any songs from it.',
-    searchHint: 'Playlists or songs',
-    searchNote: 'v1 searches what the app already holds; full online search comes later.',
-    searchHot: 'Popular searches',
+    searchHint: 'Search songs',
+    searchNote: 'Searches NetEase’s own search page: its results come from there.',
+    searchHot: 'Try these playlists',
+    searchHotHint: 'Pick a name to search for',
+    searching: 'Searching…',
+    searchFailed: 'The search didn’t answer',
     searchEmpty: 'Nothing found',
     searchEmptyHint: 'Try another word.',
     searchPlaylists: 'Playlists',
     searchSongs: 'Songs',
     recent: 'Recently played',
-    recentHint: 'What played since this screen was opened.',
-    recentHost: 'Pick songs in a playlist; this is only a record.',
-    recentEmpty: 'Nothing has played yet.',
+    recentSource: 'This week’s listening chart',
+    recentHint: 'The web player has no recent-play page of its own: this reads the account’s listening chart for the week.',
+    recentHost: 'Songs this account listened to this week.',
+    recentEmpty: 'Nothing played this week',
+    recentEmptyHint: 'This account has no plays in NetEase’s last week.',
+    recentFailed: 'The recent songs didn’t come',
     account: 'Account',
     signedIn: 'Signed in',
     signedOut: 'Signed out',

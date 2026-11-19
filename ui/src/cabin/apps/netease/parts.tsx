@@ -1,7 +1,7 @@
 import { type CSSProperties, type PointerEvent, type ReactNode, useRef, useState } from 'react'
 import { useNeteaseWords } from './strings'
 import { Equalizer, NoteGlyph, PlayGlyph, UnplayableGlyph } from './glyphs'
-import { useIsPlaying, type NeteaseList, type NeteaseSong } from './netease'
+import { useIsPlaying, type NeteaseLibraryPlaylist, type NeteaseList, type NeteaseSong } from './netease'
 
 /** The pieces the NetEase app's pages share: covers, cards, song rows, sliders, loading shapes. */
 
@@ -43,6 +43,28 @@ export function PlaylistCard({ list, onOpen }: { list: NeteaseList; onOpen(list:
       <span className="ne-card-plays">
         <PlayGlyph />
         {words.plays(list.playCount)}
+      </span>
+    </button>
+  )
+}
+
+/** A card of the account's own playlist (My Music's groups): its cover and name, and how many songs it has (and
+ * who it's by for one collected) instead of its plays. Pressed, its page. */
+export function LibraryCard({
+  list,
+  onOpen,
+}: {
+  list: NeteaseLibraryPlaylist
+  onOpen(list: NeteaseLibraryPlaylist): void
+}) {
+  const words = useNeteaseWords()
+  return (
+    <button type="button" className="ne-card" onClick={() => onOpen(list)}>
+      <Cover name={list.name} cover={list.cover} className="ne-card-cover" />
+      <span className="ne-card-name">{list.name}</span>
+      <span className="ne-card-plays">
+        {words.songs(list.songCount)}
+        {list.by && ` · ${words.by(list.by)}`}
       </span>
     </button>
   )

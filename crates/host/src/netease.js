@@ -18,11 +18,18 @@
 // Messages to the host (netease.rs), over `chrome.webview.postMessage` as the other players':
 //   { state: { signedIn, playing, volume, track, lists? } }   what the page says of itself (lists when changed)
 //   { playlist: { id, name, songs: [{ id, title, artist, duration, playable }] } }   a playlist asked for
+//   { library: { groups: [{ title, count, playlists: [{ id, name, cover, songCount, by }] }] } }
+//                                                             the account's own playlists (创建/收藏的歌单)
+//   { search: { query, songs: [...] } }                        the page's answer to a search, by its own route
+//   { recent: { songs: [...] } }                               the account's last week's songs (听歌排行)
+//   { home: { daily: { songs }, radar, personal, recommended } }  Home's day and its playlist shelves
 //   { ready: true }                                           the page loaded (anew)
 // and the host's to it: { action, value? } — the app's own commands (netease.rs's Command), `refresh`, and the
 // cab's (cab_sound.js: speakers, head, outside, menu, equalizer, spectrum).
 //
 // Every selector this script uses is in `S` below, and nowhere else: NetEase's page changes, that's what to fix.
+// The play bar can say it plays while its own audio element doesn't (seen after a few songs, owner 2026-11-19):
+// the watchdog at the foot presses the page's own play again, then its own player's way, at most twice a song.
 ;(() => {
   if (location.hostname !== 'music.163.com' || window.top !== window) return
   const post = (message) => window.chrome?.webview?.postMessage(message)
@@ -79,13 +86,35 @@
     hiddenList: '#song-list-pre-cache .f-hide li a', // the server's own list, before the table is drawn
     // A song's own page (`…/song?id=…`): its play button.
     songPlay: '#content-operation a[data-res-action="play"]',
+    // Home: the account's own cards (私人雷达, 每日歌曲推荐 and its playlists) are `personal`, the recommended
+    // playlists `cards` (the account's own are in `personal` too: left out there), and the day's own page
+    // (每日歌曲推荐): its songs are the content's table (`rows`), as a playlist's are.
+    // A search (`…/search/m/?s=…&type=1`): the page's own results, an item a song (its own new search page, not a
+    // table), with the song's id and rights on its play button.
+    searchResults: '.n-srchrst .srchsongst .item',
+    searchPlay: 'a.ply', // its `data-res-id`: the song's; `data-res-copyright`: "0" for one that can't play
+    searchTitle: '.sn .text a',
+    searchTitleName: '.sn .text a b', // its `title`: the name, without the version in the page's own span
+    searchArtist: '.td.w1 .text',
+    searchDuration: ':scope > .td:last-child',
+    // My Music's own side (`…/my/`): its groups of playlists (创建的歌单, 收藏的歌单), a group for each.
+    library: '#g_mymusic .n-minelst',
+    libraryTitle: 'h2 .rtitle', // "创建的歌单(5)"
+    libraryItem: 'li[data-matcher^="playlist-"]', // `data-matcher`: "playlist-<id>"
+    libraryName: 'p.name a', // its `title`: the playlist's name
+    libraryCover: 'img',
+    libraryCount: 'p.num', // "2747首", or "129首 by 微雨染尘埃" for one collected
   }
   // How many recommended playlists the app shows, how long its page has to show whose account it is, and how long
-  // a playlist's page has to show its songs.
+  // a playlist's page has to show its songs (the same for the day's, a search's and the account's own lists).
   const LISTS = 12
   const ACCOUNT_WAIT = 20000
   const PLAYLIST_WAIT = 15000
   const SONG_WAIT = 12000
+  const HOME_WAIT = 12000
+  const LIBRARY_WAIT = 15000
+  const SEARCH_WAIT = 12000
+  const RECENT_MOST = 100
 
   // --- The content's document, and what its DOM says ---------------------------------------------------------
 
@@ -98,6 +127,16 @@
       return null
     }
   }
+  // The content's own path (`/discover`, `/my/`, `/playlist`, `/search/…`): only what the page at it shows is read,
+  // so an answer whose page moved away under it (the app asked something else meanwhile) reads nothing wrong.
+  const pathOf = () => {
+    try {
+      return frame()?.location?.pathname ?? ''
+    } catch {
+      return ''
+    }
+  }
+  const atPath = (path) => pathOf().startsWith(path)
   const text = (node) => (node?.textContent ?? '').replace(/\s+/g, ' ').trim()
   const idOf = (href) => /[?&]id=(\d{1,20})(?:[&#]|$)/.exec(String(href ?? ''))?.[1] ?? null
   // A row's own `data-res-id` (a plain NetEase id, not an address with `?id=` in it).
@@ -201,6 +240,16 @@
     const avatar = document.querySelector(S.accountAvatar)?.getAttribute('src') ?? null
     if (!name && !avatar) return null
     return { name, avatar: avatar ? avatar.replace(/param=\d+y\d+/, 'param=140y140') : null }
+  }
+  // The account's own user id, from its name's address in the top bar (`/user/home?id=…`): the page's own lists
+  // that are by the account ask it, and nothing of the account leaves the page but what the app shows.
+  const uidOf = () => {
+    try {
+      const link = document.querySelector(S.accountName)
+      return /[?&]id=(\d{1,20})/.exec(link?.getAttribute('href') ?? '')?.[1] ?? null
+    } catch {
+      return null
+    }
   }
 
   // What the page's own player is doing, for the host's log when the two disagree (the play bar says playing while
@@ -484,14 +533,17 @@
   // A playlist's page (`id` the playlist's), its songs answered with as soon as its page lists them: at most
   // PLAYLIST_WAIT for the page to show them (none if it doesn't).
   const answerPlaylist = async (id) => {
-    const answer = { playlist: { id, name: '', songs: [] } }
     // 每日歌曲推荐 is a page of the day's songs, not a playlist of its own (`id`: "daily", the app's own name).
     const daily = id === 'daily'
-    if (!open(daily ? '/discover/recommend/taste' : `/playlist?id=${encodeURIComponent(id)}`)) return post(answer)
+    const path = daily ? '/discover/recommend/taste' : '/playlist'
+    const answer = { playlist: { id, name: '', songs: [] } }
+    if (!open(daily ? path : `/playlist?id=${encodeURIComponent(id)}`)) return post(answer)
     const started = Date.now()
     let songs = null
     while (Date.now() - started < PLAYLIST_WAIT) {
       await sleep(250)
+      // Another page (the app asked something else meanwhile): nothing of it is read as this playlist's.
+      if (!atPath(path)) continue
       songs = songsNow()
       // The page's own table over the server's list: once it's there, its rows are the ones to read.
       const drawn = Boolean(frame()?.querySelector(S.rows))
@@ -500,11 +552,237 @@
     return post({
       playlist: {
         id,
-        name: daily ? '' : text(frame()?.querySelector(S.playlistName)),
+        name: daily || !atPath(path) ? '' : text(frame()?.querySelector(S.playlistName)),
         songs: songs ?? [],
       },
     })
   }
+
+  // --- Home: the day's own songs, and the shelves the account's page shows ------------------------------------
+
+  // Home's cards: the account's own (每日歌曲推荐, 私人雷达, and its playlists) and the recommended ones, each as
+  // its own card says it (id, name, cover, plays). `null` while the content's page isn't Discover's.
+  const homeCards = () => {
+    const doc = frame()
+    if (!doc) return null
+    const personal = []
+    let daily = null
+    for (const card of doc.querySelectorAll(S.personal)) {
+      const link = card.querySelector(S.personalLink)
+      const href = link?.getAttribute('href') ?? ''
+      const name = text(card.querySelector(S.personalName)) || link?.getAttribute('title') || ''
+      const cover = wide(card.querySelector(S.cardCover)?.getAttribute('src'))
+      if (!name) continue
+      if (/\/discover\/recommend\/taste/.test(href)) {
+        if (!daily) daily = { id: 'daily', name, cover, playCount: 0 }
+        continue
+      }
+      const id = idOf(href)
+      if (!id || personal.some((list) => list.id === id)) continue
+      personal.push({ id, name, cover, playCount: playCount(text(card.querySelector(S.cardPlays))) })
+    }
+    const radar = personal.find((list) => list.id === RADAR) ?? null
+    const recommended = []
+    for (const card of doc.querySelectorAll(S.cards)) {
+      // The account's own cards carry the same class: they're in `personal`, not among the recommended playlists.
+      if (card.closest('#personalRec')) continue
+      const link = card.querySelector(S.cardLink)
+      const id = idOf(link?.getAttribute('href'))
+      const name = text(card.querySelector(S.cardName)) || link?.getAttribute('title') || ''
+      if (!id || !name || recommended.some((list) => list.id === id)) continue
+      recommended.push({
+        id,
+        name,
+        cover: wide(card.querySelector(S.cardCover)?.getAttribute('src')),
+        playCount: playCount(text(card.querySelector(S.cardPlays))),
+      })
+      if (recommended.length >= LISTS) break
+    }
+    if (!daily && personal.length === 0 && recommended.length === 0) return null
+    return { daily, radar, personal: personal.filter((list) => list.id !== RADAR).slice(0, LISTS), recommended }
+  }
+  // Home, as the app asks for it (`home`): the cards its page shows first (answered at once, the day's songs still
+  // `null` in it, so Home draws while its page loads), then the day's own songs. A page the app moved meanwhile isn't
+  // read, and the answer says the day's songs weren't then.
+  const answerHome = async () => {
+    const home = { radar: null, personal: [], recommended: [] }
+    if (!open('/discover')) return post({ home })
+    const started = Date.now()
+    let cards = null
+    // The account's own cards (its 私人雷达 and its playlists) are asked of the page's own API after the page's
+    // recommended ones are drawn: Home answers the recommended ones at once, and waits for the account's a moment
+    // (signed out, they never come), then for its day's songs.
+    let shownAt = 0
+    let posted = false
+    while (Date.now() - started < HOME_WAIT) {
+      await sleep(250)
+      if (!atPath('/discover')) continue
+      cards = homeCards()
+      if (!cards) continue
+      if (!posted) {
+        posted = true
+        shownAt = Date.now()
+        post({ home: { radar: cards.radar, personal: cards.personal, recommended: cards.recommended } })
+      }
+      if (cards.radar || cards.personal.length > 0) break
+      if (Date.now() - shownAt > 8000) break
+    }
+    if (!cards) return post({ home })
+    home.radar = cards.radar
+    home.personal = cards.personal
+    home.recommended = cards.recommended
+    // A page the app moved meanwhile isn't read: the cards answered stand, the day's songs don't.
+    if (!atPath('/discover')) return post({ home })
+    if (!open('/discover/recommend/taste')) return post({ home })
+    const taste = Date.now()
+    let songs = null
+    while (Date.now() - taste < HOME_WAIT) {
+      await sleep(250)
+      if (!atPath('/discover/recommend/taste')) continue
+      songs = songsNow()
+      if (songs) break
+    }
+    post({ home: { ...home, daily: { songs: songs ?? [] } } })
+  }
+
+  // --- The account's own playlists: My Music's side (…/my/) -------------------------------------------------
+
+  // The groups of playlists My Music's side names (创建的歌单, 收藏的歌单), each with its playlists as the page lists
+  // them: id, name, cover, how many songs, and by whom for one collected. `null` while its page doesn't show them.
+  const libraryGroups = () => {
+    const doc = frame()
+    if (!doc) return null
+    const groups = []
+    for (const group of doc.querySelectorAll(S.library)) {
+      const said = text(group.querySelector(S.libraryTitle))
+      // "创建的歌单(5)": the name, and its count (the page's own, said again with the group's playlists).
+      const title = said.replace(/\s*\(\d{1,5}\)\s*$/, '').trim()
+      if (!title) continue
+      const playlists = []
+      for (const item of group.querySelectorAll(S.libraryItem)) {
+        const id = dataId((item.getAttribute('data-matcher') ?? '').replace(/^playlist-/, ''))
+        const name =
+          item.querySelector(S.libraryName)?.getAttribute('title') || text(item.querySelector(S.libraryName))
+        if (!id || !name) continue
+        const saidNum = text(item.querySelector(S.libraryCount))
+        const songs = /^(\d{1,6})\s*首/.exec(saidNum)?.[1] ?? '0'
+        const by = /\bby\s+(.+)$/.exec(saidNum)?.[1] ?? ''
+        playlists.push({
+          id,
+          name,
+          cover: wide(item.querySelector(S.libraryCover)?.getAttribute('src')),
+          songCount: Number(songs) || 0,
+          by: by.trim().slice(0, 60),
+        })
+        if (playlists.length >= 300) break
+      }
+      const count = Number(/\((\d{1,5})\)/.exec(said)?.[1] ?? playlists.length) || playlists.length
+      groups.push({ title, count, playlists })
+      if (groups.length >= 8) break
+    }
+    return groups.length > 0 ? groups : null
+  }
+  const answerLibrary = async () => {
+    const answer = { library: { groups: [] } }
+    if (!open('/my/')) return post(answer)
+    const started = Date.now()
+    let groups = null
+    while (Date.now() - started < LIBRARY_WAIT) {
+      await sleep(250)
+      if (!atPath('/my')) continue
+      groups = libraryGroups()
+      if (groups) break
+    }
+    post({ library: { groups: groups ?? [] } })
+  }
+
+  // --- A search: the page's own search page ------------------------------------------------------------------
+
+  // A search's songs, as the page's own results show them: the song's id and rights off its play button, its name
+  // (the page keeps a version or an album after the name in its title's own attribute, and hides letters in a
+  // `div.soil` inside it: neither is the song's), its artists and its length. `null`: not drawn yet.
+  const cleanName = (name) => {
+    if (!name) return ''
+    const copy = name.cloneNode(true)
+    for (const hidden of copy.querySelectorAll('.soil')) hidden.remove()
+    return text(copy) || name.getAttribute('title') || ''
+  }
+  const searchSongs = () => {
+    const doc = frame()
+    if (!doc) return null
+    const items = [...doc.querySelectorAll(S.searchResults)]
+    if (items.length === 0) return null
+    return items
+      .map((item) => {
+        const play = item.querySelector(S.searchPlay)
+        const link = item.querySelector(S.searchTitle)
+        return {
+          id: dataId(play?.getAttribute('data-res-id')) ?? idOf(link?.getAttribute('href')) ?? '',
+          title: cleanName(item.querySelector(S.searchTitleName)) || text(link) || '',
+          artist: text(item.querySelector(S.searchArtist)),
+          duration: seconds(text(item.querySelector(S.searchDuration))),
+          // The page says the song's own right on its play button ("0": its rights don't let it play here).
+          playable: play?.getAttribute('data-res-copyright') !== '0',
+        }
+      })
+      .filter((song) => song.id && song.title)
+  }
+  const answerSearch = async (query) => {
+    const said = String(query ?? '').trim().slice(0, 60)
+    const answer = { search: { query: said, songs: [] } }
+    if (!said) return post(answer)
+    if (!open(`/search/m/?s=${encodeURIComponent(said)}&type=1`)) return post(answer)
+    const started = Date.now()
+    let songs = null
+    while (Date.now() - started < SEARCH_WAIT) {
+      await sleep(250)
+      if (!atPath('/search')) continue
+      // Its new search page's results, or an older search table's rows (whichever the page has).
+      songs = searchSongs() ?? songsNow()
+      if (songs) break
+    }
+    post({ search: { query: said, songs: songs ?? [] } })
+  }
+
+  // --- The account's own recent songs ------------------------------------------------------------------------
+  //
+  // The web player has no 最近播放 page of its own (checked on the signed-in page, 2026-11-19): what it has is
+  // 听歌排行, the songs the account played this week, which its own page asks its own API for. Read the same way
+  // (same origin, the page's own session): the account's own list, and nothing of it written down here.
+  const recentSongs = async () => {
+    const uid = uidOf()
+    if (!uid) return []
+    try {
+      const response = await fetch(`/api/v1/play/record?type=1&uid=${uid}&limit=${RECENT_MOST}`, {
+        credentials: 'same-origin',
+      })
+      if (!response.ok) return []
+      const answer = await response.json()
+      const rows = Array.isArray(answer?.weekData) ? answer.weekData : []
+      return rows
+        .slice(0, RECENT_MOST)
+        .map((row) => {
+          const song = row?.song
+          if (!song?.id || !song?.name) return null
+          const artists = (Array.isArray(song.ar) ? song.ar : [])
+            .map((artist) => artist?.name)
+            .filter(Boolean)
+            .join('/')
+          return {
+            id: String(song.id),
+            title: String(song.name),
+            artist: artists,
+            duration: Math.round((Number(song.dt) || 0) / 1000),
+            // Its own privilege: below 0 is the account's rights not letting it play.
+            playable: Number(song.privilege?.st ?? 0) >= 0,
+          }
+        })
+        .filter(Boolean)
+    } catch {
+      return []
+    }
+  }
+  const answerRecent = async () => post({ recent: { songs: await recentSongs() } })
 
   // --- The app's commands, as the host passes them on (netease.rs's Command) -----------------------------------
   //
@@ -517,6 +795,10 @@
   //   { action: "volume", value: <0 to 1> }     its own audio element's volume (kept over the page's own changes)
   //   { action: "openPlaylist", value: "<id>" } that playlist's page opened, its songs answered with (`playlist`);
   //                                             "daily" is the day's own songs (每日歌曲推荐)
+  //   { action: "home" }                        Home's cards and the day's own songs (`home`)
+  //   { action: "library" }                     the account's own playlists, by group (`library`)
+  //   { action: "search", value: "<words>" }    the page's own search of them, its songs answered (`search`)
+  //   { action: "recent" }                      the account's recent songs (its 听歌排行 this week) (`recent`)
   //   { action: "refresh" }                     the state and the recommended playlists read again
   //
   // and the cab's own (cab_sound.js: speakers, head, outside, menu, equalizer, spectrum), not the app's.
@@ -530,6 +812,10 @@
     seek: ({ value }) => seek(value),
     volume: ({ value }) => setVolume(value),
     openPlaylist: ({ value }) => answerPlaylist(String(value)),
+    home: () => answerHome(),
+    library: () => answerLibrary(),
+    search: ({ value }) => answerSearch(value),
+    recent: () => answerRecent(),
     // The state and the lists read again (as if the page loaded anew): the app's pull to refresh.
     refresh: () => {
       told = ''
@@ -559,6 +845,78 @@
     if (CAB[data?.action]) CAB[data.action](data)
     else CONTROLS[data?.action]?.(data)?.catch?.(() => {})
   })
+
+  // --- A play the page's sound doesn't follow -----------------------------------------------------------------
+  //
+  // The play bar can say it plays while its own audio element isn't (owner 2026-11-19: the bar 0:00 / 00:00, the
+  // element's duration 0 and paused, and its play button pressed again fixes it). The page alone is woken: its
+  // play button again, then its own player's way (or the playing song's row), at most twice a song — and not
+  // while it just started (a second there is a song loading, not a stuck one).
+  const HEAL_AFTER = 2200
+  const HEAL_TRIES = 2
+  const HEAL_INTERVAL = 1000
+  let stuckSince = 0
+  let stuckTries = 0
+  let stuckTrack = ''
+  let lastHeal = 0
+  let heals = 0
+  // The playing song played again as the page's own player plays one: its row's own play where its list shows it
+  // (the list stays the queue), else its own player's way (`nm.x.ceo2i`, what its own links play a song by).
+  const playAgain = (id) => {
+    const doc = frame()
+    const row =
+      doc && [...doc.querySelectorAll(S.rows)].find((row) => dataId(row.querySelector(S.rowPlay)?.getAttribute('data-res-id')) === id)
+    if (row) {
+      row.querySelector(S.rowPlay)?.click()
+      return true
+    }
+    try {
+      const play = window.nm?.x?.ceo2i
+      if (typeof play === 'function') {
+        play('play', 18, id)
+        return true
+      }
+    } catch {
+      // Its own player's way, changed: its play button, then.
+    }
+    return false
+  }
+  const heal = () => {
+    // Not playing: nothing stuck (and the next song is read anew).
+    if (!isPlaying()) {
+      stuckSince = 0
+      stuckTries = 0
+      stuckTrack = ''
+      return
+    }
+    const now = track()
+    const audio = audioState()
+    // The bar says it plays, but the page's own element (once there is one) is paused: nothing is heard.
+    const stuck = Boolean(now) && audio.elements > 0 && !audio.playing
+    if (!stuck) {
+      stuckSince = 0
+      stuckTries = 0
+      stuckTrack = ''
+      return
+    }
+    const key = String(now.id || now.title)
+    if (key !== stuckTrack) {
+      stuckTrack = key
+      stuckSince = Date.now()
+      stuckTries = 0
+    }
+    if (!stuckSince) stuckSince = Date.now()
+    if (Date.now() - stuckSince < HEAL_AFTER || stuckTries >= HEAL_TRIES || Date.now() - lastHeal < HEAL_AFTER) return
+    lastHeal = Date.now()
+    stuckTries += 1
+    heals += 1
+    // The page's own play button again; still stuck, its own player's way (or its row, which keeps the queue).
+    if (stuckTries === 1) click(S.play)
+    else if (!now.id || !playAgain(now.id)) click(S.play)
+    // The next try's window starts now: a page that woke up is found playing, and this resets itself.
+    stuckSince = Date.now()
+  }
+  setInterval(heal, HEAL_INTERVAL)
 
   // What the page says of itself, said to the host as it changes (once a second): signed in or not (said only
   // once the page knows), playing, the volume, what plays, and the recommended playlists when they change.
@@ -612,6 +970,9 @@
     })(),
     cards: frame()?.querySelectorAll(S.cards)?.length ?? -1,
     rows: frame()?.querySelectorAll(S.rows)?.length ?? -1,
+    // The play the sound didn't follow, and how often the page woke it (the live test watches the log's line).
+    heals,
+    stuck: Boolean(stuckSince) && Date.now() - stuckSince > HEAL_AFTER && stuckTries < HEAL_TRIES,
   })
 
   addEventListener('DOMContentLoaded', () => post({ ready: true }))

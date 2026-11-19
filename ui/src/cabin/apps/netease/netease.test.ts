@@ -178,3 +178,163 @@ describe('what the Dashboard shows of it', () => {
     expect(sourceOf(null, false, 0)).toBeNull()
   })
 })
+
+describe('the host’s v2 answers', () => {
+  it('applies Home as it comes: its cards first (the day still to come), then its day’s songs', async () => {
+    inHost()
+    const { receiveMessage, useNetease } = await import('./netease')
+    const radar = { id: '3136952023', name: '私人雷达', cover: null, playCount: 0 }
+    receiveMessage({ type: 'netease', kind: 'home', radar, personal: [], recommended: [] })
+    let state = useNetease.getState()
+    expect(state.home?.radar?.name).toBe('私人雷达')
+    expect(state.home?.daily).toBeNull()
+    expect(state.homeAsking.waiting).toBe(true)
+    expect(state.heard).toBe(true)
+    receiveMessage({
+      type: 'netease',
+      kind: 'home',
+      daily: { songs: [{ id: 'daily-1', title: '今天的歌', artist: '人', duration: 200, playable: true }] },
+      radar,
+      personal: [{ id: 'list-3', name: '个性化', cover: null, playCount: 7 }],
+      recommended: [{ id: 'list-4', name: '热门', cover: null, playCount: 100 }],
+    })
+    state = useNetease.getState()
+    expect(state.home?.daily?.map((song) => song.title)).toEqual(['今天的歌'])
+    expect(state.home?.personal.map((list) => list.name)).toEqual(['个性化'])
+    expect(state.home?.recommended.map((list) => list.name)).toEqual(['热门'])
+    expect(state.homeAsking).toEqual({ waiting: false, failed: false })
+  })
+
+  it('applies My Music’s groups and the recent songs', async () => {
+    inHost()
+    const { receiveMessage, useNetease } = await import('./netease')
+    receiveMessage({
+      type: 'netease',
+      kind: 'library',
+      groups: [
+        {
+          title: '创建的歌单',
+          count: 1,
+          playlists: [{ id: '1', name: '乐队', cover: null, songCount: 13, by: '' }],
+        },
+      ],
+    })
+    expect(useNetease.getState().library?.[0].playlists[0]).toMatchObject({ name: '乐队', songCount: 13 })
+    receiveMessage({
+      type: 'netease',
+      kind: 'recent',
+      songs: [{ id: '7', title: 'Breath', artist: 'Pluto', duration: 201, playable: true }],
+    })
+    expect(useNetease.getState().recent?.[0]).toMatchObject({ title: 'Breath', artist: 'Pluto' })
+  })
+
+  it('shows only the last search asked, not an earlier answer arriving late', async () => {
+    inHost()
+    const { receiveMessage, searchFor, useNetease } = await import('./netease')
+    searchFor('周杰伦')
+    searchFor('Taylor Swift')
+    receiveMessage({
+      type: 'netease',
+      kind: 'search',
+      query: '周杰伦',
+      songs: [{ id: '1', title: '屋顶', artist: '周杰伦', duration: 300, playable: true }],
+    })
+    expect(useNetease.getState().search).toBeNull()
+    receiveMessage({
+      type: 'netease',
+      kind: 'search',
+      query: 'Taylor Swift',
+      songs: [{ id: '2', title: 'Love Story', artist: 'Taylor Swift', duration: 236, playable: true }],
+    })
+    const search = useNetease.getState().search
+    expect(search?.query).toBe('Taylor Swift')
+    expect(search?.songs[0].title).toBe('Love Story')
+    expect(useNetease.getState().searchAsking).toEqual({ waiting: false, failed: false })
+  })
+})
+
+describe('the app asks the host’s page', () => {
+  it('for Home, My Music’s playlists and the recent songs as the app opens them', async () => {
+    const host = inHost()
+    const { requestHome, requestLibrary, requestRecent } = await import('./netease')
+    requestHome()
+    requestLibrary()
+    requestRecent()
+    expect(host.commands()).toEqual([{ action: 'home' }, { action: 'library' }, { action: 'recent' }])
+  })
+
+  it('opens the recent page over the tab, and plays a found song by its id (the day’s first, for Play all)', async () => {
+    const host = inHost()
+    const { openRecent, playDaily, playFound, receiveMessage, useNetease } = await import('./netease')
+    openRecent()
+    expect(host.commands()).toContainEqual({ action: 'recent' })
+    const state = useNetease.getState()
+    expect(state.views[state.tab].at(-1)).toMatchObject({ kind: 'recent' })
+    playFound({ id: '42', title: 'x', artist: 'y', duration: 10, playable: true })
+    expect(host.commands()).toContainEqual({ action: 'play', value: '42' })
+    receiveMessage({
+      type: 'netease',
+      kind: 'home',
+      daily: {
+        songs: [
+          { id: 'a', title: 'a', artist: '', duration: 10, playable: false },
+          { id: 'b', title: 'b', artist: '', duration: 10, playable: true },
+        ],
+      },
+      radar: null,
+      personal: [],
+      recommended: [],
+    })
+    playDaily()
+    expect(host.commands()).toContainEqual({ action: 'play', value: 'b' })
+  })
+
+  it('knows a playlist’s card from Home’s shelves or My Music’s groups, for its page’s head', async () => {
+    inHost()
+    const { findPlaylistMeta } = await import('./netease')
+    const radar = { id: '3136952023', name: '私人雷达', cover: null, playCount: 0 }
+    const library = [
+      {
+        title: '收藏的歌单',
+        count: 1,
+        playlists: [{ id: '9', name: '收藏的', cover: null, playCount: 0, songCount: 12, by: '人' }],
+      },
+    ]
+    expect(findPlaylistMeta({ lists: [], home: null, library }, '9')?.name).toBe('收藏的')
+    expect(
+      findPlaylistMeta({ lists: [], home: { daily: null, radar, personal: [], recommended: [] }, library: null }, radar.id)
+        ?.name,
+    ).toBe('私人雷达')
+    expect(findPlaylistMeta({ lists: [], home: null, library: null }, 'nothing')).toBeNull()
+  })
+})
+
+describe('the preview’s v2 answers', () => {
+  it('has Home’s day and shelves, My Music’s groups, a search and the recent songs', () => {
+    const preview = createPreview()
+    const home = preview.home()
+    expect(home.daily?.length).toBeGreaterThan(0)
+    expect(home.radar?.name).toBe('私人雷达')
+    expect(home.personal.length).toBeGreaterThan(0)
+    expect(home.recommended.length).toBeGreaterThan(0)
+    expect(preview.library().map((group) => group.title)).toEqual(['创建的歌单', '收藏的歌单'])
+    expect(preview.library().flatMap((group) => group.playlists).every((list) => list.songCount > 0)).toBe(true)
+    expect(preview.search('夜航').length).toBeGreaterThan(0)
+    expect(preview.search('')).toEqual([])
+    expect(preview.recent().length).toBeGreaterThan(0)
+    // A found song plays in the preview (its own queue): the same one is what plays then.
+    const found = preview.search('夜航')[0]
+    preview.playHistory(found)
+    expect(preview.read().track?.title).toBe(found.title)
+  })
+})
+
+describe('the v2 words', () => {
+  it('names My Music’s groups and who a collected playlist is by', () => {
+    expect(neteaseWords('zh-CN').createdPlaylists).toBe('创建的歌单')
+    expect(neteaseWords('zh-CN').collectedPlaylists).toBe('收藏的歌单')
+    expect(neteaseWords('zh-CN').by('微雨染尘埃')).toBe('by 微雨染尘埃')
+    expect(neteaseWords('en-US').daily).toBe('Daily picks')
+    expect(neteaseWords('en-US').recentSource).toBe('This week’s listening chart')
+  })
+})
