@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createPreview } from './preview'
+import { sourceOf } from './source'
 import { neteaseWords } from './words'
 
 /**
@@ -137,5 +138,43 @@ describe('the app’s words', () => {
     expect(neteaseWords('zh-CN').plays(2_184_000)).toBe('218万次播放')
     expect(neteaseWords('en-US').plays(2_184_000)).toBe('2.2M plays')
     expect(neteaseWords('zh-CN').songs(14)).toBe('14 首')
+  })
+})
+
+describe('what the Dashboard shows of it', () => {
+  it('says the song, its cover, and how far in it is when the state was read', () => {
+    const track = {
+      id: '42',
+      title: '夜航电台',
+      artist: '北纬二十七',
+      album: '公路与夜',
+      cover: 'https://p1.music.126.net/a.jpg',
+      duration: 240,
+      position: 63,
+      playable: true,
+    }
+    const now = sourceOf(track, true, 1000)
+    expect(now?.source).toMatchObject({
+      id: 'westplay-netease',
+      service: 'netease',
+      title: '夜航电台',
+      artist: '北纬二十七',
+      album: '公路与夜',
+      status: 'playing',
+      positionMs: 63_000,
+      durationMs: 240_000,
+    })
+    expect(now?.source.controls).toMatchObject({ playPause: true, next: true, previous: true })
+    expect(now?.artwork).toBe('https://p1.music.126.net/a.jpg')
+    // The clock's place is the Unix time of the state, not of now.
+    expect(Number.isInteger(now?.source.positionAt)).toBe(true)
+    expect(now!.source.positionAt).toBeGreaterThan(1_000)
+
+    const paused = sourceOf(track, false, 1000)
+    expect(paused?.source.status).toBe('paused')
+  })
+
+  it('shows nothing without a song', () => {
+    expect(sourceOf(null, false, 0)).toBeNull()
   })
 })

@@ -3,6 +3,7 @@ import { create } from 'zustand'
 import { isInHost, postToHost, subscribeHostMessages } from '../../../shared/host'
 import type { MediaSource } from '../../../shared/media'
 import { type MusicPlayer, pauseMusicWithGame } from '../musicWithGame'
+import { sourceOf } from './source'
 import { createPreview, type Preview } from './preview'
 
 /**
@@ -608,31 +609,12 @@ export function useNeteaseBridge(): void {
 
 /** What the Dashboard's Now Playing (and the Equalizer) show of it, as the other players say theirs
  * (`shared/media.ts`): the song, its cover, whether it plays, and how far in it is when this state was read. */
+/** Its state as the Dashboard's Now Playing takes it (`sourceOf`), kept while it plays. */
 export function useNeteaseSource(): { source: MediaSource; artwork: string | null } | null {
   const track = useNetease((state) => state.track)
   const playing = useNetease((state) => state.playing)
   const at = useNetease((state) => state.trackAt)
-  return useMemo(() => {
-    if (!track) return null
-    return {
-      source: {
-        id: 'westplay-netease',
-        service: 'netease',
-        title: track.title,
-        artist: track.artist,
-        album: track.album,
-        artwork: track.cover,
-        status: playing ? 'playing' : 'paused',
-        positionMs: track.position * 1000,
-        positionAt: Math.round(performance.timeOrigin + at),
-        durationMs: track.duration * 1000,
-        controls: { playPause: true, next: true, previous: true, shuffle: false, repeat: false },
-        shuffle: false,
-        repeat: 'off',
-      },
-      artwork: track.cover,
-    }
-  }, [track, playing, at])
+  return useMemo(() => sourceOf(track, playing, at), [track, playing, at])
 }
 
 /** It as one of the cab's players (apps/musicWithGame.ts): so the media keybinds drive it, the newest to start
