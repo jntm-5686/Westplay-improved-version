@@ -853,13 +853,16 @@
   // play button again, then its own player's way (or the playing song's row), at most twice a song — and not
   // while it just started (a second there is a song loading, not a stuck one).
   const HEAL_AFTER = 2200
-  const HEAL_TRIES = 2
+  const HEAL_TRIES = 3
   const HEAL_INTERVAL = 1000
   let stuckSince = 0
   let stuckTries = 0
   let stuckTrack = ''
   let lastHeal = 0
   let heals = 0
+  // The element's own clock, to tell a song loading from one that never comes: a stuck one's `at` stands still.
+  let lastAt = null
+  let lastAtSince = 0
   // The playing song played again as the page's own player plays one: its row's own play where its list shows it
   // (the list stays the queue), else its own player's way (`nm.x.ceo2i`, what its own links play a song by).
   const playAgain = (id) => {
@@ -891,8 +894,15 @@
     }
     const now = track()
     const audio = audioState()
-    // The bar says it plays, but the page's own element (once there is one) is paused: nothing is heard.
-    const stuck = Boolean(now) && audio.elements > 0 && !audio.playing
+    // The bar says it plays, but the page's own element is paused, or it never loaded (no time, no length), or
+    // its clock stands still: nothing is heard while the bar moves on (owner: a few songs in, then silence).
+    const stillborn = Boolean(now) && audio.elements > 0 && (audio.at === 0 || !now.duration)
+    const frozen = audio.playing && audio.at !== null && audio.at === lastAt && Date.now() - lastAtSince > HEAL_AFTER
+    const stuck = Boolean(now) && audio.elements > 0 && (!audio.playing || stillborn || frozen)
+    if (audio.at !== lastAt) {
+      lastAt = audio.at
+      lastAtSince = Date.now()
+    }
     if (!stuck) {
       stuckSince = 0
       stuckTries = 0
@@ -910,9 +920,16 @@
     lastHeal = Date.now()
     stuckTries += 1
     heals += 1
-    // The page's own play button again; still stuck, its own player's way (or its row, which keeps the queue).
-    if (stuckTries === 1) click(S.play)
-    else if (!now.id || !playAgain(now.id)) click(S.play)
+    // Its play button (off, then on: a load the page's player didn't finish starts again), then its own player's
+    // way (or the song's row, which keeps the queue), then the next song.
+    if (stuckTries === 1) {
+      click(S.play)
+      setTimeout(() => click(S.play), 500)
+    } else if (stuckTries === 2) {
+      if (!now.id || !playAgain(now.id)) click(S.play)
+    } else {
+      click(S.next)
+    }
     // The next try's window starts now: a page that woke up is found playing, and this resets itself.
     stuckSince = Date.now()
   }
