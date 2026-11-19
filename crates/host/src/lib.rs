@@ -1557,6 +1557,19 @@ pub fn run(mut config: Config, stop: Arc<AtomicBool>) -> Result<(), Error> {
                                 status.netease_signed_in = Some(state.signed_in);
                                 (config.on_status)(&status);
                             }
+                            // The play bar says playing and the page's own sound element isn't: the app's screen
+                            // moves on and nothing is heard (seen after a few songs, owner 2026-11-19).
+                            if state.playing
+                                && let Some(audio) = &state.audio
+                                && !audio.playing
+                            {
+                                log!(
+                                    "[netease] says playing but its sound isn't (elements {}, paused {:?}, at {:?})",
+                                    audio.elements,
+                                    audio.paused,
+                                    audio.at,
+                                );
+                            }
                             netease_state = Some(state);
                             state_changed = true;
                         }

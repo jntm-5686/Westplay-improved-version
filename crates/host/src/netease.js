@@ -53,6 +53,12 @@
     account: '.m-tophead',
     login: '.m-tophead a[data-action="login"]',
     signedIn: '[data-action="logout"], .head img, a.name',
+    accountName: '.m-tophead a.name',
+    accountAvatar: '.m-tophead .head img',
+    // The account's own recommendations (Discover › 推荐, signed in): 每日歌曲推荐, 私人雷达, personal playlists.
+    personal: '#personalRec .m-cvrlst li',
+    personalName: 'a.tit, .dec a',
+    personalLink: 'a[href]',
     // The recommended playlists, in the content's document (Discover › 推荐; the personalised ones too).
     cards: '.n-rcmd .m-cvrlst li',
     anyCard: '.m-cvrlst li', // a card anywhere in the content's page (the recommended section isn't there)
@@ -188,6 +194,29 @@
   }
   // What plays: the play bar's own words (its name, its artist), its cover, how long it is and how far into it,
   // and the song's NetEase id (its name's own address). `null`: nothing (or nothing playable) in the play bar.
+  // The account, as the page's top bar says it (`null` while it shows none). The picture asked for at a size the
+  // cab's rail shows, not the page's own 30 pixels.
+  const account = () => {
+    const name = text(document.querySelector(S.accountName))
+    const avatar = document.querySelector(S.accountAvatar)?.getAttribute('src') ?? null
+    if (!name && !avatar) return null
+    return { name, avatar: avatar ? avatar.replace(/param=\d+y\d+/, 'param=140y140') : null }
+  }
+
+  // What the page's own player is doing, for the host's log when the two disagree (the play bar says playing while
+  // no sound element is: the app's screen moves on and nothing is heard).
+  const audioState = () => {
+    const all = [...media]
+    const playing = all.find((element) => !element.paused && !element.ended) ?? null
+    const element = playing ?? all.at(-1) ?? null
+    return {
+      elements: all.length,
+      playing: Boolean(playing),
+      paused: element ? element.paused : null,
+      at: element && Number.isFinite(element.currentTime) ? Math.round(element.currentTime) : null,
+    }
+  }
+
   const track = () => {
     const name = document.querySelector(S.trackName)
     const title = name?.getAttribute('title') || text(name) || ''
@@ -272,9 +301,32 @@
       .flat()
       .filter((list, index, all) => all.findIndex((other) => other.id === list.id) === index)
       .slice(0, LISTS)
+  // The account's own cards (Discover › 推荐's personalised section, signed in): 私人雷达 first and 每日歌曲推荐
+  // second, as the owner asked, then the playlists it recommends.
+  const RADAR = '3136952023'
+  const personalShown = () => {
+    const doc = frame()
+    if (!doc) return []
+    const found = []
+    for (const card of doc.querySelectorAll(S.personal)) {
+      const link = card.querySelector(S.personalLink)
+      const href = link?.getAttribute('href') ?? ''
+      const name = text(card.querySelector(S.personalName)) || link?.getAttribute('title') || ''
+      const cover = wide(card.querySelector(S.cardCover)?.getAttribute('src'))
+      if (!name) continue
+      const id = /\/discover\/recommend\/taste/.test(href) ? 'daily' : idOf(href)
+      if (!id) continue
+      found.push({ id, name, cover, playCount: 0 })
+    }
+    return found
+      .sort((a, b) => Number(b.id === RADAR) - Number(a.id === RADAR) || Number(b.id === 'daily') - Number(a.id === 'daily'))
+      .slice(0, 2)
+  }
   const lists = () => {
+    const personal = personalShown()
     const shown = shownLists()
-    if (shown) known = merged(shown, suggested)
+    if (personal.length > 0) known = merged(personal, shown ?? [], suggested)
+    else if (shown) known = merged(shown, suggested)
     else if (known.length === 0 && suggested.length > 0) known = merged(suggested)
     return known
   }
@@ -433,7 +485,9 @@
   // PLAYLIST_WAIT for the page to show them (none if it doesn't).
   const answerPlaylist = async (id) => {
     const answer = { playlist: { id, name: '', songs: [] } }
-    if (!open(`/playlist?id=${encodeURIComponent(id)}`)) return post(answer)
+    // 每日歌曲推荐 is a page of the day's songs, not a playlist of its own (`id`: "daily", the app's own name).
+    const daily = id === 'daily'
+    if (!open(daily ? '/discover/recommend/taste' : `/playlist?id=${encodeURIComponent(id)}`)) return post(answer)
     const started = Date.now()
     let songs = null
     while (Date.now() - started < PLAYLIST_WAIT) {
@@ -443,7 +497,13 @@
       const drawn = Boolean(frame()?.querySelector(S.rows))
       if (songs && (drawn || Date.now() - started > 6000)) break
     }
-    return post({ playlist: { id, name: text(frame()?.querySelector(S.playlistName)), songs: songs ?? [] } })
+    return post({
+      playlist: {
+        id,
+        name: daily ? '' : text(frame()?.querySelector(S.playlistName)),
+        songs: songs ?? [],
+      },
+    })
   }
 
   // --- The app's commands, as the host passes them on (netease.rs's Command) -----------------------------------
@@ -455,7 +515,8 @@
   //   { action: "pause" | "next" | "prev" }     its own play/pause, next and previous buttons
   //   { action: "seek", value: <seconds> }      its progress bar, dragged there as a mouse drags it
   //   { action: "volume", value: <0 to 1> }     its own audio element's volume (kept over the page's own changes)
-  //   { action: "openPlaylist", value: "<id>" } that playlist's page opened, its songs answered with (`playlist`)
+  //   { action: "openPlaylist", value: "<id>" } that playlist's page opened, its songs answered with (`playlist`);
+  //                                             "daily" is the day's own songs (每日歌曲推荐)
   //   { action: "refresh" }                     the state and the recommended playlists read again
   //
   // and the cab's own (cab_sound.js: speakers, head, outside, menu, equalizer, spectrum), not the app's.
@@ -515,7 +576,14 @@
       asked = true
       askFor()
     }
-    const state = { signedIn: signed, playing: isPlaying(), volume: volume(), track: track() }
+    const state = {
+      signedIn: signed,
+      playing: isPlaying(),
+      volume: volume(),
+      track: track(),
+      account: account(),
+      audio: audioState(),
+    }
     const now = JSON.stringify(state)
     if (!always && now === told && !saidLists) return
     told = now
@@ -530,6 +598,9 @@
     volume: volume(),
     track: track(),
     lists: lists(),
+    account: account(),
+    audio: audioState(),
+    personal: personalShown(),
     // The page's own player's way to play a song (the live test checks it's there; playback needs an account).
     playAPI: typeof window.nm?.x?.ceo2i,
     frame: (() => {

@@ -53,6 +53,12 @@ export interface NeteaseSong {
   playable: boolean
 }
 
+/** Whose account it is, as NetEase's own top bar says it. */
+export interface NeteaseAccount {
+  name: string
+  avatar: string | null
+}
+
 /** The whole state the host's page sends (`netease` `state`). */
 export interface NeteasePlayerState {
   signedIn: boolean | null
@@ -62,6 +68,8 @@ export interface NeteasePlayerState {
   volume: number
   track: NeteaseTrack | null
   lists: NeteaseList[]
+  /** The account's name and picture, once its page knows it. */
+  account?: NeteaseAccount | null
 }
 
 /** A command for the host's hidden page (`crates/host netease.rs`). */
@@ -112,6 +120,8 @@ interface NeteaseAppState {
   trackAt: number
   /** Home's recommended playlists. */
   lists: NeteaseList[]
+  /** Whose account it is (the rail shows it): nothing while signed out or unknown. */
+  account: NeteaseAccount | null
   /** The host has sent a state at least once (a plain browser's preview counts as having). */
   heard: boolean
 
@@ -141,7 +151,10 @@ function keptStyle(): Style {
 
 function fromPlayer(
   state: NeteasePlayerState,
-): Pick<NeteaseAppState, 'signedIn' | 'signingIn' | 'playing' | 'volume' | 'track' | 'trackAt' | 'lists' | 'heard'> {
+): Pick<
+  NeteaseAppState,
+  'signedIn' | 'signingIn' | 'playing' | 'volume' | 'track' | 'trackAt' | 'lists' | 'heard' | 'account'
+> {
   return {
     signedIn: state.signedIn,
     signingIn: state.signingIn,
@@ -151,6 +164,7 @@ function fromPlayer(
     trackAt: performance.now(),
     lists: state.lists,
     heard: true,
+    account: state.account ?? null,
   }
 }
 
@@ -167,6 +181,7 @@ export const useNetease = create<NeteaseAppState>()(() => ({
         playing: false,
         volume: 0.8,
         track: null,
+        account: null,
         trackAt: performance.now(),
         lists: [],
         heard: false,

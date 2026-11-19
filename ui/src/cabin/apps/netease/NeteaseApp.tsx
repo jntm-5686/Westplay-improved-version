@@ -72,6 +72,7 @@ function Rail() {
   const style = useNetease((state) => state.style)
   const signedIn = useNetease((state) => state.signedIn)
   const signingIn = useNetease((state) => state.signingIn)
+  const me = useNetease((state) => state.account)
   const account = accountOf({ signedIn, signingIn })
   const status =
     account === 'in'
@@ -124,10 +125,10 @@ function Rail() {
         </div>
         <div className={`ne-status ${account}`} aria-label={words.account}>
           <span className="ne-status-avatar">
-            <PersonGlyph />
+            {me?.avatar ? <img src={me.avatar} alt="" /> : <PersonGlyph />}
           </span>
           <span className="ne-status-text">
-            <b>{words.brand}</b>
+            <b>{me?.name || words.brand}</b>
             <span>{status}</span>
           </span>
         </div>

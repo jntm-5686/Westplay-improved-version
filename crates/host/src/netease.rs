@@ -192,8 +192,33 @@ impl Playlist {
     }
 }
 
-/// Whether the page is signed in, playing, the player's volume (0 to 1), what plays (`None`: nothing) and the
-/// recommended playlists.
+/// Whose account it is, as NetEase's own top bar says it: a name, and the picture of it (NetEase's own URL).
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Account {
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub avatar: Option<String>,
+}
+
+/// What the page's own sound element is doing, for the log when the play bar says playing and it isn't (the app's
+/// screen moves on, nothing is heard): how many there are, whether one is playing, and how far in it is.
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Audio {
+    #[serde(default)]
+    pub elements: usize,
+    #[serde(default)]
+    pub playing: bool,
+    #[serde(default)]
+    pub paused: Option<bool>,
+    #[serde(default)]
+    pub at: Option<i64>,
+}
+
+/// Whether the page is signed in, playing, the player's volume (0 to 1), what plays (`None`: nothing), the
+/// recommended playlists, whose account it is and what its sound element is doing.
 #[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct State {
@@ -205,6 +230,10 @@ pub struct State {
     pub track: Option<Track>,
     #[serde(default)]
     pub lists: Vec<Playlist>,
+    #[serde(default)]
+    pub account: Option<Account>,
+    #[serde(default)]
+    pub audio: Option<Audio>,
 }
 
 /// What the page says of itself (`netease.js`'s state): signed in, or not known yet (`None`: the page still
@@ -222,6 +251,10 @@ struct PageState {
     track: Option<Track>,
     #[serde(default)]
     lists: Option<Vec<Playlist>>,
+    #[serde(default)]
+    account: Option<Account>,
+    #[serde(default)]
+    audio: Option<Audio>,
 }
 
 /// What the host tells NetEase's page of the cab (never the cabin page's to send): the truck's speakers (`None`:
@@ -464,6 +497,8 @@ impl Netease {
                             volume: volume_of(page.volume),
                             track: page.track.map(Track::checked),
                             lists: self.lists.borrow().clone(),
+                            account: page.account,
+                            audio: page.audio,
                         }));
                     }
                 }
@@ -651,6 +686,8 @@ mod tests {
                 volume: 0.8,
                 track: None,
                 lists: None,
+                account: None,
+                audio: None,
             }))
         );
         let Some(Message::State(state)) = read_message(
@@ -705,6 +742,8 @@ mod tests {
             volume: volume_of(page.volume),
             track: page.track.map(Track::checked),
             lists: page.lists.expect("lists").into_iter().filter_map(Playlist::checked).collect(),
+            account: None,
+            audio: None,
         };
         let track = state.track.as_ref().expect("a track");
         assert_eq!(track.id, "", "not an id");
@@ -747,6 +786,16 @@ mod tests {
                 cover: None,
                 play_count: 123456,
             }],
+            account: Some(Account {
+                name: "someone".into(),
+                avatar: Some("https://p1.music.126.net/a.jpg?param=140y140".into()),
+            }),
+            audio: Some(Audio {
+                elements: 1,
+                playing: true,
+                paused: Some(false),
+                at: Some(63),
+            }),
         };
         let message = state_message(Some(&state), true);
         let value: serde_json::Value = serde_json::from_str(&message).unwrap();
