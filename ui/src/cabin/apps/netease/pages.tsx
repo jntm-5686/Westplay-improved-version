@@ -43,6 +43,8 @@ export function Home() {
   const words = useNeteaseWords()
   const lists = useNetease((state) => state.lists)
   const heard = useNetease((state) => state.heard)
+  const signedIn = useNetease((state) => state.signedIn)
+  const signingIn = useNetease((state) => state.signingIn)
   const silent = useSilent(heard)
   return (
     <div className="ne-scroll ne-home">
@@ -56,6 +58,11 @@ export function Home() {
           </button>
         }
       />
+      {(signedIn === false || signingIn) && (
+        <p className="ne-signin-note">
+          {signingIn ? words.signingInHint : `${words.signedOut} · ${words.signInHint}`}
+        </p>
+      )}
       {!heard ? (
         silent ? (
           <Failed text={words.notConnected} retry={refresh} />

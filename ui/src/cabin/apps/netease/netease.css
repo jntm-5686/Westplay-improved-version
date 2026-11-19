@@ -2147,3 +2147,16 @@
     animation: none;
   }
 }
+
+/* Signed out while on Home: the rail says so in My Music, and the sign-in itself is the companion's, so a
+   line here spares the player clicking a song that NetEase's page won't play. */
+.ne-signin-note {
+  margin: 0 0 18px;
+  padding: 14px 20px;
+  border-radius: var(--ne-radius);
+  background: var(--ne-surface);
+  border-left: 4px solid var(--ne-accent);
+  color: var(--ne-dim);
+  font-size: var(--ne-type-small);
+  line-height: 1.5;
+}
