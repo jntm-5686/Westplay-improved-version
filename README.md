@@ -28,7 +28,7 @@
 
 <br>
 
-<img src="docs/images/home-dark.png" width="100%" alt="WestPlay 主屏：地图、音乐、Spotify、YouTube 与 YouTube Music 在卡车自己的屏幕上">
+<img src="images/home-dark.png" width="100%" alt="WestPlay 主屏：地图、音乐、Spotify、YouTube 与 YouTube Music 在卡车自己的屏幕上">
 
 WestPlay 把一块车机风格的屏幕放进卡车自己的仪表台，在游戏里显示——欧卡 2 与美卡共用同一个 WestPlay。用你自己的游戏生成的地图画路线，加上音乐、YouTube、沿途天气：就在真车中控屏的位置上，用鼠标操作，按住一个键就能接管。
 
@@ -37,24 +37,24 @@ WestPlay 把一块车机风格的屏幕放进卡车自己的仪表台，在游�
 <table>
   <tr>
     <td width="50%" valign="top">
-      <img src="docs/images/maps.png" width="100%" alt="地图：洛杉矶周边，卡车在路上的位置">
+      <img src="images/maps.png" width="100%" alt="地图：洛杉矶周边，卡车在路上的位置">
       <h3>来自你自己游戏的地图</h3>
       由游戏地图生成，含 ProMods 等地图 mod，显示你的路线与逐向引导；搜索目的地会把停靠点加进游戏自带的 GPS。
     </td>
     <td width="50%" valign="top">
-      <img src="docs/images/dashboard.png" width="100%" alt="驾驶仪表盘：地图旁边是正在播放与目的地">
+      <img src="images/dashboard.png" width="100%" alt="驾驶仪表盘：地图旁边是正在播放与目的地">
       <h3>驾驶仪表盘</h3>
       地图旁边是正在播放的音乐和你要去的地方，沿途天气也在，一屏就能看完。
     </td>
   </tr>
   <tr>
     <td width="50%" valign="top">
-      <img src="docs/images/music.png" width="100%" alt="Spotify 的正在播放">
+      <img src="images/music.png" width="100%" alt="Spotify 的正在播放">
       <h3>你的音乐</h3>
       Apple Music、Spotify 与 YouTube Music，带正在播放和歌词；歌曲的 MV 可以直接在正在播放里播；YouTube 有频道、播放列表、字幕与清晰度。Player 播放你放进游戏音乐文件夹里的歌。
     </td>
     <td width="50%" valign="top">
-      <img src="docs/images/home-light.png" width="100%" alt="浅色主题的主屏">
+      <img src="images/home-light.png" width="100%" alt="浅色主题的主屏">
       <h3>深浅色与自定义</h3>
       夜里或开灯时自动转深色，像车上的光线传感器；可以换自己的壁纸与应用图标。
     </td>
@@ -158,6 +158,6 @@ WestPlay 是免费的。本版不设赞助入口，也没有赞助者或致谢�
 
 WestPlay 是自由软件：你可以遵循 GNU 通用公共许可证（GPL）第 3 版或（由你选择）任何更新版本重新发布和修改它。详见 [LICENSE](LICENSE)。
 
-本版随附的第三方库保留各自许可证：见 [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md)，以及 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+本版随附的第三方库保留各自许可证，见安装目录中的 `THIRD_PARTY_LICENSES.md` 与 `THIRD_PARTY_NOTICES.md`。
 
 WestPlay 是独立项目，与 Apple、SCS Software、Spotify、Google 及各卡车厂商无关，也未获其认可。CarPlay、Apple Music、Spotify、YouTube、YouTube Music 以及各厂商名称与标识均为各自所有者的商标，仅用于说明 WestPlay 所支持的对象。
