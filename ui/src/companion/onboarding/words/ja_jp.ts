@@ -174,6 +174,13 @@ export const words: Words = {
     finishInWindow: 'Apple Music のウィンドウでログインを完了してください',
     signingIn: { title: 'Apple Music にログインしています', text: 'Apple Music のウィンドウで続けてください' },
   },
+  /** NetEase Music's sign-in step, as Spotify's (its own page's sign-in, in a window on the desktop). */
+  netease: {
+    title: 'NetEase Music にログイン',
+    sub: '任意です。ログインすると、自分のプレイリストやライブラリの NetEase Music をトラックの画面で聴けます。ログインは NetEase Music の別ウィンドウで行うため、WestPlay がアカウント情報を見ることはありません。',
+    finishInWindow: 'NetEase Music のウィンドウでログインを完了してください',
+    signingIn: { title: 'NetEase Music にログインしています', text: 'NetEase Music のウィンドウで続けてください' },
+  },
   launch: {
     title: '準備が整いました',
     done: '完了',

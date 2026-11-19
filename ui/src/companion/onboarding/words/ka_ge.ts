@@ -177,6 +177,13 @@ export const words: Words = {
     finishInWindow: 'დაასრულეთ შესვლა Apple Music-ის ფანჯარაში',
     signingIn: { title: 'Apple Music-ში შესვლა', text: 'გააგრძელეთ Apple Music-ის ფანჯარაში' },
   },
+  /** NetEase Music's sign-in step, as Spotify's (its own page's sign-in, in a window on the desktop). */
+  netease: {
+    title: 'NetEase Music-ში შესვლა',
+    sub: 'არასავალდებულოა. შედით, რომ სატვირთოს ეკრანზე NetEase Music მოუსმინოთ საკუთარი ფლეილისტებითა და ბიბლიოთეკით. NetEase Music-ში ცალკე ფანჯარაში შედიხართ და WestPlay თქვენს ანგარიშს ვერასდროს ხედავს.',
+    finishInWindow: 'დაასრულეთ შესვლა NetEase Music-ის ფანჯარაში',
+    signingIn: { title: 'NetEase Music-ში შესვლა', text: 'გააგრძელეთ NetEase Music-ის ფანჯარაში' },
+  },
   launch: {
     title: 'ყველაფერი მზადაა',
     done: 'მზადაა',

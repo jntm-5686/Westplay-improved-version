@@ -17,6 +17,9 @@ import {
   appleMusicCheck,
   appleMusicSignIn,
   appleMusicSignOut,
+  neteaseCheck,
+  neteaseSignIn,
+  neteaseSignOut,
   spotifyCheck,
   spotifySignIn,
   spotifySignOut,
@@ -82,6 +85,7 @@ const STEPS = [
   'accounts',
   'spotify',
   'appleMusic',
+  'netease',
   'tutorial',
 ] as const
 type StepId = (typeof STEPS)[number]
@@ -97,6 +101,7 @@ const POSES: Record<StepId, Pose> = {
   accounts: 'side',
   spotify: 'side',
   appleMusic: 'side',
+  netease: 'side',
   tutorial: 'final',
 }
 
@@ -307,6 +312,7 @@ export function Onboarding({
             {step === 'accounts' && <Accounts status={status} next={next} back={back} />}
             {step === 'spotify' && <ServiceSignIn service="spotify" status={status} next={next} back={back} />}
             {step === 'appleMusic' && <ServiceSignIn service="appleMusic" status={status} next={next} back={back} />}
+            {step === 'netease' && <ServiceSignIn service="netease" status={status} next={next} back={back} />}
             {step === 'tutorial' && <TutorialIntro code={code} finish={finish} back={back} />}
             {over}
           </ScreenContext.Provider>
@@ -978,9 +984,9 @@ function Accounts({ status, next, back }: { status: HostStatus | null; next(): v
   )
 }
 
-/** Spotify's and Apple Music's sign-ins, as YouTube's: the service's own page in a window on the desktop, its
- * app on the screen meanwhile. Their buttons and states are YouTube's step's words; their own say what each
- * is for. */
+/** Spotify's, Apple Music's and NetEase Music's sign-ins, as YouTube's: the service's own page in a window on
+ * the desktop (NetEase's is its official page's own sign-in), its app on the screen meanwhile. Their buttons
+ * and states are YouTube's step's words; their own say what each is for. */
 const SERVICE_STEPS = {
   spotify: {
     name: 'Spotify',
@@ -1001,6 +1007,16 @@ const SERVICE_STEPS = {
     check: appleMusicCheck,
     signIn: appleMusicSignIn,
     signOut: appleMusicSignOut,
+  },
+  netease: {
+    name: 'NetEase Music',
+    app: 'netease',
+    glow: GLOW.netease,
+    signedIn: (status: HostStatus | null) => status?.neteaseSignedIn,
+    signingIn: (status: HostStatus | null) => status?.neteaseSigningIn ?? false,
+    check: neteaseCheck,
+    signIn: neteaseSignIn,
+    signOut: neteaseSignOut,
   },
 } as const
 

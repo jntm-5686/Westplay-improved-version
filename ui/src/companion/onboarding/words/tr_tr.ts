@@ -176,6 +176,13 @@ export const words: Words = {
     finishInWindow: 'Girişi Apple Music penceresinde tamamla',
     signingIn: { title: 'Apple Music’te oturum açılıyor', text: 'Apple Music penceresinden devam et' },
   },
+  /** NetEase Music's sign-in step, as Spotify's (its own page's sign-in, in a window on the desktop). */
+  netease: {
+    title: 'NetEase Music’te oturum aç',
+    sub: 'İstersen. Oturum açarsan çalma listelerin ve arşivinle NetEase Music çekicinin ekranına gelir. NetEase Music’e ayrı bir pencerede giriş yaparsın; WestPlay hesap bilgilerini hiç görmez.',
+    finishInWindow: 'Girişi NetEase Music penceresinde tamamla',
+    signingIn: { title: 'NetEase Music’te oturum açılıyor', text: 'NetEase Music penceresinden devam et' },
+  },
   launch: {
     title: 'Her şey hazır',
     done: 'Bitti',

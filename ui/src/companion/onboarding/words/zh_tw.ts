@@ -172,6 +172,13 @@ export const words: Words = {
     finishInWindow: '請在 Apple Music 視窗中完成登入',
     signingIn: { title: '正在登入 Apple Music', text: '請在 Apple Music 視窗中繼續' },
   },
+  /** NetEase Music's sign-in step, as Spotify's (its own page's sign-in, in a window on the desktop). */
+  netease: {
+    title: '登入網易雲音樂',
+    sub: '可選。登入後就能在車機螢幕上聽自己的歌單和每日推薦。登入在電腦上的網易雲音樂視窗裡進行（同一入口也在伴生程式的帳戶頁），WestPlay 看不到你的帳戶資訊。',
+    finishInWindow: '請在網易雲音樂視窗裡完成登入',
+    signingIn: { title: '正在登入網易雲音樂', text: '請在網易雲音樂視窗裡繼續' },
+  },
   launch: {
     title: '一切就緒',
     done: '完成',

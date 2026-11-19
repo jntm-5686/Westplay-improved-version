@@ -176,6 +176,13 @@ export const words: Words = {
     finishInWindow: 'Remata de iniciar sesión na xanela de Apple Music',
     signingIn: { title: 'Iniciando sesión en Apple Music', text: 'Continúa na xanela de Apple Music' },
   },
+  /** NetEase Music's sign-in step, as Spotify's (its own page's sign-in, in a window on the desktop). */
+  netease: {
+    title: 'Inicia sesión en NetEase Music',
+    sub: 'Opcional. Inicia sesión para escoitar NetEase Music na pantalla do camión, coas túas listas e a túa biblioteca. A sesión iníciase nunha xanela á parte de NetEase Music, e WestPlay nunca ve os datos da túa conta.',
+    finishInWindow: 'Remata de iniciar sesión na xanela de NetEase Music',
+    signingIn: { title: 'Iniciando sesión en NetEase Music', text: 'Continúa na xanela de NetEase Music' },
+  },
   launch: {
     title: 'Todo listo',
     done: 'Feito',

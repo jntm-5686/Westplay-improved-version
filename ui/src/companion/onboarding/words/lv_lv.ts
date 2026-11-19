@@ -179,6 +179,13 @@ export const words: Words = {
     finishInWindow: 'Pabeidz pierakstīšanos Apple Music logā',
     signingIn: { title: 'Pierakstīšanās Apple Music', text: 'Turpini Apple Music logā' },
   },
+  /** NetEase Music's sign-in step, as Spotify's (its own page's sign-in, in a window on the desktop). */
+  netease: {
+    title: 'Pierakstīšanās NetEase Music',
+    sub: 'Nav obligāti. Kad pierakstīsies, NetEase Music skanēs automobiļa ekrānā ar taviem atskaņošanas sarakstiem un bibliotēku. NetEase Music kontā pierakstās atsevišķā logā, un WestPlay tavus pierakstīšanās datus nekad neredz.',
+    finishInWindow: 'Pabeidz pierakstīšanos NetEase Music logā',
+    signingIn: { title: 'Pierakstīšanās NetEase Music', text: 'Turpini NetEase Music logā' },
+  },
   launch: {
     title: 'Viss gatavs',
     done: 'Gatavs',

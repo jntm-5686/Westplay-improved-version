@@ -9,6 +9,8 @@ import {
   type HostStatus,
   appleMusicSignIn,
   appleMusicSignOut,
+  neteaseSignIn,
+  neteaseSignOut,
   spotifySignIn,
   spotifySignOut,
   youtubeSignIn,
@@ -57,9 +59,19 @@ const SERVICES: Record<
     signingIn: (status) => status?.appleMusicSigningIn ?? false,
     words: (words) => words.appleMusic,
   },
+  netease: {
+    name: 'NetEase Music',
+    app: 'netease',
+    glow: GLOW.netease,
+    signIn: neteaseSignIn,
+    signOut: neteaseSignOut,
+    signingIn: (status) => status?.neteaseSigningIn ?? false,
+    // Its onboarding step's words: what it's for, and where its own sign-in finishes.
+    words: (words) => words.netease,
+  },
 }
 
-const ORDER: Service[] = ['youtube', 'spotify', 'appleMusic']
+const ORDER: Service[] = ['youtube', 'spotify', 'appleMusic', 'netease']
 
 /**
  * The services WestPlay plays from, each signed in (in its own window, on the desktop) or not. WestPlay only

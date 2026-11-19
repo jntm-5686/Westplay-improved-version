@@ -21,6 +21,7 @@ mod lyrics;
 mod map_process;
 pub mod maps;
 mod music_folder;
+mod netease;
 mod performance;
 mod planner;
 mod play_log;
@@ -123,6 +124,10 @@ pub struct Status {
     /// window open.
     pub apple_music_signed_in: Option<bool>,
     pub apple_music_signing_in: bool,
+    /// The same of NetEase Cloud Music: signed in or not (`None`: not known, NetEase not run yet), its sign-in
+    /// (QR code) window open.
+    pub netease_signed_in: Option<bool>,
+    pub netease_signing_in: bool,
     /// The map of the profile played: ready, being built, waiting for the game to close...
     pub map: maps::MapStatus,
     /// The map the cab shows: its folder in WestPlay's maps, and when it was built (the companion's
@@ -134,13 +139,14 @@ pub struct Status {
     pub error: Option<String>,
 }
 
-/// The companion window's requests to sign YouTube, Spotify or Apple Music in or out (or to know whether it
-/// is), from any thread, for the host to carry out as the cab's apps would.
+/// The companion window's requests to sign YouTube, Spotify, Apple Music or NetEase Cloud Music in or out (or to
+/// know whether it is), from any thread, for the host to carry out as the cab's apps would.
 #[derive(Debug, Default)]
 pub struct AccountRequests {
     pub youtube: AccountRequest,
     pub spotify: AccountRequest,
     pub apple_music: AccountRequest,
+    pub netease: AccountRequest,
 }
 
 /// One service's request, the latest not carried out yet.
@@ -217,7 +223,8 @@ pub struct Config {
     pub data_dir: PathBuf,
     /// Requests to open or close WestPlay on the truck's screen, from any thread.
     pub open_request: Arc<OpenRequest>,
-    /// Signing YouTube or Spotify in or out (or finding out whether it is), from the companion window.
+    /// Signing YouTube, Spotify, Apple Music or NetEase Cloud Music in or out (or finding out whether it is),
+    /// from the companion window.
     pub accounts: Arc<AccountRequests>,
     /// Called on the host thread about once per second, and right after WestPlay opens or closes.
     pub on_status: Box<dyn FnMut(&Status) + Send>,
@@ -442,6 +449,11 @@ pub fn run(mut config: Config, stop: Arc<AtomicBool>) -> Result<(), Error> {
     let mut apple_music_state: Option<apple_music::State> = None;
     let (mut apple_music_window_open, mut apple_music_confirming) = (false, false);
     let mut apple_music_playback: Option<String> = None;
+    // NetEase Cloud Music's web player, the same way (on a WebView2 profile of its own: signing out forgets
+    // NetEase's cookies alone).
+    let mut netease: Option<netease::Netease> = None;
+    let mut netease_state: Option<netease::State> = None;
+    let (mut netease_window_open, mut netease_confirming) = (false, false);
     // YouTube Music's web player, the same way (on the cabin page's profile, sharing YouTube's sign-in).
     let mut youtube_music: Option<youtube_music::YouTubeMusic> = None;
     let mut youtube_music_state: Option<youtube_music::State> = None;
@@ -529,8 +541,8 @@ pub fn run(mut config: Config, stop: Arc<AtomicBool>) -> Result<(), Error> {
         if let Some(open) = config.open_request.take() {
             let _ = webview.post_json(&westplay_message(open));
         }
-        // The companion's YouTube, Spotify and Apple Music sign-ins or sign-outs, as the cab's would be (or only
-        // running it, to know whether it's signed in).
+        // The companion's YouTube, Spotify, Apple Music and NetEase Cloud Music sign-ins or sign-outs, as the
+        // cab's would be (or only running it, to know whether it's signed in).
         if let Some(action) = config.accounts.youtube.take()
             && let Some(player) = start_youtube(&mut youtube, &stage, &config)
         {
@@ -562,6 +574,15 @@ pub fn run(mut config: Config, stop: Arc<AtomicBool>) -> Result<(), Error> {
                 AccountAction::SignIn => apple_music::Command::SignIn,
                 AccountAction::SignOut => apple_music::Command::SignOut,
                 AccountAction::Check => apple_music::Command::Start,
+            });
+        }
+        if let Some(action) = config.accounts.netease.take()
+            && let Some(player) = start_netease(&mut netease, &stage, &config)
+        {
+            let _ = player.command(&match action {
+                AccountAction::SignIn => netease::Command::SignIn,
+                AccountAction::SignOut => netease::Command::SignOut,
+                AccountAction::Check => netease::Command::Start,
             });
         }
 
@@ -695,6 +716,9 @@ pub fn run(mut config: Config, stop: Arc<AtomicBool>) -> Result<(), Error> {
                 }
                 if let Some(apple_music) = &apple_music {
                     profiles.push((performance::Profile::AppleMusic, apple_music.view().environment()));
+                }
+                if let Some(netease) = &netease {
+                    profiles.push((performance::Profile::Netease, netease.view().environment()));
                 }
                 let sample = status.game_connected.then(|| performance::Sample {
                     game_frames: plugin.heartbeat.load(Ordering::Relaxed),
@@ -897,6 +921,11 @@ pub fn run(mut config: Config, stop: Arc<AtomicBool>) -> Result<(), Error> {
                             let _ = webview.post_json(playback);
                         }
                     }
+                    if netease.is_some() {
+                        let signing_in = netease_window_open || netease_confirming;
+                        let message = netease::state_message(netease_state.as_ref(), signing_in);
+                        let _ = webview.post_json(&message);
+                    }
                     if youtube_music.is_some() {
                         let signing_in = youtube_music_window_open || youtube_music_confirming;
                         let message = youtube_music::state_message(youtube_music_state.as_ref(), signing_in);
@@ -1023,6 +1052,13 @@ pub fn run(mut config: Config, stop: Arc<AtomicBool>) -> Result<(), Error> {
                         {
                             let _ = youtube.reload();
                         }
+                    }
+                }
+                Some(PageMessage::Netease { command }) => {
+                    if netease.is_none() && matches!(command, netease::Command::Pause) {
+                        // Nothing to pause: NetEase Cloud Music isn't running.
+                    } else if let Some(player) = start_netease(&mut netease, &stage, &config) {
+                        let _ = player.command(&command);
                     }
                 }
                 Some(PageMessage::Player { command }) => {
@@ -1485,6 +1521,67 @@ pub fn run(mut config: Config, stop: Arc<AtomicBool>) -> Result<(), Error> {
             }
         }
 
+        // What NetEase Cloud Music's page says (signed in, playing, what plays, a playlist's songs) and its
+        // sign-in window, for the page; its WebView failing closes it (the page opens it again).
+        if let Some(player) = &netease {
+            if player.failed() || players_closing {
+                if players_closing {
+                    log!("[netease] closed with the game");
+                } else {
+                    log!("[netease] its browser failed: closed, the page opens it again");
+                }
+                if let Some(failed) = netease.take() {
+                    failed.close(&stage);
+                }
+                netease_state = None;
+                (netease_window_open, netease_confirming) = (false, false);
+                status.netease_signed_in = None;
+                status.netease_signing_in = false;
+                (config.on_status)(&status);
+                let _ = webview.post_json(&netease::state_message(None, false));
+            } else {
+                let mut state_changed = false;
+                for report in player.take_reports() {
+                    match report {
+                        netease::Report::Spectrum(bars) => {
+                            let _ = webview.post_json(&speakers::spectrum_message(&bars));
+                        }
+                        netease::Report::State(state) => {
+                            if status.netease_signed_in != Some(state.signed_in) {
+                                status.netease_signed_in = Some(state.signed_in);
+                                (config.on_status)(&status);
+                            }
+                            netease_state = Some(state);
+                            state_changed = true;
+                        }
+                        // A playlist's songs go straight on to the page (never logged).
+                        netease::Report::Playlist(songs) => {
+                            let _ = webview.post_json(&netease::playlist_message(&songs));
+                        }
+                        netease::Report::SignInWindow(open) => {
+                            netease_window_open = open;
+                            state_changed = true;
+                        }
+                        // The cab shows it signing in until the page here says it's signed in (not signed out
+                        // for a moment as it loads again).
+                        netease::Report::Confirming(confirming) => {
+                            netease_confirming = confirming;
+                            state_changed = true;
+                        }
+                    }
+                }
+                if state_changed {
+                    let signing_in = netease_window_open || netease_confirming;
+                    if status.netease_signing_in != signing_in {
+                        status.netease_signing_in = signing_in;
+                        (config.on_status)(&status);
+                    }
+                    let message = netease::state_message(netease_state.as_ref(), signing_in);
+                    let _ = webview.post_json(&message);
+                }
+            }
+        }
+
         // What Player's page says, for the page; its WebView failing closes it, as the game closing does.
         if let Some(player) = &music_player {
             if player.failed() || players_closing {
@@ -1716,6 +1813,10 @@ pub fn run(mut config: Config, stop: Arc<AtomicBool>) -> Result<(), Error> {
                 let _ = player.menu(menu_up);
             }
             if let Some(player) = &spotify {
+                let _ = player.cab(truck_speakers, head, outside, distance, equalizer, spectrum);
+                let _ = player.menu(menu_up);
+            }
+            if let Some(player) = &netease {
                 let _ = player.cab(truck_speakers, head, outside, distance, equalizer, spectrum);
                 let _ = player.menu(menu_up);
             }
@@ -2191,6 +2292,26 @@ fn start_apple_music<'a>(
     apple_music.as_ref()
 }
 
+/// NetEase Cloud Music's web player, started as the page first shows it (on a WebView2 profile of its own:
+/// signing out of NetEase forgets nothing else), or `None` if it couldn't start.
+fn start_netease<'a>(
+    netease: &'a mut Option<netease::Netease>,
+    stage: &Stage,
+    config: &Config,
+) -> Option<&'a netease::Netease> {
+    if netease.is_none() {
+        let user_data = config.data_dir.join("webview2-netease");
+        match netease::Netease::start(stage, config.width, config.height, &user_data) {
+            Ok(started) => {
+                log!("[netease] opened");
+                *netease = Some(started)
+            }
+            Err(e) => startup::mark(&format!("host: NetEase Cloud Music couldn't start: {e}")),
+        }
+    }
+    netease.as_ref()
+}
+
 /// Player's own player, started as the page first plays (on the cabin page's profile, as YouTube Music's), the
 /// songs of `music` served to it; or `None` if it couldn't start.
 fn start_music_player<'a>(
@@ -2445,6 +2566,8 @@ enum PageMessage {
     AppleMusic { command: apple_music::Command },
     /// A command for YouTube Music's web player (`youtubeMusic`): its sign-in, a question, its controls.
     YoutubeMusic { command: youtube_music::Command },
+    /// A command for NetEase Cloud Music's web player (`netease`): its sign-in, its controls, a playlist's songs.
+    Netease { command: netease::Command },
     /// A command for Player's own player (`player`): what to play from the music folder, its controls.
     Player { command: music_folder::Command },
     /// What the Safari app asks of its pages (`safari`): a tab shown, loaded, typed into, and so on.
@@ -2876,10 +2999,13 @@ mod tests {
         requests.youtube.request(AccountAction::SignOut);
         requests.youtube.request(AccountAction::SignIn);
         requests.spotify.request(AccountAction::Check);
+        requests.netease.request(AccountAction::SignIn);
         assert_eq!(requests.youtube.take(), Some(AccountAction::SignIn));
         assert_eq!(requests.youtube.take(), None);
         assert_eq!(requests.spotify.take(), Some(AccountAction::Check));
         assert_eq!(requests.spotify.take(), None);
+        assert_eq!(requests.netease.take(), Some(AccountAction::SignIn));
+        assert_eq!(requests.netease.take(), None);
         // The companion hears whether YouTube is signed in, and nothing more of the account.
         let status = super::Status { youtube_signed_in: Some(true), youtube_signing_in: false, ..Default::default() };
         let json = serde_json::to_value(&status).unwrap();
@@ -2892,6 +3018,36 @@ mod tests {
         let json = serde_json::to_value(&status).unwrap();
         let apple_music = (json["appleMusicSignedIn"].as_bool(), json["appleMusicSigningIn"].as_bool());
         assert_eq!(apple_music, (Some(true), Some(true)));
+        let status = super::Status { netease_signed_in: None, netease_signing_in: true, ..Default::default() };
+        let json = serde_json::to_value(&status).unwrap();
+        assert_eq!((json["neteaseSignedIn"].is_null(), json["neteaseSigningIn"].as_bool()), (true, Some(true)));
+    }
+
+    /// The NetEase app's own protocol (`netease` in ui/src/shared/host.ts): its commands read as the host's, its
+    /// `kind` (the app's own) not in the way; anything else is no message at all.
+    #[test]
+    fn reads_the_netease_apps_commands() {
+        let message = parse_page_message(
+            r#"{"type":"netease","kind":"command","command":{"action":"openPlaylist","value":"456"}}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            message,
+            PageMessage::Netease { command: super::netease::Command::OpenPlaylist { value: "456".into() } }
+        );
+        assert_eq!(
+            parse_page_message(r#"{"type":"netease","kind":"command","command":{"action":"play","value":"12"}}"#)
+                .unwrap(),
+            PageMessage::Netease { command: super::netease::Command::Play { value: Some("12".into()) } }
+        );
+        assert_eq!(
+            parse_page_message(r#"{"type":"netease","kind":"command","command":{"action":"start"}}"#).unwrap(),
+            PageMessage::Netease { command: super::netease::Command::Start }
+        );
+        // A command NetEase's page doesn't know: no message (never a guess).
+        assert!(parse_page_message(r#"{"type":"netease","kind":"command","command":{"action":"explode"}}"#).is_none());
+        // Its state (the host's to the cabin page) is no command of the cabin page's: nothing to carry out.
+        assert!(parse_page_message(r#"{"type":"netease","kind":"state","state":{}}"#).is_none());
     }
 
     #[test]

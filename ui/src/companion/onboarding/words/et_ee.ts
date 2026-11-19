@@ -176,6 +176,13 @@ export const words: Words = {
     finishInWindow: 'Vii sisselogimine Apple Musicu aknas lõpule',
     signingIn: { title: 'Apple Musicu sisselogimine', text: 'Jätka Apple Musicu aknas' },
   },
+  /** NetEase Music's sign-in step, as Spotify's (its own page's sign-in, in a window on the desktop). */
+  netease: {
+    title: 'NetEase Musicu sisselogimine',
+    sub: 'Pole kohustuslik. Kui logid sisse, mängib NetEase Music veoki ekraanil sinu esitusloendite ja koguga. NetEase Musicusse logid sisse eraldi aknas ja WestPlay sinu sisselogimisandmeid kunagi ei näe.',
+    finishInWindow: 'Vii sisselogimine NetEase Musicu aknas lõpule',
+    signingIn: { title: 'NetEase Musicu sisselogimine', text: 'Jätka NetEase Musicu aknas' },
+  },
   launch: {
     title: 'Kõik on valmis',
     done: 'Valmis',

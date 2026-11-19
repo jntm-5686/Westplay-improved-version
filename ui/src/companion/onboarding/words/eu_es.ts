@@ -176,6 +176,13 @@ export const words: Words = {
     finishInWindow: 'Amaitu saio-hasiera Apple Music-en leihoan',
     signingIn: { title: 'Apple Music-en saioa hasten', text: 'Jarraitu Apple Music-en leihoan' },
   },
+  /** NetEase Music's sign-in step, as Spotify's (its own page's sign-in, in a window on the desktop). */
+  netease: {
+    title: 'Hasi saioa NetEase Music-en',
+    sub: 'Aukerakoa. Hasi saioa NetEase Music kamioiaren pantailan entzuteko, zure zerrenda eta liburutegiarekin. Saioa NetEase Music-en leiho bereizi batean hasten da, eta WestPlay-k ez ditu inoiz zure kontuaren datuak ikusten.',
+    finishInWindow: 'Amaitu saio-hasiera NetEase Music-en leihoan',
+    signingIn: { title: 'NetEase Music-en saioa hasten', text: 'Jarraitu NetEase Music-en leihoan' },
+  },
   launch: {
     title: 'Dena prest dago',
     done: 'Eginda',

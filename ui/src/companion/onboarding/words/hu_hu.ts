@@ -177,6 +177,13 @@ export const words: Words = {
     finishInWindow: 'Fejezd be a bejelentkezést az Apple Music-ablakban',
     signingIn: { title: 'Bejelentkezés az Apple Musicba', text: 'Folytasd az Apple Music-ablakban' },
   },
+  /** NetEase Music's sign-in step, as Spotify's (its own page's sign-in, in a window on the desktop). */
+  netease: {
+    title: 'Bejelentkezés az NetEase Musicba',
+    sub: 'Nem kötelező. Bejelentkezés után a kamion képernyőjén NetEase Musicot hallgathatsz a saját playlistjeiddel és könyvtáraddal. Az NetEase Music-bejelentkezés külön ablakban történik, a WestPlay nem fér hozzá a fiókodhoz.',
+    finishInWindow: 'Fejezd be a bejelentkezést az NetEase Music-ablakban',
+    signingIn: { title: 'Bejelentkezés az NetEase Musicba', text: 'Folytasd az NetEase Music-ablakban' },
+  },
   launch: {
     title: 'Minden kész',
     done: 'Kész',

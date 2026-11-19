@@ -7,6 +7,7 @@ import { CalendarApp } from './calendar/CalendarApp'
 import { useLanguage, useText } from '../state/text'
 import { isCopied, noteOpened, openedBefore, saveCopy, savedCopy } from './launchCopies'
 import { MusicApp } from './music/MusicApp'
+import { NeteaseApp } from './netease/NeteaseApp'
 import { PlayerApp } from './player/PlayerApp'
 import { SafariApp } from './safari/SafariApp'
 import { SettingsApp } from './settings/SettingsApp'
@@ -84,6 +85,8 @@ function AppContent({ app }: { app: AppId }) {
       return <YouTubeApp />
     case 'spotify':
       return <SpotifyApp />
+    case 'netease':
+      return <NeteaseApp />
     case 'youtubeMusic':
       return <YouTubeMusicApp />
     case 'settings':

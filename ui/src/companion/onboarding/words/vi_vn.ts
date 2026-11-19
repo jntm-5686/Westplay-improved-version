@@ -173,6 +173,13 @@ export const words: Words = {
     finishInWindow: 'Hoàn tất đăng nhập trong cửa sổ Apple Music',
     signingIn: { title: 'Đang đăng nhập Apple Music', text: 'Tiếp tục trong cửa sổ Apple Music' },
   },
+  /** NetEase Music's sign-in step, as Spotify's (its own page's sign-in, in a window on the desktop). */
+  netease: {
+    title: 'Đăng nhập NetEase Music',
+    sub: 'Không bắt buộc. Đăng nhập để nghe NetEase Music trên màn hình xe tải, với danh sách phát và thư viện của riêng bạn. Bạn đăng nhập NetEase Music trong một cửa sổ riêng, và WestPlay không bao giờ thấy tài khoản của bạn.',
+    finishInWindow: 'Hoàn tất đăng nhập trong cửa sổ NetEase Music',
+    signingIn: { title: 'Đang đăng nhập NetEase Music', text: 'Tiếp tục trong cửa sổ NetEase Music' },
+  },
   launch: {
     title: 'Mọi thứ đã sẵn sàng',
     done: 'Xong',

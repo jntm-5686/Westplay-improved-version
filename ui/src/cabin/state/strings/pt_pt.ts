@@ -508,6 +508,7 @@ export const strings: Strings = {
     maps: 'Mapas',
     music: 'Música',
     spotify: 'Spotify',
+    netease: 'NetEase Music',
     youtube: 'YouTube',
     youtubeMusic: 'YouTube Music',
     player: 'Player',

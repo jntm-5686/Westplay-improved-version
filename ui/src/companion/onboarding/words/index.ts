@@ -184,6 +184,13 @@ export interface Words {
     finishInWindow: string
     signingIn: Note
   }
+  /** NetEase Music's sign-in step, as Spotify's (its own page's sign-in, in a window on the desktop). */
+  netease: {
+    title: string
+    sub: string
+    finishInWindow: string
+    signingIn: Note
+  }
   launch: {
     title: string
     done: string

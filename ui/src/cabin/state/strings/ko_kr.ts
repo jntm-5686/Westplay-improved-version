@@ -494,6 +494,7 @@ export const strings: Strings = {
     maps: '지도',
     music: '음악',
     spotify: 'Spotify',
+    netease: 'NetEase Music',
     youtube: 'YouTube',
     youtubeMusic: 'YouTube Music',
     player: 'Player',

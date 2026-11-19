@@ -32,7 +32,7 @@ struct Host {
 /// key and W; the host reports it back in its status).
 struct WestplayOpen(Arc<OpenRequest>);
 
-/// The companion's sign-ins and sign-outs (YouTube, Spotify, Apple Music), for the host.
+/// The companion's sign-ins and sign-outs (YouTube, Spotify, Apple Music, NetEase Cloud Music), for the host.
 struct Accounts(Arc<AccountRequests>);
 
 /// The player's settings: kept on disk, applied live by the host thread, changed from the companion window.
@@ -125,6 +125,25 @@ fn apple_music_sign_out(accounts: State<Accounts>) {
 #[tauri::command]
 fn apple_music_check(accounts: State<Accounts>) {
     accounts.0.apple_music.request(AccountAction::Check);
+}
+
+/// Opens NetEase Cloud Music's sign-in (its QR code dialog) in a window on the desktop (the status then says when
+/// it's done).
+#[tauri::command]
+fn netease_sign_in(accounts: State<Accounts>) {
+    accounts.0.netease.request(AccountAction::SignIn);
+}
+
+/// Signs NetEase Cloud Music out.
+#[tauri::command]
+fn netease_sign_out(accounts: State<Accounts>) {
+    accounts.0.netease.request(AccountAction::SignOut);
+}
+
+/// Runs NetEase Cloud Music's web player (hidden), so the status says whether it's signed in.
+#[tauri::command]
+fn netease_check(accounts: State<Accounts>) {
+    accounts.0.netease.request(AccountAction::Check);
 }
 
 /// The maker's Afdian (爱发电) page, where players support WestPlay's development.
@@ -223,6 +242,9 @@ fn main() {
             apple_music_sign_in,
             apple_music_sign_out,
             apple_music_check,
+            netease_sign_in,
+            netease_sign_out,
+            netease_check,
             open_support_page,
             open_social,
             app_log_place,

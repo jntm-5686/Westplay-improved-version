@@ -500,6 +500,7 @@ export const strings: Strings = {
     maps: 'Kaarten',
     music: 'Muziek',
     spotify: 'Spotify',
+    netease: 'NetEase Music',
     youtube: 'YouTube',
     youtubeMusic: 'YouTube Music',
     player: 'Player',

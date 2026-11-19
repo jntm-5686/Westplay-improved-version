@@ -178,6 +178,13 @@ export const words: Words = {
     finishInWindow: 'Užbaik prisijungimą „Apple Music“ lange',
     signingIn: { title: 'Jungiamasi prie „Apple Music“', text: 'Tęsk „Apple Music“ lange' },
   },
+  /** NetEase Music's sign-in step, as Spotify's (its own page's sign-in, in a window on the desktop). */
+  netease: {
+    title: 'Prisijunk prie „NetEase Music“',
+    sub: 'Neprivaloma. Prisijungus „NetEase Music“ groja sunkvežimio ekrane su tavo grojaraščiais ir biblioteka. Prie „NetEase Music“ jungiesi atskirame lange, o WestPlay tavo prisijungimo duomenų niekada nemato.',
+    finishInWindow: 'Užbaik prisijungimą „NetEase Music“ lange',
+    signingIn: { title: 'Jungiamasi prie „NetEase Music“', text: 'Tęsk „NetEase Music“ lange' },
+  },
   launch: {
     title: 'Viskas paruošta',
     done: 'Atlikta',

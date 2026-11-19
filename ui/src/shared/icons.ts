@@ -10,6 +10,7 @@ export type AppIconRole =
   | 'maps'
   | 'music'
   | 'spotify'
+  | 'netease'
   | 'podcasts'
   | 'messages'
   | 'phone'
@@ -26,6 +27,7 @@ const FILES: Record<AppIconRole, string> = {
   maps: 'maps',
   music: 'music',
   spotify: 'spotify',
+  netease: 'netease',
   podcasts: 'podcasts',
   messages: 'messages',
   phone: 'phone',
@@ -51,6 +53,7 @@ const GLASS: Partial<Record<AppIconRole, string>> = {
   weather: 'glass-weather.png',
   settings: 'glass-settings.png',
   spotify: 'glass-spotify.png',
+  netease: 'glass-netease.png',
   youtube: 'glass-youtube.png',
   youtubeMusic: 'glass-youtubeMusic.png',
   player: 'glass-player.png',

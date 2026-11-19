@@ -438,9 +438,17 @@ function SectionList({
     controls: keyName,
     customize: '',
     accounts:
-      signedIn.youtube === null && signedIn.spotify === null && signedIn.appleMusic === null
+      signedIn.youtube === null &&
+      signedIn.spotify === null &&
+      signedIn.appleMusic === null &&
+      signedIn.netease === null
         ? ''
-        : [signedIn.youtube && 'YouTube', signedIn.spotify && 'Spotify', signedIn.appleMusic && 'Apple Music']
+        : [
+            signedIn.youtube && 'YouTube',
+            signedIn.spotify && 'Spotify',
+            signedIn.appleMusic && 'Apple Music',
+            signedIn.netease && 'NetEase Music',
+          ]
             .filter(Boolean)
             .join(', ') || cw.values.none,
     map: mapValue(status, mapProgress, cw, words),

@@ -1,0 +1,2149 @@
+/* The NetEase Cloud Music app (NeteaseApp.tsx): NetEase's desktop player as WestPlay draws it for the cab —
+   a rail at the left, the pages at its right, the player bar along the foot. Light and dark follow the cab's
+   appearance (the shell's `appearance-light`); the style switch picks WestPlay's own neutral look or NetEase's
+   red. Sized for a truck's screen and read from across the cab: titles 32–36 px, body text 20–24 px, three or
+   four cards a screen. Every rule is scoped to the app, so the cab's own defaults never come through. */
+
+.netease-app {
+  /* --- Follow WestPlay: its surfaces, its text, the contrast for what's on ------------------------------ */
+  --ne-accent: var(--text);
+  --ne-on-accent: var(--app-background);
+  --ne-accent-soft: color-mix(in srgb, var(--text) 14%, transparent);
+  --ne-app-bg: var(--app-background);
+  --ne-surface: color-mix(in srgb, var(--text) 7%, transparent);
+  --ne-surface-strong: color-mix(in srgb, var(--text) 11%, transparent);
+  --ne-hover: color-mix(in srgb, var(--text) 10%, transparent);
+  --ne-line: color-mix(in srgb, var(--text) 13%, transparent);
+  --ne-text: var(--text);
+  --ne-dim: var(--text-dim);
+  --ne-warn: #ffd166;
+  --ne-brand-mark: #fff;
+  --ne-player-bg: var(--ne-surface-strong);
+  --ne-shadow: var(--shadow-raised);
+  --ne-shadow-large: var(--shadow-raised-large);
+
+  /* --- Type: one scale, read from the driver's seat --------------------------------------------------- */
+  --ne-type-title: calc(34px * var(--text-scale, 1));
+  --ne-type-section: calc(30px * var(--text-scale, 1));
+  --ne-type-heading: calc(26px * var(--text-scale, 1));
+  --ne-type-body: calc(22px * var(--text-scale, 1));
+  --ne-type-label: calc(20px * var(--text-scale, 1));
+  --ne-type-small: calc(18px * var(--text-scale, 1));
+  --ne-type-caption: calc(15px * var(--text-scale, 1));
+
+  /* --- Corners and motion ----------------------------------------------------------------------------- */
+  --ne-radius: 14px;
+  --ne-radius-large: 20px;
+  --ne-ease: var(--motion-ease);
+  --ne-quick: 180ms;
+  --ne-move: 440ms;
+
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px 18px 14px;
+  border-radius: var(--panel-radius);
+  background: var(--ne-app-bg);
+  color: var(--ne-text);
+  font-family:
+    'Instrument Sans Variable', 'Inter Variable', 'PingFang SC', 'Microsoft YaHei UI', 'Noto Sans SC', sans-serif;
+  overflow: hidden;
+  container-type: size;
+}
+
+/* NetEase's red, on its own warm surfaces (the style switch's second choice). */
+.netease-app[data-style='red'] {
+  --ne-accent: #e20000;
+  --ne-on-accent: #fff;
+  --ne-accent-soft: rgb(226 0 0 / 0.16);
+  --ne-app-bg: #171214;
+  --ne-surface: #241d1f;
+  --ne-surface-strong: #2d2426;
+  --ne-hover: #352a2c;
+  --ne-line: rgb(255 255 255 / 0.1);
+  --ne-warn: #ff9d8a;
+  --ne-player-bg: #201a1b;
+}
+
+/* .. and in the cab's light appearance. */
+.shell.appearance-light .netease-app[data-style='red'] {
+  --ne-accent: #d40000;
+  --ne-accent-soft: rgb(226 0 0 / 0.1);
+  --ne-app-bg: #f8f4f3;
+  --ne-surface: #ffffff;
+  --ne-surface-strong: #fff4f3;
+  --ne-hover: #ffe9e8;
+  --ne-line: rgb(80 20 20 / 0.13);
+  --ne-text: #1d1415;
+  --ne-dim: rgb(29 20 21 / 0.62);
+  --ne-warn: #a53b00;
+  --ne-player-bg: #ffffff;
+}
+
+.shell.appearance-light .netease-app {
+  --ne-warn: #9a6400;
+  --ne-shadow: 0 1px 2px rgb(0 0 0 / 0.1), 0 6px 18px rgb(0 0 0 / 0.1);
+  --ne-shadow-large: 0 2px 4px rgb(0 0 0 / 0.1), 0 18px 40px rgb(0 0 0 / 0.14);
+}
+
+.netease-app button {
+  color: inherit;
+}
+
+/* --- The frame: rail, pages, player bar ---------------------------------------------------------------- */
+
+.netease-app .ne-layout {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 16px;
+}
+
+.netease-app .ne-main {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* --- The rail ----------------------------------------------------------------------------------------- */
+
+.netease-app .ne-rail {
+  flex: none;
+  width: 238px;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 20px 12px 16px;
+  border-radius: var(--ne-radius-large);
+  background: var(--ne-surface);
+}
+
+.netease-app .ne-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 2px 10px 22px;
+}
+
+.netease-app .ne-brand-mark {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  color: var(--ne-accent);
+}
+
+.netease-app .ne-brand-mark svg {
+  width: 40px;
+  height: 40px;
+}
+
+.netease-app .ne-brand-name {
+  font-size: var(--ne-type-body);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.netease-app .ne-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.netease-app .ne-tab {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  height: 58px;
+  padding-inline: 14px;
+  border-radius: 12px;
+  text-align: left;
+  color: var(--ne-dim);
+  transition:
+    background-color var(--ne-quick),
+    color var(--ne-quick),
+    scale var(--ne-quick) var(--ne-ease);
+}
+
+.netease-app .ne-tab:hover {
+  background: var(--ne-hover);
+  color: var(--ne-text);
+}
+
+.netease-app .ne-tab:active {
+  scale: 0.98;
+}
+
+.netease-app .ne-tab.on {
+  background: var(--ne-accent-soft);
+  color: var(--ne-accent);
+}
+
+.netease-app .ne-tab-glyph {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+}
+
+.netease-app .ne-tab-glyph svg {
+  width: 30px;
+  height: 30px;
+}
+
+.netease-app .ne-tab-label {
+  font-size: var(--ne-type-body);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.netease-app .ne-tab.on .ne-tab-label {
+  font-weight: 700;
+}
+
+/* The foot: the style switch, then the account as the host's page says it. */
+.netease-app .ne-rail-foot {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-top: 18px;
+}
+
+.netease-app .ne-style {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-inline: 4px;
+}
+
+.netease-app .ne-style-title {
+  font-size: var(--ne-type-caption);
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ne-dim);
+}
+
+.netease-app .ne-style-switch {
+  display: flex;
+  gap: 3px;
+  padding: 3px;
+  border-radius: 12px;
+  background: var(--ne-surface-strong);
+}
+
+.netease-app .ne-style-switch button {
+  flex: 1;
+  height: 38px;
+  border-radius: 9px;
+  font-size: var(--ne-type-small);
+  font-weight: 600;
+  color: var(--ne-dim);
+  white-space: nowrap;
+  transition:
+    background-color var(--ne-quick),
+    color var(--ne-quick);
+}
+
+.netease-app .ne-style-switch button.on {
+  background: var(--ne-accent);
+  color: var(--ne-on-accent);
+  font-weight: 700;
+}
+
+.netease-app .ne-status {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: var(--ne-surface-strong);
+}
+
+.netease-app .ne-status-avatar {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--ne-accent-soft);
+  color: var(--ne-accent);
+}
+
+.netease-app .ne-status-avatar svg {
+  width: 24px;
+  height: 24px;
+}
+
+.netease-app .ne-status-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.netease-app .ne-status-text b {
+  font-size: var(--ne-type-small);
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.netease-app .ne-status-text span {
+  font-size: var(--ne-type-caption);
+  color: var(--ne-dim);
+}
+
+.netease-app .ne-status.in .ne-status-text span {
+  color: var(--ne-accent);
+  font-weight: 600;
+}
+
+.netease-app .ne-status.signingIn .ne-status-text span {
+  color: var(--ne-warn);
+  font-weight: 600;
+}
+
+.netease-app .ne-status-hint {
+  margin: 0;
+  padding-inline: 6px;
+  font-size: var(--ne-type-caption);
+  line-height: 1.4;
+  color: var(--ne-dim);
+}
+
+.netease-app .ne-preview-badge {
+  align-self: flex-start;
+  margin-inline: 6px;
+  padding: 3px 12px;
+  border-radius: 999px;
+  background: var(--ne-accent-soft);
+  color: var(--ne-accent);
+  font-size: var(--ne-type-caption);
+  font-weight: 700;
+}
+
+/* --- Layers and what scrolls in them ------------------------------------------------------------------ */
+
+.netease-app .ne-layer {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  animation: ne-fade-in 180ms ease-out;
+}
+
+.netease-app .ne-layer.fresh {
+  animation: ne-page-in var(--ne-move) var(--ne-ease);
+}
+
+/* Kept as it is (its scroll and all), but not laid out or drawn while away. */
+.netease-app .ne-layer.away {
+  visibility: hidden;
+  content-visibility: hidden;
+  animation: none;
+}
+
+@keyframes ne-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes ne-page-in {
+  from {
+    opacity: 0;
+    translate: 30px 0;
+  }
+}
+
+.netease-app .ne-scroll {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+  padding: 2px 6px 18px;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.netease-app .ne-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+/* --- A page's head, and the pills at it ---------------------------------------------------------------- */
+
+.netease-app .ne-page-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 22px;
+}
+
+.netease-app .ne-page-head-text {
+  min-width: 0;
+}
+
+.netease-app .ne-page-head-text h2 {
+  margin: 0;
+  font-size: var(--ne-type-title);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+}
+
+.netease-app .ne-page-head-text p {
+  margin: 8px 0 0;
+  font-size: var(--ne-type-label);
+  font-weight: 500;
+  color: var(--ne-dim);
+}
+
+.netease-app .ne-pill {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  height: 50px;
+  padding-inline: 22px;
+  border-radius: 999px;
+  background: var(--ne-surface);
+  font-size: var(--ne-type-label);
+  font-weight: 600;
+  transition:
+    background-color var(--ne-quick),
+    scale var(--ne-quick) var(--ne-ease);
+}
+
+.netease-app .ne-pill:hover {
+  background: var(--ne-hover);
+}
+
+.netease-app .ne-pill:active {
+  scale: 0.96;
+}
+
+.netease-app .ne-pill svg {
+  width: 24px;
+  height: 24px;
+  color: var(--ne-dim);
+}
+
+.netease-app .ne-round {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: var(--ne-surface);
+  color: var(--ne-text);
+  transition:
+    background-color var(--ne-quick),
+    scale var(--ne-quick) var(--ne-ease);
+}
+
+.netease-app .ne-round:hover {
+  background: var(--ne-hover);
+}
+
+.netease-app .ne-round:active {
+  scale: 0.94;
+}
+
+.netease-app .ne-round svg {
+  width: 28px;
+  height: 28px;
+}
+
+/* --- Covers -------------------------------------------------------------------------------------------- */
+
+.netease-app .ne-cover {
+  position: relative;
+  flex: none;
+  display: block;
+  aspect-ratio: 1;
+  max-width: 100%;
+  overflow: hidden;
+  border-radius: var(--ne-radius);
+  background: var(--ne-surface-strong);
+  container-type: inline-size;
+}
+
+.netease-app .ne-cover img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* A cover the preview (or a page that gave no picture) has none for: a colour, its first letter, a note. */
+.netease-app .ne-cover.drawn {
+  display: grid;
+  place-items: center;
+  background: linear-gradient(150deg, var(--cover), color-mix(in srgb, var(--cover) 52%, #000));
+  color: #fff;
+}
+
+.netease-app .ne-cover.drawn > svg {
+  position: absolute;
+  top: 9%;
+  right: 9%;
+  width: 24%;
+  height: 24%;
+  opacity: 0.45;
+}
+
+.netease-app .ne-cover.drawn b {
+  position: absolute;
+  left: 9cqi;
+  bottom: 5cqi;
+  font-size: 26cqi;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  color: #fff;
+}
+
+/* --- Home's cards -------------------------------------------------------------------------------------- */
+
+.netease-app .ne-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(196px, 1fr));
+  gap: 28px 22px;
+}
+
+.netease-app .ne-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  text-align: left;
+}
+
+.netease-app .ne-card-cover {
+  width: 100%;
+  border-radius: var(--ne-radius);
+  box-shadow: var(--ne-shadow);
+  transition: scale var(--ne-quick) var(--ne-ease);
+}
+
+.netease-app .ne-card:hover .ne-card-cover {
+  scale: 1.02;
+}
+
+.netease-app .ne-card:active .ne-card-cover {
+  scale: 0.98;
+}
+
+.netease-app .ne-card-name {
+  font-size: var(--ne-type-body);
+  font-weight: 700;
+  line-height: 1.25;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: break-word;
+}
+
+.netease-app .ne-card-plays {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--ne-type-small);
+  font-weight: 500;
+  color: var(--ne-dim);
+}
+
+.netease-app .ne-card-plays svg {
+  width: 15px;
+  height: 15px;
+  opacity: 0.8;
+}
+
+/* --- Songs -------------------------------------------------------------------------------------------- */
+
+.netease-app .ne-songs {
+  display: flex;
+  flex-direction: column;
+  margin-inline: -12px;
+}
+
+.netease-app .ne-song {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  width: 100%;
+  min-height: 72px;
+  padding: 8px 16px;
+  border-radius: 12px;
+  text-align: left;
+  transition: background-color var(--ne-quick);
+}
+
+.netease-app .ne-song:not(.static):hover {
+  background: var(--ne-hover);
+}
+
+.netease-app .ne-song:not(.static):active {
+  background: var(--ne-surface-strong);
+}
+
+.netease-app .ne-song.current {
+  background: var(--ne-accent-soft);
+}
+
+.netease-app .ne-song.current .ne-song-title {
+  color: var(--ne-accent);
+  font-weight: 700;
+}
+
+.netease-app .ne-song.current .ne-song-index {
+  color: var(--ne-accent);
+}
+
+.netease-app .ne-song-index {
+  flex: none;
+  width: 38px;
+  display: grid;
+  place-items: center;
+  font-size: var(--ne-type-label);
+  font-weight: 500;
+  color: var(--ne-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.netease-app .ne-song-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.netease-app .ne-song-title {
+  font-size: var(--ne-type-body);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.netease-app .ne-song-artist {
+  font-size: var(--ne-type-small);
+  font-weight: 500;
+  color: var(--ne-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.netease-app .ne-song-time {
+  flex: none;
+  min-width: 52px;
+  text-align: right;
+  font-size: var(--ne-type-small);
+  font-weight: 500;
+  color: var(--ne-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+/* A song NetEase's rights don't allow (a badge before its length). */
+.netease-app .ne-badge {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding-inline: 11px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ne-warn) 16%, transparent);
+  color: var(--ne-warn);
+  font-size: var(--ne-type-caption);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.netease-app .ne-badge svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* The bars a list marks its playing song with. */
+.netease-app .ne-eq {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 3px;
+  width: 24px;
+  height: 22px;
+}
+
+.netease-app .ne-eq i {
+  flex: 1;
+  min-height: 4px;
+  height: 35%;
+  border-radius: 1px;
+  background: var(--ne-accent);
+}
+
+.netease-app .ne-eq i:nth-child(2) {
+  height: 68%;
+}
+
+.netease-app .ne-eq i:nth-child(3) {
+  height: 45%;
+}
+
+.netease-app .ne-eq i:nth-child(4) {
+  height: 80%;
+}
+
+.netease-app .ne-eq.playing i {
+  animation: ne-eq 0.9s ease-in-out infinite alternate;
+}
+
+.netease-app .ne-eq.playing i:nth-child(2) {
+  animation-duration: 0.7s;
+  animation-delay: -0.3s;
+}
+
+.netease-app .ne-eq.playing i:nth-child(3) {
+  animation-duration: 1.1s;
+  animation-delay: -0.6s;
+}
+
+.netease-app .ne-eq.playing i:nth-child(4) {
+  animation-duration: 0.8s;
+  animation-delay: -0.15s;
+}
+
+@keyframes ne-eq {
+  from {
+    height: 20%;
+  }
+  to {
+    height: 100%;
+  }
+}
+
+/* --- A playlist's page --------------------------------------------------------------------------------- */
+
+.netease-app .ne-playlist {
+  gap: 22px;
+}
+
+.netease-app .ne-pl-head {
+  display: flex;
+  align-items: flex-end;
+  gap: 22px;
+  padding-top: 4px;
+}
+
+.netease-app .ne-pl-back {
+  align-self: flex-start;
+  margin-top: 4px;
+}
+
+.netease-app .ne-pl-cover {
+  width: 172px;
+  border-radius: 18px;
+  box-shadow: var(--ne-shadow-large);
+}
+
+.netease-app .ne-pl-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.netease-app .ne-pl-kind {
+  font-size: var(--ne-type-caption);
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ne-dim);
+}
+
+.netease-app .ne-pl-name {
+  margin: 0;
+  font-size: var(--ne-type-title);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.12;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: break-word;
+}
+
+.netease-app .ne-pl-meta {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: var(--ne-type-label);
+  color: var(--ne-dim);
+}
+
+.netease-app .ne-pl-meta span:not(:last-child)::after {
+  content: '·';
+  margin-left: 8px;
+}
+
+.netease-app .ne-play-all {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  height: 60px;
+  padding-inline: 28px;
+  border-radius: 999px;
+  background: var(--ne-accent);
+  color: var(--ne-on-accent);
+  font-size: var(--ne-type-label);
+  font-weight: 700;
+  box-shadow: var(--ne-shadow);
+  transition: scale var(--ne-quick) var(--ne-ease);
+}
+
+.netease-app .ne-play-all svg {
+  width: 26px;
+  height: 26px;
+}
+
+.netease-app .ne-play-all:active {
+  scale: 0.96;
+}
+
+/* --- Search -------------------------------------------------------------------------------------------- */
+
+.netease-app .ne-search-field {
+  display: flex;
+  align-items: center;
+  flex: none;
+  height: 64px;
+  padding-inline: 6px;
+  border-radius: 999px;
+  background: var(--ne-surface);
+  transition: box-shadow var(--ne-quick);
+}
+
+.netease-app .ne-search-field:has(.text-field.typing) {
+  box-shadow: inset 0 0 0 2px var(--ne-accent);
+}
+
+.netease-app .ne-search-field .text-field {
+  flex: 1;
+  height: 100%;
+  padding-inline: 18px;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  gap: 14px;
+  font-size: var(--ne-type-body);
+  color: var(--ne-text);
+}
+
+.netease-app .ne-search-field .text-field.typing {
+  box-shadow: none;
+}
+
+.netease-app .ne-search-field .text-field > svg {
+  width: 30px;
+  height: 30px;
+  color: var(--ne-dim);
+}
+
+.netease-app .ne-search-field .text-field-hint {
+  color: var(--ne-dim);
+}
+
+.netease-app .ne-search-field .text-field-caret {
+  width: 2.5px;
+  height: 30px;
+  background: var(--ne-accent);
+}
+
+.netease-app .ne-search-field .text-field-clear {
+  width: 40px;
+  height: 40px;
+  background: var(--ne-surface-strong);
+  color: var(--ne-dim);
+}
+
+/* A plain browser's preview draws a real input in the field (in WestPlay, the cab's keyboard types into a
+   span): no browser styling of its own. */
+.netease-app .ne-search-field .text-field-input {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  caret-color: var(--ne-accent);
+}
+
+.netease-app .ne-search-field .text-field-input::placeholder {
+  color: var(--ne-dim);
+}
+
+.netease-app .ne-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.netease-app .ne-chip {
+  height: 50px;
+  padding-inline: 24px;
+  border-radius: 999px;
+  background: var(--ne-surface);
+  font-size: var(--ne-type-label);
+  font-weight: 600;
+  transition:
+    background-color var(--ne-quick),
+    scale var(--ne-quick) var(--ne-ease);
+}
+
+.netease-app .ne-chip:hover {
+  background: var(--ne-hover);
+}
+
+.netease-app .ne-chip:active {
+  scale: 0.96;
+}
+
+/* --- Sections, My Music's account ---------------------------------------------------------------------- */
+
+.netease-app .ne-section {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.netease-app .ne-section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.netease-app .ne-section-head h3 {
+  margin: 0;
+  font-size: var(--ne-type-section);
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+.netease-app .ne-section-head span {
+  font-size: var(--ne-type-small);
+  color: var(--ne-dim);
+}
+
+.netease-app .ne-note {
+  margin: 0;
+  font-size: var(--ne-type-label);
+  color: var(--ne-dim);
+}
+
+.netease-app .ne-account {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 24px 26px;
+  border-radius: var(--ne-radius-large);
+  background: var(--ne-surface);
+}
+
+.netease-app .ne-account.signed {
+  background: linear-gradient(120deg, var(--ne-accent-soft), var(--ne-surface) 70%);
+}
+
+.netease-app .ne-account-avatar {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: var(--ne-accent-soft);
+  color: var(--ne-accent);
+}
+
+.netease-app .ne-account-avatar svg {
+  width: 38px;
+  height: 38px;
+}
+
+.netease-app .ne-account-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.netease-app .ne-account-text b {
+  font-size: var(--ne-type-heading);
+  font-weight: 700;
+}
+
+.netease-app .ne-account-status {
+  font-size: var(--ne-type-label);
+  color: var(--ne-dim);
+}
+
+.netease-app .ne-account.signed .ne-account-status {
+  color: var(--ne-accent);
+  font-weight: 600;
+}
+
+.netease-app .ne-account-hint {
+  flex: 1;
+  text-align: right;
+  font-size: var(--ne-type-small);
+  line-height: 1.4;
+  color: var(--ne-dim);
+}
+
+.netease-app .ne-spinner {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 3px solid var(--ne-accent-soft);
+  border-top-color: var(--ne-accent);
+  animation: ne-spin 900ms linear infinite;
+}
+
+@keyframes ne-spin {
+  to {
+    rotate: 1turn;
+  }
+}
+
+/* --- Now Playing --------------------------------------------------------------------------------------- */
+
+.netease-app .ne-now-page {
+  gap: 18px;
+}
+
+.netease-app .ne-now-head {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.netease-app .ne-now-kicker {
+  font-size: var(--ne-type-caption);
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ne-accent);
+}
+
+.netease-app .ne-now-head h2 {
+  margin: 0;
+  font-size: var(--ne-type-title);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.netease-app .ne-now-body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 46px;
+  padding-bottom: 8px;
+}
+
+.netease-app .ne-now-cover {
+  width: clamp(200px, 34cqw, 380px);
+  max-height: 42cqh;
+  border-radius: 22px;
+  box-shadow: var(--ne-shadow-large);
+}
+
+.netease-app .ne-now-side {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.netease-app .ne-now-title {
+  margin: 0;
+  font-size: calc(40px * var(--text-scale, 1));
+  font-weight: 800;
+  line-height: 1.08;
+  letter-spacing: -0.025em;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: break-word;
+}
+
+.netease-app .ne-now-artist {
+  margin: 0;
+  font-size: var(--ne-type-heading);
+  font-weight: 600;
+  color: var(--ne-dim);
+}
+
+.netease-app .ne-now-album {
+  margin: 0;
+  font-size: var(--ne-type-label);
+  font-weight: 500;
+  color: var(--ne-dim);
+}
+
+.netease-app .ne-warn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--ne-warn) 15%, transparent);
+  color: var(--ne-warn);
+  font-size: var(--ne-type-small);
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.netease-app .ne-warn svg {
+  flex: none;
+  width: 24px;
+  height: 24px;
+}
+
+/* The time's bar, and the volume's: the same bar, its knob under the pointer. */
+.netease-app .ne-progress {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.netease-app .ne-time {
+  flex: none;
+  min-width: 2.8em;
+  font-size: var(--ne-type-small);
+  font-weight: 600;
+  color: var(--ne-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.netease-app .ne-time:last-child {
+  text-align: right;
+}
+
+.netease-app .ne-bar {
+  position: relative;
+  flex: 1;
+  min-width: 90px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  touch-action: none;
+  cursor: pointer;
+}
+
+.netease-app .ne-bar::before,
+.netease-app .ne-bar-fill {
+  content: '';
+  position: absolute;
+  left: 0;
+  height: 6px;
+  border-radius: 3px;
+}
+
+.netease-app .ne-bar::before {
+  right: 0;
+  background: color-mix(in srgb, var(--ne-text) 20%, transparent);
+}
+
+.netease-app .ne-bar-fill {
+  width: calc(var(--share) * 100%);
+  background: var(--ne-accent);
+}
+
+.netease-app .ne-bar-knob {
+  position: absolute;
+  left: calc(var(--share) * 100%);
+  width: 18px;
+  height: 18px;
+  translate: -50% 0;
+  border-radius: 50%;
+  background: var(--ne-text);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.35);
+  transition: scale var(--ne-quick);
+}
+
+.netease-app .ne-bar:hover .ne-bar-knob,
+.netease-app .ne-bar.dragging .ne-bar-knob {
+  scale: 1.3;
+}
+
+.netease-app .ne-controls {
+  display: flex;
+  align-items: center;
+  gap: 32px;
+}
+
+.netease-app .ne-control {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  color: var(--ne-text);
+  transition:
+    background-color var(--ne-quick),
+    scale var(--ne-quick) var(--ne-ease),
+    opacity var(--ne-quick);
+}
+
+.netease-app .ne-control svg {
+  width: 38px;
+  height: 38px;
+}
+
+.netease-app .ne-control:hover {
+  background: var(--ne-hover);
+}
+
+.netease-app .ne-control:active {
+  scale: 0.94;
+}
+
+.netease-app .ne-control:disabled {
+  opacity: 0.35;
+  background: none;
+  scale: 1;
+  cursor: default;
+}
+
+/* Play or Pause: the one round button, in the accent. */
+.netease-app .ne-play-button {
+  width: 82px;
+  height: 82px;
+  background: var(--ne-accent);
+  color: var(--ne-on-accent);
+  box-shadow: var(--ne-shadow);
+}
+
+.netease-app .ne-play-button svg {
+  width: 34px;
+  height: 34px;
+}
+
+.netease-app .ne-play-button:hover {
+  background: var(--ne-accent);
+}
+
+.netease-app .ne-volume {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.netease-app .ne-volume .ne-icon-button {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  color: var(--ne-dim);
+  transition:
+    background-color var(--ne-quick),
+    color var(--ne-quick);
+}
+
+.netease-app .ne-volume .ne-icon-button:hover {
+  background: var(--ne-hover);
+  color: var(--ne-text);
+}
+
+.netease-app .ne-volume .ne-icon-button svg {
+  width: 30px;
+  height: 30px;
+}
+
+.netease-app .ne-volume-bar {
+  flex: 1;
+}
+
+/* --- The player bar ------------------------------------------------------------------------------------ */
+
+.netease-app .ne-player {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  height: 96px;
+  padding: 10px 22px 10px 12px;
+  border-radius: 18px;
+  background: var(--ne-player-bg);
+  box-shadow: var(--ne-shadow);
+}
+
+.netease-app .ne-player-song {
+  flex: 0 1 330px;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 6px;
+  border-radius: 14px;
+  text-align: left;
+  transition: background-color var(--ne-quick);
+}
+
+.netease-app .ne-player-song:hover {
+  background: var(--ne-hover);
+}
+
+.netease-app .ne-player-cover {
+  width: 66px;
+  border-radius: 12px;
+}
+
+.netease-app .ne-player-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.netease-app .ne-player-name {
+  font-size: var(--ne-type-body);
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.netease-app .ne-player-artist {
+  font-size: var(--ne-type-small);
+  font-weight: 500;
+  color: var(--ne-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.netease-app .ne-player .ne-controls {
+  flex: none;
+  gap: 10px;
+}
+
+.netease-app .ne-player .ne-control {
+  width: 50px;
+  height: 50px;
+}
+
+.netease-app .ne-player .ne-control svg {
+  width: 30px;
+  height: 30px;
+}
+
+.netease-app .ne-player .ne-play-button {
+  width: 58px;
+  height: 58px;
+}
+
+.netease-app .ne-player .ne-play-button svg {
+  width: 26px;
+  height: 26px;
+}
+
+.netease-app .ne-player .ne-progress {
+  flex: 1;
+  min-width: 0;
+}
+
+.netease-app .ne-player .ne-time {
+  font-size: var(--ne-type-caption);
+}
+
+.netease-app .ne-player .ne-volume {
+  flex: none;
+  width: 200px;
+}
+
+.netease-app .ne-player .ne-volume .ne-icon-button {
+  width: 44px;
+  height: 44px;
+}
+
+.netease-app .ne-player .ne-volume .ne-icon-button svg {
+  width: 26px;
+  height: 26px;
+}
+
+.netease-app .ne-player .ne-bar {
+  height: 24px;
+}
+
+/* --- Toasts, empty pages, shapes still coming ---------------------------------------------------------- */
+
+.netease-app .ne-toast {
+  position: absolute;
+  z-index: 8;
+  left: 50%;
+  bottom: 126px;
+  translate: -50% 0;
+  margin: 0;
+  padding: 14px 28px;
+  border-radius: 999px;
+  background: var(--ne-accent);
+  color: var(--ne-on-accent);
+  font-size: var(--ne-type-label);
+  font-weight: 700;
+  white-space: nowrap;
+  box-shadow: var(--ne-shadow-large);
+  animation: ne-toast-in 260ms var(--ne-ease);
+}
+
+@keyframes ne-toast-in {
+  from {
+    opacity: 0;
+    translate: -50% 14px;
+  }
+}
+
+.netease-app .ne-empty {
+  flex: 1;
+  min-height: 220px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 36px 20px;
+  text-align: center;
+}
+
+.netease-app .ne-empty-mark {
+  display: grid;
+  place-items: center;
+  width: 84px;
+  height: 84px;
+  border-radius: 50%;
+  background: var(--ne-surface);
+  color: var(--ne-dim);
+}
+
+.netease-app .ne-empty-mark svg {
+  width: 42px;
+  height: 42px;
+}
+
+.netease-app .ne-empty h3 {
+  margin: 0;
+  font-size: var(--ne-type-heading);
+  font-weight: 700;
+}
+
+.netease-app .ne-empty p {
+  margin: 0;
+  max-width: 540px;
+  font-size: var(--ne-type-label);
+  line-height: 1.45;
+  color: var(--ne-dim);
+}
+
+.netease-app .ne-empty .ne-pill {
+  margin-top: 6px;
+}
+
+.netease-app .ne-skeleton {
+  animation: ne-breathe 1.6s ease-in-out infinite alternate;
+}
+
+.netease-app .ne-skel {
+  background: var(--ne-surface-strong);
+}
+
+.netease-app .ne-skel-line {
+  display: block;
+  width: 100%;
+  height: 14px;
+  border-radius: 7px;
+  background: var(--ne-surface-strong);
+}
+
+.netease-app .ne-skel-line.short {
+  width: 58%;
+}
+
+@keyframes ne-breathe {
+  from {
+    opacity: 0.5;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* --- Smaller screens ----------------------------------------------------------------------------------- */
+
+/* A narrower app (the coaches' 879 across, the 7" Scania's 690): the rail and the player bar closer, the
+   player's time hidden (Now Playing has it roomy), the volume narrower. */
+@container (max-width: 1040px) {
+  .netease-app .ne-rail {
+    width: 216px;
+    padding-inline: 10px;
+  }
+
+  .netease-app .ne-player-song {
+    flex-basis: 260px;
+  }
+
+  .netease-app .ne-player .ne-volume {
+    width: 158px;
+  }
+}
+
+@container (max-width: 920px) {
+  .netease-app .ne-rail {
+    width: 196px;
+  }
+
+  .netease-app .ne-tab {
+    gap: 12px;
+    padding-inline: 12px;
+  }
+
+  .netease-app .ne-brand-name {
+    font-size: var(--ne-type-body);
+  }
+
+  .netease-app .ne-pl-cover {
+    width: 144px;
+  }
+
+  .netease-app .ne-player .ne-progress {
+    display: none;
+  }
+
+  .netease-app .ne-player .ne-volume {
+    flex: 1;
+    width: auto;
+    max-width: 220px;
+  }
+
+  /* A narrow app's page titles keep whole words (never one character a line), wrapping the action under them
+     where there's no room beside. */
+  .netease-app .ne-page-head {
+    flex-wrap: wrap;
+    row-gap: 10px;
+  }
+
+  .netease-app .ne-page-head-text {
+    flex: 1 1 240px;
+  }
+
+  .netease-app .ne-pl-head {
+    flex-wrap: wrap;
+    row-gap: 12px;
+  }
+
+  .netease-app .ne-pl-text {
+    flex: 1 1 220px;
+  }
+}
+
+/* The 7" screen (611 across at its scaling): two cards across, the rail's words a little smaller. */
+@container (max-width: 780px) {
+  .netease-app {
+    gap: 10px;
+    padding: 12px 12px 10px;
+  }
+
+  .netease-app .ne-layout {
+    gap: 12px;
+  }
+
+  .netease-app .ne-rail {
+    width: 172px;
+    padding: 14px 8px 12px;
+  }
+
+  .netease-app .ne-brand {
+    gap: 8px;
+    padding: 2px 8px 16px;
+  }
+
+  .netease-app .ne-brand-mark,
+  .netease-app .ne-brand-mark svg {
+    width: 34px;
+    height: 34px;
+  }
+
+  .netease-app .ne-brand-name {
+    font-size: var(--ne-type-label);
+  }
+
+  .netease-app .ne-tab {
+    height: 50px;
+    gap: 10px;
+    padding-inline: 10px;
+    border-radius: 10px;
+  }
+
+  .netease-app .ne-tab-glyph,
+  .netease-app .ne-tab-glyph svg {
+    width: 26px;
+    height: 26px;
+  }
+
+  .netease-app .ne-tab-label {
+    font-size: var(--ne-type-label);
+  }
+
+  .netease-app .ne-style-title {
+    display: none;
+  }
+
+  .netease-app .ne-style-switch button {
+    height: 34px;
+    font-size: var(--ne-type-caption);
+  }
+
+  .netease-app .ne-status {
+    padding: 8px;
+    gap: 8px;
+  }
+
+  .netease-app .ne-status-avatar {
+    width: 32px;
+    height: 32px;
+  }
+
+  .netease-app .ne-status-avatar svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  .netease-app .ne-status-text b {
+    font-size: var(--ne-type-caption);
+  }
+
+  .netease-app .ne-status-hint {
+    display: none;
+  }
+
+  .netease-app .ne-grid {
+    grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+    gap: 22px 14px;
+  }
+
+  .netease-app .ne-page-head-text h2 {
+    font-size: var(--ne-type-section);
+  }
+
+  .netease-app .ne-page-head-text p {
+    font-size: var(--ne-type-body);
+  }
+
+  .netease-app .ne-song {
+    min-height: 64px;
+    gap: 12px;
+    padding-inline: 10px;
+  }
+
+  .netease-app .ne-song-time {
+    min-width: 44px;
+  }
+
+  .netease-app .ne-pl-head {
+    gap: 14px;
+  }
+
+  .netease-app .ne-pl-cover {
+    width: 110px;
+  }
+
+  .netease-app .ne-pl-name {
+    font-size: var(--ne-type-section);
+  }
+
+  .netease-app .ne-play-all {
+    height: 52px;
+    padding-inline: 20px;
+    font-size: var(--ne-type-label);
+  }
+
+  .netease-app .ne-player {
+    height: 84px;
+    gap: 10px;
+    padding: 8px 14px 8px 8px;
+  }
+
+  .netease-app .ne-player-song {
+    flex-basis: 180px;
+    gap: 10px;
+  }
+
+  .netease-app .ne-player-cover {
+    width: 56px;
+  }
+
+  .netease-app .ne-player-name {
+    font-size: var(--ne-type-label);
+  }
+
+  .netease-app .ne-player-artist {
+    font-size: var(--ne-type-caption);
+  }
+
+  .netease-app .ne-player .ne-play-button {
+    width: 52px;
+    height: 52px;
+  }
+
+  .netease-app .ne-player .ne-volume {
+    max-width: 150px;
+  }
+
+  .netease-app .ne-now-cover {
+    width: clamp(150px, 30cqw, 240px);
+  }
+
+  .netease-app .ne-now-title {
+    font-size: calc(32px * var(--text-scale, 1));
+  }
+
+  .netease-app .ne-now-artist {
+    font-size: var(--ne-type-body);
+  }
+
+  .netease-app .ne-now-body {
+    gap: 26px;
+  }
+
+  .netease-app .ne-now-side {
+    gap: 12px;
+  }
+
+  .netease-app .ne-controls {
+    gap: 18px;
+  }
+}
+
+/* A short screen (the coaches' and the 7" Scania's, 417-446 tall at their scaling): everything smaller and
+   closer, so a playlist's head, its songs and the player bar all fit. */
+@container (max-height: 540px) {
+  .netease-app {
+    padding: 10px 12px 8px;
+    gap: 8px;
+  }
+
+  .netease-app .ne-layout {
+    gap: 12px;
+  }
+
+  .netease-app .ne-rail {
+    padding: 8px 8px 10px;
+  }
+
+  .netease-app .ne-brand {
+    padding-bottom: 8px;
+    gap: 8px;
+  }
+
+  .netease-app .ne-brand-mark,
+  .netease-app .ne-brand-mark svg {
+    width: 28px;
+    height: 28px;
+  }
+
+  .netease-app .ne-brand-name {
+    font-size: var(--ne-type-small);
+  }
+
+  .netease-app .ne-tab {
+    height: 40px;
+    gap: 10px;
+  }
+
+  .netease-app .ne-tab-glyph,
+  .netease-app .ne-tab-glyph svg {
+    width: 24px;
+    height: 24px;
+  }
+
+  .netease-app .ne-tab-label {
+    font-size: var(--ne-type-small);
+  }
+
+  .netease-app .ne-rail-foot {
+    gap: 6px;
+    padding-top: 6px;
+  }
+
+  .netease-app .ne-style-title {
+    display: none;
+  }
+
+  .netease-app .ne-style-switch button {
+    height: 28px;
+    font-size: var(--ne-type-caption);
+  }
+
+  .netease-app .ne-status {
+    gap: 8px;
+    padding: 5px 8px;
+  }
+
+  .netease-app .ne-status-avatar {
+    width: 26px;
+    height: 26px;
+  }
+
+  .netease-app .ne-status-avatar svg {
+    width: 17px;
+    height: 17px;
+  }
+
+  .netease-app .ne-status-text b {
+    display: none;
+  }
+
+  .netease-app .ne-status-text span {
+    font-size: var(--ne-type-caption);
+  }
+
+  .netease-app .ne-status-hint {
+    display: none;
+  }
+
+  .netease-app .ne-scroll {
+    gap: 12px;
+    padding-bottom: 6px;
+  }
+
+  .netease-app .ne-page-head {
+    row-gap: 6px;
+  }
+
+  .netease-app .ne-page-head-text h2 {
+    font-size: calc(28px * var(--text-scale, 1));
+  }
+
+  .netease-app .ne-page-head-text p {
+    margin-top: 2px;
+    font-size: var(--ne-type-small);
+  }
+
+  .netease-app .ne-pill {
+    height: 40px;
+    padding-inline: 16px;
+    font-size: var(--ne-type-small);
+    gap: 8px;
+  }
+
+  .netease-app .ne-pill svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  .netease-app .ne-grid {
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: 14px 12px;
+  }
+
+  .netease-app .ne-card {
+    gap: 4px;
+  }
+
+  .netease-app .ne-card-name {
+    font-size: var(--ne-type-small);
+    -webkit-line-clamp: 1;
+  }
+
+  .netease-app .ne-card-plays {
+    font-size: var(--ne-type-caption);
+  }
+
+  .netease-app .ne-card-plays svg {
+    width: 12px;
+    height: 12px;
+  }
+
+  .netease-app .ne-song {
+    min-height: 48px;
+    gap: 10px;
+    padding-block: 4px;
+    padding-inline: 8px;
+  }
+
+  .netease-app .ne-song-title {
+    font-size: calc(19px * var(--text-scale, 1));
+  }
+
+  .netease-app .ne-song-artist,
+  .netease-app .ne-song-time {
+    font-size: var(--ne-type-caption);
+  }
+
+  .netease-app .ne-song-index {
+    width: 28px;
+    font-size: var(--ne-type-caption);
+  }
+
+  .netease-app .ne-song-time {
+    min-width: 40px;
+  }
+
+  .netease-app .ne-badge {
+    height: 24px;
+    padding-inline: 8px;
+    font-size: var(--ne-type-caption);
+  }
+
+  .netease-app .ne-badge svg {
+    width: 14px;
+    height: 14px;
+  }
+
+  /* A playlist's page: its head on one line, small enough that its songs show under it. */
+  .netease-app .ne-pl-cover {
+    width: 84px;
+    border-radius: 14px;
+  }
+
+  .netease-app .ne-pl-head {
+    gap: 10px;
+    row-gap: 8px;
+    align-items: flex-end;
+    flex-wrap: nowrap;
+    padding-top: 0;
+  }
+
+  .netease-app .ne-pl-back {
+    width: 40px;
+    height: 40px;
+  }
+
+  .netease-app .ne-pl-back svg {
+    width: 22px;
+    height: 22px;
+  }
+
+  .netease-app .ne-pl-text {
+    flex: 1 1 auto;
+    gap: 2px;
+  }
+
+  .netease-app .ne-pl-kind {
+    font-size: var(--ne-type-caption);
+  }
+
+  .netease-app .ne-pl-name {
+    font-size: calc(24px * var(--text-scale, 1));
+    -webkit-line-clamp: 1;
+  }
+
+  .netease-app .ne-pl-meta {
+    gap: 6px;
+    font-size: var(--ne-type-caption);
+  }
+
+  .netease-app .ne-play-all {
+    height: 42px;
+    margin-left: auto;
+    padding-inline: 14px;
+    gap: 6px;
+    font-size: var(--ne-type-small);
+  }
+
+  .netease-app .ne-play-all svg {
+    width: 18px;
+    height: 18px;
+  }
+
+  .netease-app .ne-player {
+    height: 78px;
+  }
+
+  .netease-app .ne-player-cover {
+    width: 52px;
+  }
+
+  /* Now Playing: the cover smaller, the song's column closer, its controls and volume smaller, so all of it
+     fits beside the cover. */
+  .netease-app .ne-now-page {
+    gap: 8px;
+  }
+
+  .netease-app .ne-now-head h2 {
+    font-size: calc(24px * var(--text-scale, 1));
+  }
+
+  .netease-app .ne-now-kicker {
+    font-size: 11px;
+  }
+
+  .netease-app .ne-now-body {
+    gap: 20px;
+    padding-bottom: 0;
+  }
+
+  .netease-app .ne-now-cover {
+    width: clamp(110px, 24cqw, 180px);
+    max-height: 34cqh;
+    border-radius: 16px;
+  }
+
+  .netease-app .ne-now-side {
+    gap: 6px;
+  }
+
+  .netease-app .ne-now-title {
+    font-size: calc(26px * var(--text-scale, 1));
+  }
+
+  .netease-app .ne-now-artist {
+    font-size: var(--ne-type-label);
+  }
+
+  .netease-app .ne-now-album {
+    font-size: var(--ne-type-caption);
+  }
+
+  .netease-app .ne-now-page .ne-progress {
+    gap: 8px;
+  }
+
+  .netease-app .ne-now-page .ne-time {
+    min-width: 2.2em;
+    font-size: var(--ne-type-caption);
+  }
+
+  .netease-app .ne-now-page .ne-bar {
+    min-width: 0;
+    height: 22px;
+  }
+
+  .netease-app .ne-now-page .ne-control {
+    width: 46px;
+    height: 46px;
+  }
+
+  .netease-app .ne-now-page .ne-control svg {
+    width: 26px;
+    height: 26px;
+  }
+
+  .netease-app .ne-now-page .ne-play-button {
+    width: 58px;
+    height: 58px;
+  }
+
+  .netease-app .ne-now-page .ne-play-button svg {
+    width: 24px;
+    height: 24px;
+  }
+
+  .netease-app .ne-now-page .ne-controls {
+    gap: 10px;
+  }
+
+  .netease-app .ne-now-page .ne-volume {
+    gap: 8px;
+  }
+
+  .netease-app .ne-now-page .ne-volume .ne-icon-button {
+    width: 40px;
+    height: 40px;
+  }
+
+  .netease-app .ne-now-page .ne-volume .ne-icon-button svg {
+    width: 24px;
+    height: 24px;
+  }
+
+  .netease-app .ne-warn {
+    gap: 6px;
+    padding: 8px 10px;
+    font-size: var(--ne-type-caption);
+  }
+
+  .netease-app .ne-warn svg {
+    width: 18px;
+    height: 18px;
+  }
+
+  .netease-app .ne-toast {
+    bottom: 96px;
+  }
+}
+
+/* A screen taller than wide (no truck's, but the tablet's panel can be): Now Playing stacks the cover over
+   the song. */
+@container (aspect-ratio < 1) {
+  .netease-app .ne-now-body {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    justify-items: center;
+    gap: 20px;
+  }
+
+  .netease-app .ne-now-cover {
+    width: clamp(160px, 44cqw, 320px);
+    max-height: 34cqh;
+  }
+
+  .netease-app .ne-now-side {
+    align-items: center;
+    text-align: center;
+    width: 100%;
+  }
+
+  .netease-app .ne-progress,
+  .netease-app .ne-volume {
+    width: 100%;
+  }
+
+  .netease-app .ne-warn {
+    justify-content: center;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .netease-app .ne-layer,
+  .netease-app .ne-layer.fresh,
+  .netease-app .ne-skeleton,
+  .netease-app .ne-eq.playing i,
+  .netease-app .ne-spinner,
+  .netease-app .ne-toast {
+    animation: none;
+  }
+}

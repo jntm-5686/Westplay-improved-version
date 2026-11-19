@@ -1,12 +1,13 @@
-//! Signing in to YouTube, Spotify or Apple Music: the service's own sign-in page, in a window of WestPlay's on
-//! the PC's desktop (a real keyboard, out of the game), on the WebView2 profile the service's page in WestPlay
-//! uses, so the sign-in is its too. Nothing of the account passes through WestPlay: the page is the service's,
-//! and what it keeps (its cookies) is WebView2's, as a browser's would be. WestPlay only sees where the window
-//! is: still signing in, back on the service (signed in), or closed.
+//! Signing in to YouTube, Spotify, Apple Music or NetEase Cloud Music: the service's own sign-in page, in a window
+//! of WestPlay's on the PC's desktop (a real keyboard, out of the game), on the WebView2 profile the service's page
+//! in WestPlay uses, so the sign-in is its too. Nothing of the account passes through WestPlay: the page is the
+//! service's, and what it keeps (its cookies) is WebView2's, as a browser's would be. WestPlay only sees where the
+//! window is: still signing in, back on the service (signed in), or closed.
 //!
 //! Apple Music's sign-in is a dialog in its own web player (music.apple.com), whose address doesn't change as
 //! it signs in: a script in the window's page opens that dialog and says when the page is signed in (only
-//! that).
+//! that). NetEase Cloud Music's is the same kind: its QR code dialog, in its own page (music.163.com), opened by
+//! its own script (`netease_sign_in.js`), which says when the page's top bar shows the account.
 //!
 //! The WebView is hosted as YouTube's is, drawn into a visual (WebView2 doesn't mix that with a windowed
 //! WebView on one profile), here the window's own: the window passes its mouse to it and follows its cursor;
@@ -97,6 +98,16 @@ pub const APPLE_MUSIC: Site = Site {
     home: "https://music.apple.com/",
     not_yet: None,
     page_says: Some(include_str!("apple_music_sign_in.js")),
+};
+
+/// NetEase Cloud Music's sign-in: the QR code dialog of its own page, opened at once (`netease_sign_in.js`); its
+/// page says when its top bar shows the account.
+pub const NETEASE: Site = Site {
+    sign_in: "https://music.163.com/",
+    title: "Sign in to NetEase Cloud Music - WestPlay",
+    home: "https://music.163.com/",
+    not_yet: None,
+    page_says: Some(include_str!("netease_sign_in.js")),
 };
 const CLASS: windows::core::PCWSTR = w!("WestPlaySignIn");
 const SIZE: (i32, i32) = (520, 760);
@@ -566,6 +577,16 @@ mod tests {
         assert!(!says_signed_in(r#"{"signedIn":"yes"}"#));
         assert!(!says_signed_in("not json"));
         assert!(APPLE_MUSIC.page_says.is_some(), "its address says nothing");
+    }
+
+    /// NetEase Cloud Music's too: its page's sign-in (the QR code dialog) keeps the address, and only the page's
+    /// own top bar says the account is in.
+    #[test]
+    fn is_signed_in_to_netease_once_its_page_says_so() {
+        assert!(NETEASE.page_says.is_some(), "its address says nothing");
+        // Its window's page is its own web player, on its own profile.
+        assert_eq!(NETEASE.sign_in, "https://music.163.com/");
+        assert_eq!(NETEASE.sign_in, NETEASE.home);
     }
 
     #[test]

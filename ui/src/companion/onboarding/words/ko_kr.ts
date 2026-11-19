@@ -173,6 +173,13 @@ export const words: Words = {
     finishInWindow: 'Apple Music 창에서 로그인을 마치세요',
     signingIn: { title: 'Apple Music에 로그인하는 중', text: 'Apple Music 창에서 계속하세요' },
   },
+  /** NetEase Music's sign-in step, as Spotify's (its own page's sign-in, in a window on the desktop). */
+  netease: {
+    title: 'NetEase Music에 로그인',
+    sub: '선택 사항이에요. 로그인하면 내 플레이리스트와 보관함으로 트럭 화면에서 NetEase Music을 들을 수 있어요. 로그인은 별도의 NetEase Music 창에서 하므로 WestPlay는 계정 정보를 볼 수 없어요.',
+    finishInWindow: 'NetEase Music 창에서 로그인을 마치세요',
+    signingIn: { title: 'NetEase Music에 로그인하는 중', text: 'NetEase Music 창에서 계속하세요' },
+  },
   launch: {
     title: '모든 준비가 끝났어요',
     done: '완료',

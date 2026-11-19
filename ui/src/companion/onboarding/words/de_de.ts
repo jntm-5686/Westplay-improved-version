@@ -177,6 +177,13 @@ export const words: Words = {
     finishInWindow: 'Schließe die Anmeldung im Apple-Music-Fenster ab',
     signingIn: { title: 'Anmeldung bei Apple Music', text: 'Weiter im Apple-Music-Fenster' },
   },
+  /** NetEase Music's sign-in step, as Spotify's (its own page's sign-in, in a window on the desktop). */
+  netease: {
+    title: 'Bei NetEase Music anmelden',
+    sub: 'Optional. Melde dich an, um NetEase Music mit deinen Playlists und deiner Mediathek auf dem Bildschirm im Lkw zu hören. Die Anmeldung bei NetEase Music läuft in einem eigenen Fenster – WestPlay sieht dein Konto nie.',
+    finishInWindow: 'Schließe die Anmeldung im NetEase-Music-Fenster ab',
+    signingIn: { title: 'Anmeldung bei NetEase Music', text: 'Weiter im NetEase-Music-Fenster' },
+  },
   launch: {
     title: 'Alles bereit',
     done: 'Fertig',

@@ -178,6 +178,13 @@ export const words: Words = {
     finishInWindow: 'Dokončite prihlásenie v okne Apple Music',
     signingIn: { title: 'Prihlasovanie do Apple Music', text: 'Pokračujte v okne Apple Music' },
   },
+  /** NetEase Music's sign-in step, as Spotify's (its own page's sign-in, in a window on the desktop). */
+  netease: {
+    title: 'Prihlásenie do NetEase Music',
+    sub: 'Voliteľné. Po prihlásení si pustíte NetEase Music na obrazovke ťahača aj so svojimi playlistami a knižnicou. Do NetEase Music sa prihlasujete v samostatnom okne a WestPlay k vášmu účtu nemá prístup.',
+    finishInWindow: 'Dokončite prihlásenie v okne NetEase Music',
+    signingIn: { title: 'Prihlasovanie do NetEase Music', text: 'Pokračujte v okne NetEase Music' },
+  },
   launch: {
     title: 'Všetko je pripravené',
     done: 'Hotovo',
