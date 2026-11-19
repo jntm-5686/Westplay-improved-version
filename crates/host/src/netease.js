@@ -1233,8 +1233,11 @@
       stall = { key, since: 0, lastAt: at, lastBar: Number.isFinite(bar) ? bar : null }
       return
     }
+    // The clock moved: the element's own, once it has one (the page's play bar stands still while the page is
+    // hidden, so it is only a fallback for no element at all). A clock not read yet is not a still one (a song
+    // loading at the moment the stall began left `lastAt` null, and the stall was never noticed as over).
     const moved =
-      (state && !state.paused && at !== null && stall.lastAt !== null && at > stall.lastAt + 0.05) ||
+      (state && !state.paused && at !== null && (stall.lastAt === null || at > stall.lastAt + 0.05)) ||
       (at === null && Number.isFinite(bar) && stall.lastBar !== null && bar > stall.lastBar)
     if (moved) {
       stall.since = 0
