@@ -509,8 +509,15 @@ fn addons(kind: crate::game::Kind) -> Vec<(String, Vec<u8>)> {
     files
 }
 
-/// YTHQ Tablet's Workshop item id: its folder in the game's Workshop content folder (`Game::workshop`).
-const YTHQ_ITEM: &str = "3595920707";
+/// YTHQ Tablet's Workshop item id, per game: its folder in that game's Workshop content folder
+/// (`Game::workshop`). The mod is published for each game under an id of its own: an ATS install's Workshop
+/// folder has the ATS item (`3598886740`), never the ETS2 one (`3595920707`), so the id has to follow the game.
+fn ythq_item(kind: crate::game::Kind) -> &'static str {
+    match kind {
+        crate::game::Kind::Ets2 => "3595920707",
+        crate::game::Kind::Ats => "3598886740",
+    }
+}
 
 /// YTHQ Tablet's own screen scripts, and the layout of the truck screen each takes the game's place on: its copies
 /// of the game's `def/vehicle/truck/*/interior/computers*.sui` name them as the factory screen's `gps_path`, so with
@@ -595,8 +602,8 @@ struct YthqScreens {
 
 /// The archives in `workshop` (the game's Workshop content folder) that YTHQ Tablet ships in: its item's `.scs`
 /// (or `.zip`) files. Empty if it isn't installed.
-fn ythq_archives(workshop: Option<&Path>) -> Vec<Archive> {
-    let Some(item) = workshop.map(|workshop| workshop.join(YTHQ_ITEM)) else { return Vec::new() };
+fn ythq_archives(workshop: Option<&Path>, kind: crate::game::Kind) -> Vec<Archive> {
+    let Some(item) = workshop.map(|workshop| workshop.join(ythq_item(kind))) else { return Vec::new() };
     let Ok(entries) = std::fs::read_dir(&item) else { return Vec::new() };
     let mut paths: Vec<PathBuf> = entries
         .flatten()
@@ -616,8 +623,8 @@ fn ythq_archives(workshop: Option<&Path>) -> Vec<Archive> {
 /// so that no tablet goes blank. Its tablets' models' screen materials are pointed at its tablets' own UI texture
 /// ([`YTHQ_TABLET_UI`]): a tablet's own screen then shows the UI its copy's script has, not the factory screen's
 /// picture (with which both screens' models sample one texture).
-fn ythq_screen_files(workshop: Option<&Path>) -> YthqScreens {
-    let archives = ythq_archives(workshop);
+fn ythq_screen_files(workshop: Option<&Path>, kind: crate::game::Kind) -> YthqScreens {
+    let archives = ythq_archives(workshop, kind);
     if archives.is_empty() {
         return YthqScreens::default();
     }
@@ -1050,8 +1057,8 @@ fn ythq_list(archives: &[Archive], dir: &str) -> (Vec<String>, Vec<String>) {
 /// Whether the mod at `built` (WestPlay's `.scs`) has YTHQ Tablet's screens as [`ythq_screen_files`] makes them from
 /// the archive in `workshop` now: not so once YTHQ Tablet is installed after the mod was made, or updated (its screen
 /// scripts are the trucks' factory screens then, and the mod's old copies are YTHQ's other version).
-pub fn ythq_screens_current(workshop: Option<&Path>, built: &Path) -> bool {
-    let made = ythq_screen_files(workshop);
+pub fn ythq_screens_current(kind: crate::game::Kind, workshop: Option<&Path>, built: &Path) -> bool {
+    let made = ythq_screen_files(workshop, kind);
     if made.files.is_empty() {
         return true;
     }
@@ -1174,7 +1181,7 @@ pub fn build(
     // scripts the mod patches (`YTHQ_SCREENS`). Its tablets' definitions are pointed at its scripts' copies
     // (`YTHQ_TABLET_DIR`) and at its tablets' own UI texture ([`YTHQ_TABLET_UI`], their models' too), so they show
     // the tablet's picture alone. Its archive not read as expected leaves the mod as it was.
-    let ythq = ythq_screen_files(workshop);
+    let ythq = ythq_screen_files(workshop, kind);
     let covered: std::collections::BTreeSet<&str> = ythq.files.iter().map(|(path, _)| path.as_str()).collect();
     files.retain(|(path, _)| !covered.contains(path.as_str()));
     built.ythq = ythq.screens;
@@ -2178,7 +2185,7 @@ mod tests {
     fn reads_ythq_tablets_own_screens_from_this_pcs_workshop() {
         let game = crate::game::find(crate::game::Kind::Ets2).into_iter().next().expect("the game installed");
         let workshop = game.workshop().expect("the game's Workshop folder");
-        let made = ythq_screen_files(Some(&workshop));
+        let made = ythq_screen_files(Some(&workshop), game.kind);
         let by_path: std::collections::BTreeMap<&str, &Vec<u8>> =
             made.files.iter().map(|(path, bytes)| (path.as_str(), bytes)).collect();
         println!(
@@ -2482,15 +2489,32 @@ ui::text : _nameless._.map {
 
     /// A Workshop content folder with YTHQ Tablet's item in it (`3595920707/universal.scs`, a zip of `files`: its
     /// scripts and its vehicles' definitions).
-    fn ythq_workshop(name: &str, files: &[(&str, &str)]) -> PathBuf {
+    fn ythq_workshop(name: &str, kind: Kind, files: &[(&str, &str)]) -> PathBuf {
         let root = std::env::temp_dir().join(format!("westplay-ythq-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
-        let item = root.join(YTHQ_ITEM);
+        let item = root.join(ythq_item(kind));
         std::fs::create_dir_all(&item).unwrap();
         let files: Vec<(String, Vec<u8>)> =
             files.iter().map(|(path, text)| ((*path).to_owned(), text.as_bytes().to_vec())).collect();
         std::fs::write(item.join("universal.scs"), zip(&files)).unwrap();
         root
+    }
+
+    /// ETS2's and ATS's YTHQ Tablet are separate Workshop items with separate ids: each game's id has to find
+    /// the mod in that game's Workshop folder, and look in the other one's item for nothing.
+    #[test]
+    fn finds_ythq_tablet_under_each_games_own_workshop_item() {
+        for (kind, item) in [(Kind::Ets2, "3595920707"), (Kind::Ats, "3598886740")] {
+            assert_eq!(ythq_item(kind), item);
+            let other = match kind {
+                Kind::Ets2 => Kind::Ats,
+                Kind::Ats => Kind::Ets2,
+            };
+            let workshop = ythq_workshop("ids", kind, &[("ui/dashboard/ythq_tablet_gps.sii", YTHQ_SCRIPT)]);
+            assert_eq!(ythq_archives(Some(&workshop), kind).len(), 1, "{item}");
+            assert!(ythq_archives(Some(&workshop), other).is_empty(), "{item}");
+            let _ = std::fs::remove_dir_all(&workshop);
+        }
     }
 
     /// A tablet's definition as YTHQ's archive has them (one file a tablet, its `ui_path` the script its screen draws,
@@ -2596,7 +2620,7 @@ ui::text : _nameless._.map {
     fn ythq_tablets_get_screens_of_their_own_and_their_definitions_point_at_them() {
         // Its scripts for the Volvo FH's and the Renault T 2024's factory screens, and its tablets of both.
         let files = ythq_workshop_files(YTHQ_SCRIPT);
-        let workshop = ythq_workshop("patched", &as_files(&files));
+        let workshop = ythq_workshop("patched", Kind::Ets2, &as_files(&files));
         let game = GameFiles::new(Vec::new());
         let out = workshop.join("westplay.scs");
         let make = || {
@@ -2694,7 +2718,7 @@ ui::text : _nameless._.map {
         );
         drop(archive);
         // As its archive has them now: current. Updated: not, and made again current.
-        assert!(ythq_screens_current(Some(&workshop), &out));
+        assert!(ythq_screens_current(Kind::Ets2, Some(&workshop), &out));
         let changed = YTHQ_SCRIPT.replace("bare_map.mat", "bare_map2.mat");
         let updated: Vec<(&str, String)> = files
             .iter()
@@ -2703,10 +2727,10 @@ ui::text : _nameless._.map {
         let workshop_files = updated.iter().map(|(path, text)| (*path, text.as_str())).collect::<Vec<_>>();
         let files: Vec<(String, Vec<u8>)> =
             workshop_files.iter().map(|(path, text)| ((*path).to_owned(), text.as_bytes().to_vec())).collect();
-        std::fs::write(workshop.join(YTHQ_ITEM).join("universal.scs"), zip(&files)).unwrap();
-        assert!(!ythq_screens_current(Some(&workshop), &out));
+        std::fs::write(workshop.join(ythq_item(Kind::Ets2)).join("universal.scs"), zip(&files)).unwrap();
+        assert!(!ythq_screens_current(Kind::Ets2, Some(&workshop), &out));
         make();
-        assert!(ythq_screens_current(Some(&workshop), &out));
+        assert!(ythq_screens_current(Kind::Ets2, Some(&workshop), &out));
         let _ = std::fs::remove_dir_all(&workshop);
     }
 
@@ -2727,7 +2751,7 @@ ui::text : _nameless._.map {
             ),
         ];
         files.extend(ythq_tablet_files());
-        let workshop = ythq_workshop("tablets-only", &as_files(&files));
+        let workshop = ythq_workshop("tablets-only", Kind::Ets2, &as_files(&files));
         let game = GameFiles::new(Vec::new());
         let (bytes, built) =
             build(&game, &[], &cab_mark::Marks::default(), crate::game::Kind::Ets2, Some(workshop.as_path())).unwrap();
@@ -2779,7 +2803,7 @@ ui::text : _nameless._.map {
             ("ui/dashboard/ythq_tablet_gps_mirror_nfb.sii", YTHQ_SCRIPT.to_owned()),
             ("def/vehicle/truck/volvo.fh_2021/accessory/toyac/ythq_larger_tablet.sii", unquoted),
         ];
-        let workshop = ythq_workshop("unquoted", &as_files(&files));
+        let workshop = ythq_workshop("unquoted", Kind::Ets2, &as_files(&files));
         let game = GameFiles::new(Vec::new());
         let (bytes, built) =
             build(&game, &[], &cab_mark::Marks::default(), crate::game::Kind::Ets2, Some(workshop.as_path())).unwrap();
@@ -2811,7 +2835,7 @@ ui::text : _nameless._.map {
         // Its one script here without the "screen on" group (a YTHQ version laid out otherwise): no factory screen of
         // its patched; its tablet's copy made all the same (no truck screen's picture goes on it to begin with).
         let bad = YTHQ_SCRIPT.replace("id: 100", "id: 7");
-        let workshop = ythq_workshop("unread", &[("ui/dashboard/ythq_tablet_gps_mirror_nfb.sii", &bad)]);
+        let workshop = ythq_workshop("unread", Kind::Ets2, &[("ui/dashboard/ythq_tablet_gps_mirror_nfb.sii", &bad)]);
         let game = GameFiles::new(Vec::new());
         let (bytes, built) =
             build(&game, &[], &cab_mark::Marks::default(), crate::game::Kind::Ets2, Some(workshop.as_path()))
@@ -2829,7 +2853,7 @@ ui::text : _nameless._.map {
         assert!(script.contains("screen_tablet.mat"), "{script}");
         drop(archive);
         // Its tablet's copy in the mod: current.
-        assert!(ythq_screens_current(Some(&workshop), &out));
+        assert!(ythq_screens_current(Kind::Ets2, Some(&workshop), &out));
         let _ = std::fs::remove_dir_all(&workshop);
     }
 
@@ -2871,7 +2895,7 @@ ui::text : _nameless._.map {
             ),
         ];
         files.extend(ythq_tablet_files().into_iter().filter(|(path, _)| *path != YTHQ_TABLET_UI_PATH));
-        let workshop = ythq_workshop("no-tablet-ui", &as_files(&files));
+        let workshop = ythq_workshop("no-tablet-ui", Kind::Ets2, &as_files(&files));
         let game = GameFiles::new(Vec::new());
         let (bytes, built) =
             build(&game, &[], &cab_mark::Marks::default(), crate::game::Kind::Ets2, Some(workshop.as_path())).unwrap();
@@ -2928,7 +2952,7 @@ ui::text : _nameless._.map {
             String::from_utf8(archive.read("ui/dashboard/ythq_tablet_gps_mirror_nfb.sii").unwrap().unwrap()).unwrap();
         assert!(script.contains("screen_tablet.mat"), "{script}");
         drop(archive);
-        assert!(ythq_screens_current(None, &out));
+        assert!(ythq_screens_current(Kind::Ets2, None, &out));
         let _ = std::fs::remove_file(&out);
     }
 

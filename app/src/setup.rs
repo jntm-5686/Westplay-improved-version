@@ -495,7 +495,7 @@ fn look_at_game_mods(game: &Game, looked: &mut HashMap<PathBuf, ModsStamp>) {
     // YTHQ Tablet's own screens too: installed since the mod was made, or updated (its scripts are the trucks'
     // factory screens with it).
     let workshop = game.workshop();
-    let ythq_current = game_mod::ythq_screens_current(workshop.as_deref(), &ours);
+    let ythq_current = game_mod::ythq_screens_current(game.kind, workshop.as_deref(), &ours);
     let marks = cab_mark::for_tablet(&files, &mods, &mod_trucks, &profiles_mods(game));
     let marks_current = cab_mark::current(&marks, &ours);
     if wanted != present || !game_screens_current || !ythq_current || !marks_current || !addons_current(&ours) {
