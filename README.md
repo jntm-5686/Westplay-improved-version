@@ -55,6 +55,10 @@ WestPlay 把一块车机风格的屏幕放进卡车自己的仪表台，在游�
 12. **赞助页 / 社交栏改为爱发电**，见下。
 13. **自动更新指向本仓库**，不再从原版仓库拉更新（避免改进版被原版覆盖）。
 
+**应用**
+
+14. **新增网易云音乐应用**（原版没有）：车机里独立 App，仿桌面版现代界面、大字号精简布局；登录在伴生程序的「账号」页扫码完成；支持推荐歌单、歌单播放、正在播放、播放控制与音量；界面风格可选「跟随体系 / 网易云红」，浅色深色自动跟随。
+
 ## YTHQ 平板
 
 > 本版的「YTHQ 平板分流」需要先安装 YTHQ Tablet 模组；只认创意工坊位置，把 `.scs` 拷到 `Documents\...\mod` 不生效。
@@ -230,6 +234,10 @@ WestPlay puts a CarPlay-style screen on your truck's own dashboard display, insi
 11. **Default search engine is Bing** (changeable in the cab's settings).
 12. **Support page and social bar use Afdian** instead of the original's donation links.
 13. **Updates come from this repository**, so an upstream release can't overwrite this edition.
+
+**Apps**
+
+14. **NetEase Cloud Music** is a new app in this edition (the original has none): a standalone app on the truck's screen, in a simplified desktop-style layout with large type; sign in from the companion's Accounts page (QR code); recommended playlists, playlist playback, now playing, transport and volume; the look can follow WestPlay or use NetEase's red, in light and dark.
 
 ### Requirements and installation
 
