@@ -159,6 +159,13 @@
     }
   }
   // "01:23" or "01:23 / 04:32" (the play bar's time) as seconds, and the length of the song it's in.
+  // How far the page's own play bar says the song is, in seconds (NaN when it isn't readable): the clock the
+  // self-heal watches (a page's player can say it plays while its sound never moves).
+  const barSeconds = () => {
+    const said = text(document.querySelector(S.time))
+    const match = /(\d{1,3}):(\d{2})/.exec(said)
+    return match ? Number(match[1]) * 60 + Number(match[2]) : NaN
+  }
   const clock = (said) => {
     const found = /(?:(\d{1,3}):(\d{2}))?\s*\/\s*(\d{1,3}):(\d{2})/.exec(said ?? '')
     if (found) return { position: Number(found[1] ?? 0) * 60 + Number(found[2] ?? 0), duration: Number(found[3]) * 60 + Number(found[4]) }
@@ -894,13 +901,16 @@
     }
     const now = track()
     const audio = audioState()
-    // The bar says it plays, but the page's own element is paused, or it never loaded (no time, no length), or
-    // its clock stands still: nothing is heard while the bar moves on (owner: a few songs in, then silence).
-    const stillborn = Boolean(now) && audio.elements > 0 && (audio.at === 0 || !now.duration)
-    const frozen = audio.playing && audio.at !== null && audio.at === lastAt && Date.now() - lastAtSince > HEAL_AFTER
-    const stuck = Boolean(now) && audio.elements > 0 && (!audio.playing || stillborn || frozen)
-    if (audio.at !== lastAt) {
-      lastAt = audio.at
+    // The page says it plays, and what it plays for the driver doesn't move: its play bar's own clock stands
+    // still (owner 2026-11-19: the bar 0:00 while it says playing; its sound element paused at an old song).
+    const at = barSeconds()
+    const stillborn = Boolean(now) && Number.isFinite(at) && at === 0 && !(now.duration > 0.5)
+    const frozen = Number.isFinite(at) && at === lastAt && Date.now() - lastAtSince > HEAL_AFTER
+    // And the element it carries (when one is found) going quiet counts too.
+    const quiet = audio.elements > 0 && !audio.playing && !Boolean(audio.at > 0 && audio.playing)
+    const stuck = Boolean(now) && (stillborn || frozen || quiet)
+    if (at !== lastAt) {
+      lastAt = at
       lastAtSince = Date.now()
     }
     if (!stuck) {
@@ -920,13 +930,13 @@
     lastHeal = Date.now()
     stuckTries += 1
     heals += 1
-    // Its play button (off, then on: a load the page's player didn't finish starts again), then its own player's
-    // way (or the song's row, which keeps the queue), then the next song.
+    // The song again as its own page plays one (its row's play, keeping the queue; else its own player), then its
+    // play button off and on (a load that never finished starts again), then the next song.
     if (stuckTries === 1) {
+      if (!now.id || !playAgain(now.id)) click(S.play)
+    } else if (stuckTries === 2) {
       click(S.play)
       setTimeout(() => click(S.play), 500)
-    } else if (stuckTries === 2) {
-      if (!now.id || !playAgain(now.id)) click(S.play)
     } else {
       click(S.next)
     }
