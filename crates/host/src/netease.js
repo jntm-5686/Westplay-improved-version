@@ -1,35 +1,43 @@
 // WestPlay, in NetEase Cloud Music's web player (music.163.com, netease.rs): the official page, run hidden under
 // the cab. The NetEase app the player sees is WestPlay's own (ui/src/cabin/apps/netease); this reads the page's
-// player and lists from its own page, and plays through the page's own buttons, as its own page does:
+// player and its data, and plays through the page's own player:
 //
 // - The page is a shell of its own: its player at the bottom, its content in a frame of the same origin
-//   (`#g_iframe`, on `https://music.163.com/discover`). The frame's document is reached from here, so the
-//   recommended playlists and a playlist's songs are read without any cross-origin frame.
-// - The player's state (signed in or not, playing, the song, the artist, the cover, how far in) is in the shell's
-//   own play bar, read as it changes (~1 s). No request of the page's own is made for it.
-// - Playing is the page's own: its play/pause button, its next and previous, its progress bar (dragged with the
-//   mouse events a drag sends), its audio element's volume, and a song's own play in its list, or its own player
-//   (`nm.x.ceo2i`, what its own links play a song by) — the page's own data and player, never an address asked of
-//   its servers here.
+//   (`#g_iframe`). The player's state (signed in or not, playing, the song, the artist, the cover, how far in) is
+//   in the shell's own play bar, read as it changes (~1 s).
+// - Everything the app shows is read from the page's own same-origin interface (`fetch('/api/…')`, the session's
+//   own cookies): Home's day and playlists, the account's playlists, a playlist's songs, a search's songs, artists
+//   and playlists, an artist's page, the recent songs and the liked state. Nothing is navigated for it: the page
+//   stays where it is while the music plays (navigating rebuilds its player and loses the queue, the owner's
+//   "three songs in, and it sticks"), and only a page with nothing playing is ever navigated (the few fallbacks).
+// - Playing is the page's own player's way (`window.nm.x.ceo2i('play', 18, <song id>)`, what its own links call):
+//   its own data and player, no row clicked and no page opened. Its own play/pause and next/previous buttons are
+//   pressed only when the state says they're needed, its progress bar dragged for a seek, its audio element turned
+//   down for the volume. Every play is timed (10 s, then three graded rescues: play again, its own row's play, and
+//   the page loaded anew) and said to the host with its steps (§ the timing report).
+// - Liking is the account's own: a song added to or taken from its 我喜欢的音乐 playlist (specialType 5) through
+//   the page's own same-origin interface, its state read from that playlist's own track ids.
 // - Signing in is the page's own QR code dialog, in a window on the desktop (signin.rs); this page then loads
 //   again, signed in. Nothing of the account leaves the page: only whether it's signed in is said, never its
 //   name or anything else of it.
 //
 // Messages to the host (netease.rs), over `chrome.webview.postMessage` as the other players':
-//   { state: { signedIn, playing, volume, track, lists? } }   what the page says of itself (lists when changed)
+//   { state: { signedIn, playing, volume, track, liked?, lists? } }  what the page says of itself
 //   { playlist: { id, name, songs: [{ id, title, artist, duration, playable }] } }   a playlist asked for
 //   { library: { groups: [{ title, count, playlists: [{ id, name, cover, songCount, by }] }] } }
 //                                                             the account's own playlists (创建/收藏的歌单)
-//   { search: { query, songs: [...] } }                        the page's answer to a search, by its own route
+//   { search: { query, songs: [...], artists: [...], playlists: [...], songsTotal, artistsTotal, playlistsTotal } }
+//                                                             the page's own search, its three kinds
+//   { artist: { id, name, alias, cover, songs: [...] } }       an artist's page asked for (openArtist)
 //   { recent: { songs: [...] } }                               the account's last week's songs (听歌排行)
 //   { home: { daily: { songs }, radar, personal, recommended } }  Home's day and its playlist shelves
+//   { like: { id, liked, ok } }                                a like asked for, done (or not)
+//   { timing: { action, sounding, steps, ... } }               a play timed, with what its rescues did
 //   { ready: true }                                           the page loaded (anew)
 // and the host's to it: { action, value? } — the app's own commands (netease.rs's Command), `refresh`, and the
 // cab's (cab_sound.js: speakers, head, outside, menu, equalizer, spectrum).
 //
 // Every selector this script uses is in `S` below, and nowhere else: NetEase's page changes, that's what to fix.
-// The play bar can say it plays while its own audio element doesn't (seen after a few songs, owner 2026-11-19):
-// the watchdog at the foot presses the page's own play again, then its own player's way, at most twice a song.
 ;(() => {
   if (location.hostname !== 'music.163.com' || window.top !== window) return
   const post = (message) => window.chrome?.webview?.postMessage(message)
@@ -84,37 +92,41 @@
     rowDuration: '.u-dur',
     rowDisabled: 'js-dis',
     hiddenList: '#song-list-pre-cache .f-hide li a', // the server's own list, before the table is drawn
-    // A song's own page (`…/song?id=…`): its play button.
-    songPlay: '#content-operation a[data-res-action="play"]',
-    // Home: the account's own cards (私人雷达, 每日歌曲推荐 and its playlists) are `personal`, the recommended
-    // playlists `cards` (the account's own are in `personal` too: left out there), and the day's own page
-    // (每日歌曲推荐): its songs are the content's table (`rows`), as a playlist's are.
-    // A search (`…/search/m/?s=…&type=1`): the page's own results, an item a song (its own new search page, not a
-    // table), with the song's id and rights on its play button.
-    searchResults: '.n-srchrst .srchsongst .item',
-    searchPlay: 'a.ply', // its `data-res-id`: the song's; `data-res-copyright`: "0" for one that can't play
-    searchTitle: '.sn .text a',
-    searchTitleName: '.sn .text a b', // its `title`: the name, without the version in the page's own span
-    searchArtist: '.td.w1 .text',
-    searchDuration: ':scope > .td:last-child',
-    // My Music's own side (`…/my/`): its groups of playlists (创建的歌单, 收藏的歌单), a group for each.
-    library: '#g_mymusic .n-minelst',
-    libraryTitle: 'h2 .rtitle', // "创建的歌单(5)"
-    libraryItem: 'li[data-matcher^="playlist-"]', // `data-matcher`: "playlist-<id>"
-    libraryName: 'p.name a', // its `title`: the playlist's name
-    libraryCover: 'img',
-    libraryCount: 'p.num', // "2747首", or "129首 by 微雨染尘埃" for one collected
+    // Home's own page, a playlist's page and an artist's page: read only as a fallback, while nothing plays (the
+    // page's own interface is the app's data; a navigation while the music plays is what loses its queue).
+    cards: '.n-rcmd .m-cvrlst li',
+    anyCard: '.m-cvrlst li',
+    cardLink: 'a.msk[href^="/playlist?id="]',
+    cardName: 'p.dec a.tit',
+    cardCover: 'img',
+    cardPlays: '.bottom .nb',
+    personal: '#personalRec .m-cvrlst li',
+    personalName: 'a.tit, .dec a',
+    personalLink: 'a[href]',
+    playlistName: '.m-info .tit h2',
+    artistName: '.n-artist #artist-name',
+    artistAlias: '.n-artist #artist-alias',
+    artistCover: '.n-artist img',
+    artistRows: '.m-table tbody tr',
+    artistRowPlay: '.hd .ply',
+    artistRowLink: '.tt .ttc .txt a',
+    artistRowTitle: '.tt .ttc .txt a b', // its `title`: the name, without the page's own hidden letters
+    artistRowDuration: '.u-dur',
   }
-  // How many recommended playlists the app shows, how long its page has to show whose account it is, and how long
-  // a playlist's page has to show its songs (the same for the day's, a search's and the account's own lists).
+  // How many recommended playlists the app shows, how long a fallback page has to show its lists, and how many of
+  // the day's, an artist's and the recent songs are read.
   const LISTS = 12
   const ACCOUNT_WAIT = 20000
   const PLAYLIST_WAIT = 15000
-  const SONG_WAIT = 12000
   const HOME_WAIT = 12000
-  const LIBRARY_WAIT = 15000
-  const SEARCH_WAIT = 12000
+  const ARTIST_WAIT = 12000
+  const ARTIST_MOST = 50
   const RECENT_MOST = 100
+  // Playing: timed from the command until its sound moves (10 s, then three graded rescues: its own player's way
+  // again, the song's own row, the page loaded anew).
+  const WATCH_FOR = 10000
+  const RESCUE_AFTER = 3000
+  const WATCH_STEP = 100
 
   // --- The content's document, and what its DOM says ---------------------------------------------------------
 
@@ -183,6 +195,73 @@
     if (!found) return 0
     const unit = found[2] === '亿' ? 1e8 : found[2] === '万' ? 1e4 : 1
     return Math.round(Number(found[1]) * unit) || 0
+  }
+
+  // --- The page's own interface, as its own pages ask it -------------------------------------------------------
+  //
+  // Everything the app shows comes from here, not from navigating the content frame: a navigation while the music
+  // plays rebuilds the page's player and loses the queue (owner: three songs in, and it sticks). Only the page's
+  // own session (its cookies) is sent; nothing of the account leaves the page but what the app shows.
+  const api = async (path) => {
+    try {
+      const response = await fetch(path, { credentials: 'same-origin' })
+      if (!response.ok) return null
+      return await response.json()
+    } catch {
+      return null
+    }
+  }
+  // A song as the page's own answers say it: its id, name, artists (joined as its pages show them), length (its
+  // answers' milliseconds), and whether the account's own rights let it play (`st` below 0: not; a fee of 4 or 8
+  // without a privilege is an album's to buy).
+  const songOf = (song) => {
+    if (!song?.id || !song?.name) return null
+    const artists = Array.isArray(song.ar) ? song.ar : Array.isArray(song.artists) ? song.artists : []
+    const privilege = song.privilege
+    const right = song.st !== undefined ? Number(song.st) : privilege ? Number(privilege.st ?? 0) : null
+    return {
+      id: String(song.id),
+      title: String(song.name),
+      artist: artists.map((artist) => artist?.name).filter(Boolean).join('/'),
+      duration: Math.round((Number(song.dt ?? song.duration) || 0) / 1000),
+      playable: (right !== null ? right >= 0 : Number(song.fee ?? 0) < 4) && !song.noCopyrightRcmd,
+    }
+  }
+  // A playlist as the page's own cards say it.
+  const playlistOf = (list) => {
+    if (!list?.id || !list?.name) return null
+    return {
+      id: String(list.id),
+      name: String(list.name),
+      cover: wide(list.picUrl ?? list.coverImgUrl),
+      playCount: Math.round(Number(list.playcount ?? list.playCount) || 0),
+    }
+  }
+  // Songs by their ids, as the page's own song detail gives them (each with its `st`: the account's own rights), in
+  // batches of 200 (its own interface's size, not a list of thousands in one request).
+  const songsByIds = async (ids) => {
+    const wanted = [...new Set(ids.map(String).filter((id) => /^\d{1,20}$/.test(id)))]
+    const songs = []
+    for (let at = 0; at < wanted.length; at += 200) {
+      const batch = wanted.slice(at, at + 200)
+      try {
+        const response = await fetch('/api/v3/song/detail', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
+          body: `c=${encodeURIComponent(JSON.stringify(batch.map((id) => ({ id: Number(id) }))))}`,
+        })
+        if (!response.ok) continue
+        const answer = await response.json()
+        for (const song of Array.isArray(answer?.songs) ? answer.songs : []) {
+          const read = songOf(song)
+          if (read) songs.push(read)
+        }
+      } catch {
+        // Its own interface, gone: the songs it did give are the answer.
+      }
+    }
+    return songs
   }
 
   // --- The player's own audio element -------------------------------------------------------------------------
@@ -447,47 +526,167 @@
     return Boolean(button)
   }
 
-  // A song (`id`) played as the page itself plays one: its row's own play where its list shows it (the list
-  // stays the queue), or its own player's way (`nm.x.ceo2i`, what its own links play a song by: its own data
-  // source and player), or its own page's play button.
-  const playSong = async (id) => {
-    const queued = () => {
-      try {
-        return window.player?.getPlaying?.() ?? null
-      } catch {
-        return null
-      }
-    }
-    const doc = frame()
-    const row = doc && [...doc.querySelectorAll(S.rows)].find((row) => dataId(row.querySelector(S.rowPlay)?.getAttribute('data-res-id')) === id)
-    if (row) {
-      row.querySelector(S.rowPlay)?.click()
-      // Its own player up to it (a moment's loading, or the page refusing: no account): its own way, then.
-      const until = Date.now() + 3000
-      while (Date.now() < until) {
-        if (isPlaying() || String(queued()?.track?.id ?? '') === id) return
-        await sleep(200)
-      }
-    }
+  // --- Playing: the page's own player's way, timed and rescued -------------------------------------------------
+  //
+  // A song is played by the page's own player (`nm.x.ceo2i('play', 18, <id>)`, what its own links call): its own
+  // data source and player, no page opened and no row clicked. Each command is watched (owner: "three songs in,
+  // and it sticks"; Spotify's bridge recovers in 10 s, and this one the same): every 100 ms, how far the sound's
+  // own element is. Moving within 10 s is the normal way, and nothing more is done. Past 10 s: three graded
+  // rescues, never a skip and never a burst of presses —
+  //   1. its own player's way again (the same song); its play button only when its state says paused;
+  //   2. 3 s later: the song's own row's play, where the content page still shows it (its own queue kept);
+  //   3. 3 s later: the hidden page loaded anew, the song played on once the page is back (the queue is lost; the
+  //      sound isn't).
+  // Each step, its moment and what the player's element said then go to the host in the timing report.
+  const playerOf = () => {
     try {
-      const play = window.nm?.x?.ceo2i
-      if (typeof play === 'function') {
-        play('play', 18, id)
-        return
-      }
+      return window.nm?.x?.ceo2i
     } catch {
-      // Its own player's way, changed: its own page, then.
-    }
-    if (!open(`/song?id=${encodeURIComponent(id)}`)) return
-    const started = Date.now()
-    while (Date.now() - started < SONG_WAIT) {
-      await sleep(200)
-      if (click(S.songPlay)) return
+      return null
     }
   }
-  // Playing on: its own play button, when it isn't playing.
+  const playByPlayer = (id) => {
+    const play = playerOf()
+    if (typeof play !== 'function') return false
+    try {
+      play('play', 18, id)
+      return true
+    } catch {
+      return false
+    }
+  }
+  // The sound's own element now: the one playing, else the last it made (the page's may not be in the document).
+  const soundingNow = () => {
+    const all = [...media]
+    return (
+      all.find((element) => !element.paused && !element.ended && element.readyState >= 2) ??
+      all.find((element) => !element.paused && !element.ended) ??
+      all.at(-1) ??
+      null
+    )
+  }
+  // What that element says now: the timing report's own facts (never its address).
+  const elementState = () => {
+    const element = soundingNow()
+    if (!element) return null
+    return {
+      paused: Boolean(element.paused),
+      at: Number.isFinite(element.currentTime) ? Math.round(element.currentTime * 10) / 10 : null,
+      duration: Number.isFinite(element.duration) ? Math.round(element.duration) : null,
+      ready: element.readyState,
+    }
+  }
+  const RELOAD_KEY = 'westplay.netease.reload-play'
+  const watch = { timer: null, action: null, id: null, since: 0, steps: [], level: 0, last: null, raw: null }
+  const stepLine = (what) => {
+    if (watch.steps.length < 40) watch.steps.push(`${what}@${Math.round(performance.now() - watch.since)}ms`)
+  }
+  const sayTiming = (ok, took, extra = {}) =>
+    post({
+      timing: { action: watch.action, sounding: ok ? took : null, steps: watch.steps.join(', '), ...extra },
+    })
+  const stopWatch = () => {
+    clearInterval(watch.timer)
+    watch.timer = null
+  }
+  // A rescue, one level at a time (`level`: 1, 2 or 3): each says its own moment and the player's own state then.
+  const rescue = (level) => {
+    watch.level = level
+    const id = watch.id
+    const state = elementState()
+    const facts = state ? `${JSON.stringify(state)}` : 'no-element'
+    if (level === 1) {
+      stepLine(`rescue1 play-again ${facts}`)
+      if (id) playByPlayer(id)
+      if (!isPlaying() && click(S.play)) stepLine('rescue1 button')
+      sayTiming(false, Math.round(performance.now() - watch.since), { rescue: 1 })
+      return
+    }
+    if (level === 2) {
+      stepLine(`rescue2 row-or-player ${facts}`)
+      const doc = frame()
+      const row =
+        id && doc
+          ? [...doc.querySelectorAll(S.rows)].find((row) => dataId(row.querySelector(S.rowPlay)?.getAttribute('data-res-id')) === id)
+          : null
+      if (row) {
+        row.querySelector(S.rowPlay)?.click()
+        stepLine('rescue2 row')
+      } else if (id) {
+        playByPlayer(id)
+      } else if (!isPlaying()) {
+        click(S.play)
+      }
+      sayTiming(false, Math.round(performance.now() - watch.since), { rescue: 2 })
+      return
+    }
+    // The page loaded anew: the song played on once this script runs again and the page is up.
+    stepLine(`rescue3 reload ${facts}`)
+    try {
+      sessionStorage.setItem(RELOAD_KEY, JSON.stringify({ id, at: Date.now() }))
+    } catch {
+      // Storage blocked: the reload happens, the song isn't played on (the app's own play is still there).
+    }
+    sayTiming(false, Math.round(performance.now() - watch.since), { rescue: 3, reloading: true })
+    stopWatch()
+    location.reload()
+  }
+  // A play watched: its own element's clock moving for the song asked is the normal way (the took it says); 10 s
+  // without, then the three rescues at their own times.
+  const timePlay = (action, id = null) => {
+    stopWatch()
+    watch.action = action
+    watch.id = id
+    watch.since = performance.now()
+    watch.steps = []
+    watch.level = 0
+    watch.last = null
+    watch.raw = null
+    const before = elementState()
+    if (before) stepLine(`before ${JSON.stringify(before)}`)
+    watch.timer = setInterval(() => {
+      const took = Math.round(performance.now() - watch.since)
+      const state = elementState()
+      const at = state && !state.paused ? state.at : null
+      const moving = at !== null && watch.last !== null && at > watch.last + 0.05
+      if (moving && state && state.at !== null) watch.last = state.at
+      const current = track()
+      const ours = !id || action === 'resume' || String(current?.id ?? '') === String(id)
+      if (moving && ours) {
+        stopWatch()
+        stepLine(`sounding ${took}ms`)
+        sayTiming(true, took)
+        return
+      }
+      if (took < WATCH_FOR) return
+      const level = took >= WATCH_FOR + 2 * RESCUE_AFTER ? 3 : took >= WATCH_FOR + RESCUE_AFTER ? 2 : 1
+      if (level > watch.level) rescue(level)
+      if (!watch.timer) clearInterval(watch.timer)
+    }, WATCH_STEP)
+  }
+  // A song played: its own player's way, then its own watch.
+  const playSong = (id) => {
+    const played = playByPlayer(id)
+    if (played) timePlay('play', id)
+    return played
+  }
+  // Playing on: its own play button, only when its own state says it's paused.
   const resume = () => {
-    if (!isPlaying()) click(S.play)
+    if (isPlaying()) return false
+    timePlay('resume')
+    return click(S.play)
+  }
+  // Paused: its own play button, only when its own state says it plays.
+  const pause = () => {
+    if (!isPlaying()) return false
+    return click(S.play)
+  }
+  // Its own next and previous buttons, each timed (a skip itself isn't retried: that would move two songs on).
+  const skip = (direction) => {
+    timePlay(direction > 0 ? 'next' : 'previous')
+    const pressed = click(direction > 0 ? S.next : S.previous)
+    if (!pressed) stopWatch()
+    return pressed
   }
   // The page's progress bar, dragged as the mouse drags it: from where it is to `to` seconds in.
   const seek = (to) => {
@@ -537,218 +736,239 @@
     }))
     return hidden.length > 0 ? hidden : null
   }
-  // A playlist's page (`id` the playlist's), its songs answered with as soon as its page lists them: at most
-  // PLAYLIST_WAIT for the page to show them (none if it doesn't).
+  // A playlist's songs, its own page's detail by its id (its name and its track ids), the songs then asked for by
+  // their ids (the page's own interface): no page navigated. "daily" is the day's own songs, not a playlist's, and
+  // comes from the day's own interface. A page is read instead only when its own interface fails and nothing
+  // plays (a navigation while the music plays is what loses its queue).
   const answerPlaylist = async (id) => {
-    // 每日歌曲推荐 is a page of the day's songs, not a playlist of its own (`id`: "daily", the app's own name).
-    const daily = id === 'daily'
-    const path = daily ? '/discover/recommend/taste' : '/playlist'
     const answer = { playlist: { id, name: '', songs: [] } }
-    if (!open(daily ? path : `/playlist?id=${encodeURIComponent(id)}`)) return post(answer)
+    if (id === 'daily') {
+      const songs = await dailySongs()
+      if (songs.length > 0 || isPlaying()) return post({ playlist: { id, name: '', songs } })
+      if (!open('/discover/recommend/taste')) return post(answer)
+      return post({ playlist: { id, name: '', songs: await songsOnPage() } })
+    }
+    const detail = await api(`/api/v1/playlist/detail?id=${encodeURIComponent(id)}`)
+    const playlist = detail?.playlist
+    if (playlist) {
+      const name = String(playlist.name ?? '')
+      const ids = (Array.isArray(playlist.trackIds) ? playlist.trackIds : []).map((each) => String(each.id))
+      const songs = await songsByIds(ids.slice(0, 1000))
+      return post({ playlist: { id, name, songs } })
+    }
+    if (isPlaying()) return post(answer)
+    if (!open(`/playlist?id=${encodeURIComponent(id)}`)) return post(answer)
+    const songs = await songsOnPage()
+    return post({ playlist: { id, name: atPath('/playlist') ? text(frame()?.querySelector(S.playlistName)) : '', songs } })
+  }
+  // A playlist's page's songs, as a fallback reads them (a page opened only while nothing plays), at most
+  // PLAYLIST_WAIT.
+  const songsOnPage = async (wait = PLAYLIST_WAIT) => {
     const started = Date.now()
     let songs = null
-    while (Date.now() - started < PLAYLIST_WAIT) {
+    while (Date.now() - started < wait) {
       await sleep(250)
-      // Another page (the app asked something else meanwhile): nothing of it is read as this playlist's.
-      if (!atPath(path)) continue
       songs = songsNow()
       // The page's own table over the server's list: once it's there, its rows are the ones to read.
-      const drawn = Boolean(frame()?.querySelector(S.rows))
-      if (songs && (drawn || Date.now() - started > 6000)) break
+      if (songs && (frame()?.querySelector(S.rows) || Date.now() - started > 6000)) break
     }
-    return post({
-      playlist: {
-        id,
-        name: daily || !atPath(path) ? '' : text(frame()?.querySelector(S.playlistName)),
-        songs: songs ?? [],
-      },
-    })
+    return songs ?? []
   }
 
-  // --- Home: the day's own songs, and the shelves the account's page shows ------------------------------------
+  // --- Home: the day's own songs, and the account's playlists ------------------------------------------------
+  //
+  // The page's own interface: the day's songs (its own 每日歌曲推荐), the account's cards (私人雷达 and its own
+  // playlists, the account's recommendation interface's own, whose first is the radar), and the page's recommended
+  // ones. A page is navigated only when its interface fails and nothing plays.
 
-  // Home's cards: the account's own (每日歌曲推荐, 私人雷达, and its playlists) and the recommended ones, each as
-  // its own card says it (id, name, cover, plays). `null` while the content's page isn't Discover's.
-  const homeCards = () => {
-    const doc = frame()
-    if (!doc) return null
-    const personal = []
-    let daily = null
-    for (const card of doc.querySelectorAll(S.personal)) {
-      const link = card.querySelector(S.personalLink)
-      const href = link?.getAttribute('href') ?? ''
-      const name = text(card.querySelector(S.personalName)) || link?.getAttribute('title') || ''
-      const cover = wide(card.querySelector(S.cardCover)?.getAttribute('src'))
-      if (!name) continue
-      if (/\/discover\/recommend\/taste/.test(href)) {
-        if (!daily) daily = { id: 'daily', name, cover, playCount: 0 }
-        continue
-      }
-      const id = idOf(href)
-      if (!id || personal.some((list) => list.id === id)) continue
-      personal.push({ id, name, cover, playCount: playCount(text(card.querySelector(S.cardPlays))) })
-    }
-    const radar = personal.find((list) => list.id === RADAR) ?? null
-    const recommended = []
-    for (const card of doc.querySelectorAll(S.cards)) {
-      // The account's own cards carry the same class: they're in `personal`, not among the recommended playlists.
-      if (card.closest('#personalRec')) continue
-      const link = card.querySelector(S.cardLink)
-      const id = idOf(link?.getAttribute('href'))
-      const name = text(card.querySelector(S.cardName)) || link?.getAttribute('title') || ''
-      if (!id || !name || recommended.some((list) => list.id === id)) continue
-      recommended.push({
-        id,
-        name,
-        cover: wide(card.querySelector(S.cardCover)?.getAttribute('src')),
-        playCount: playCount(text(card.querySelector(S.cardPlays))),
-      })
-      if (recommended.length >= LISTS) break
-    }
-    if (!daily && personal.length === 0 && recommended.length === 0) return null
-    return { daily, radar, personal: personal.filter((list) => list.id !== RADAR).slice(0, LISTS), recommended }
+  // The day's own songs (每日歌曲推荐): its interface's own, 33 for the day; its page's table read instead only
+  // when that fails and nothing plays (a navigation would rebuild the player).
+  const dailySongs = async () => {
+    const answer = await api('/api/v1/discovery/recommend/songs')
+    const rows = Array.isArray(answer?.data?.dailySongs)
+      ? answer.data.dailySongs
+      : Array.isArray(answer?.recommend)
+        ? answer.recommend
+        : []
+    const songs = rows.map(songOf).filter(Boolean)
+    if (songs.length > 0 || isPlaying()) return songs
+    if (!open('/discover/recommend/taste')) return []
+    return songsOnPage(HOME_WAIT)
   }
-  // Home, as the app asks for it (`home`): the cards its page shows first (answered at once, the day's songs still
-  // `null` in it, so Home draws while its page loads), then the day's own songs. A page the app moved meanwhile isn't
-  // read, and the answer says the day's songs weren't then.
+  // The account's own 私人雷达: the recommendation interface's own first card.
+  const RADAR_ID = '3136952023'
   const answerHome = async () => {
-    const home = { radar: null, personal: [], recommended: [] }
-    if (!open('/discover')) return post({ home })
-    const started = Date.now()
-    let cards = null
-    // The account's own cards (its 私人雷达 and its playlists) are asked of the page's own API after the page's
-    // recommended ones are drawn: Home answers the recommended ones at once, and waits for the account's a moment
-    // (signed out, they never come), then for its day's songs.
-    let shownAt = 0
-    let posted = false
-    while (Date.now() - started < HOME_WAIT) {
-      await sleep(250)
-      if (!atPath('/discover')) continue
-      cards = homeCards()
-      if (!cards) continue
-      if (!posted) {
-        posted = true
-        shownAt = Date.now()
-        post({ home: { radar: cards.radar, personal: cards.personal, recommended: cards.recommended } })
-      }
-      if (cards.radar || cards.personal.length > 0) break
-      if (Date.now() - shownAt > 8000) break
-    }
-    if (!cards) return post({ home })
-    home.radar = cards.radar
-    home.personal = cards.personal
-    home.recommended = cards.recommended
-    // A page the app moved meanwhile isn't read: the cards answered stand, the day's songs don't.
-    if (!atPath('/discover')) return post({ home })
-    if (!open('/discover/recommend/taste')) return post({ home })
-    const taste = Date.now()
-    let songs = null
-    while (Date.now() - taste < HOME_WAIT) {
-      await sleep(250)
-      if (!atPath('/discover/recommend/taste')) continue
-      songs = songsNow()
-      if (songs) break
-    }
-    post({ home: { ...home, daily: { songs: songs ?? [] } } })
+    const [own, cards] = await Promise.all([
+      api('/api/v1/discovery/recommend/resource'),
+      api(`/api/personalized/playlist?limit=${LISTS}`),
+    ])
+    const recommend = Array.isArray(own?.recommend) ? own.recommend : []
+    const radarCard = recommend.find((item) => String(item.id) === RADAR_ID) ?? null
+    const personal = recommend
+      .filter((item) => String(item.id) !== RADAR_ID)
+      .map(playlistOf)
+      .filter(Boolean)
+      .slice(0, LISTS)
+    const recommended = (Array.isArray(cards?.result) ? cards.result : [])
+      .filter((item) => Number(item?.type) === 0)
+      .map(playlistOf)
+      .filter(Boolean)
+      .filter((list) => !personal.some((each) => each.id === list.id))
+      .slice(0, LISTS)
+    // Its cards are known before its day's songs: the app draws them, and its day's page comes with them.
+    post({ home: { radar: radarCard ? playlistOf(radarCard) : null, personal, recommended, daily: null } })
+    post({ home: { radar: radarCard ? playlistOf(radarCard) : null, personal, recommended, daily: { songs: await dailySongs() } } })
   }
 
-  // --- The account's own playlists: My Music's side (…/my/) -------------------------------------------------
+  // --- The account's own playlists: its own interface (我的音乐) ----------------------------------------------
 
-  // The groups of playlists My Music's side names (创建的歌单, 收藏的歌单), each with its playlists as the page lists
-  // them: id, name, cover, how many songs, and by whom for one collected. `null` while its page doesn't show them.
-  const libraryGroups = () => {
-    const doc = frame()
-    if (!doc) return null
-    const groups = []
-    for (const group of doc.querySelectorAll(S.library)) {
-      const said = text(group.querySelector(S.libraryTitle))
-      // "创建的歌单(5)": the name, and its count (the page's own, said again with the group's playlists).
-      const title = said.replace(/\s*\(\d{1,5}\)\s*$/, '').trim()
-      if (!title) continue
-      const playlists = []
-      for (const item of group.querySelectorAll(S.libraryItem)) {
-        const id = dataId((item.getAttribute('data-matcher') ?? '').replace(/^playlist-/, ''))
-        const name =
-          item.querySelector(S.libraryName)?.getAttribute('title') || text(item.querySelector(S.libraryName))
-        if (!id || !name) continue
-        const saidNum = text(item.querySelector(S.libraryCount))
-        const songs = /^(\d{1,6})\s*首/.exec(saidNum)?.[1] ?? '0'
-        const by = /\bby\s+(.+)$/.exec(saidNum)?.[1] ?? ''
-        playlists.push({
-          id,
-          name,
-          cover: wide(item.querySelector(S.libraryCover)?.getAttribute('src')),
-          songCount: Number(songs) || 0,
-          by: by.trim().slice(0, 60),
-        })
-        if (playlists.length >= 300) break
-      }
-      const count = Number(/\((\d{1,5})\)/.exec(said)?.[1] ?? playlists.length) || playlists.length
-      groups.push({ title, count, playlists })
-      if (groups.length >= 8) break
-    }
-    return groups.length > 0 ? groups : null
-  }
+  // The account's playlists, by the page's own groups (创建的歌单, 收藏的歌单): its user's own interface in one
+  // answer, the groups made from who made each (the account, or another for one collected). Its 我喜欢的音乐
+  // (specialType 5) is the liked state's own list, kept here for that.
   const answerLibrary = async () => {
     const answer = { library: { groups: [] } }
-    if (!open('/my/')) return post(answer)
-    const started = Date.now()
-    let groups = null
-    while (Date.now() - started < LIBRARY_WAIT) {
-      await sleep(250)
-      if (!atPath('/my')) continue
-      groups = libraryGroups()
-      if (groups) break
-    }
-    post({ library: { groups: groups ?? [] } })
+    const uid = uidOf()
+    if (!uid) return post(answer)
+    const own = await api(`/api/user/playlist?uid=${encodeURIComponent(uid)}&limit=100&offset=0`)
+    const lists = Array.isArray(own?.playlist) ? own.playlist : []
+    const liked =
+      lists.find((list) => Number(list.specialType) === 5) ?? lists.find((list) => /喜欢的音乐$/.test(String(list.name ?? '')))
+    if (liked?.id) likedPlaylistId = String(liked.id)
+    const cards = lists
+      .filter((list) => list?.id && list?.name)
+      .map((list) => ({
+        id: String(list.id),
+        name: String(list.name),
+        cover: wide(list.coverImgUrl),
+        songCount: Math.max(0, Math.round(Number(list.trackCount) || 0)),
+        by: String(list.creator?.nickname ?? ''),
+        owned: String(list.creator?.userId ?? '') === String(uid),
+      }))
+    const group = (title, picked) => ({ title, count: picked.length, playlists: picked.map(({ owned, ...rest }) => rest) })
+    const created = cards.filter((list) => list.owned)
+    const collected = cards.filter((list) => !list.owned)
+    const groups = []
+    if (created.length > 0) groups.push(group('创建的歌单', created))
+    if (collected.length > 0) groups.push(group('收藏的歌单', collected))
+    post({ library: { groups } })
   }
 
-  // --- A search: the page's own search page ------------------------------------------------------------------
+  // --- A search: the page's own interface (its 单曲, 歌手 and 歌单) -------------------------------------------
+  //
+  // Its own interface's search, its three kinds the app shows: its songs (单曲), its artists (歌手) and its
+  // playlists (歌单), each with its page's own count. The last search asked is the only one answered (a newer one
+  // takes over). No page is navigated for it.
+  const SEARCH_KINDS = { songs: 1, artists: 100, playlists: 1000 }
+  let searchAsked = 0
 
-  // A search's songs, as the page's own results show them: the song's id and rights off its play button, its name
-  // (the page keeps a version or an album after the name in its title's own attribute, and hides letters in a
-  // `div.soil` inside it: neither is the song's), its artists and its length. `null`: not drawn yet.
-  const cleanName = (name) => {
-    if (!name) return ''
-    const copy = name.cloneNode(true)
-    for (const hidden of copy.querySelectorAll('.soil')) hidden.remove()
-    return text(copy) || name.getAttribute('title') || ''
-  }
-  const searchSongs = () => {
-    const doc = frame()
-    if (!doc) return null
-    const items = [...doc.querySelectorAll(S.searchResults)]
-    if (items.length === 0) return null
-    return items
-      .map((item) => {
-        const play = item.querySelector(S.searchPlay)
-        const link = item.querySelector(S.searchTitle)
-        return {
-          id: dataId(play?.getAttribute('data-res-id')) ?? idOf(link?.getAttribute('href')) ?? '',
-          title: cleanName(item.querySelector(S.searchTitleName)) || text(link) || '',
-          artist: text(item.querySelector(S.searchArtist)),
-          duration: seconds(text(item.querySelector(S.searchDuration))),
-          // The page says the song's own right on its play button ("0": its rights don't let it play here).
-          playable: play?.getAttribute('data-res-copyright') !== '0',
-        }
-      })
-      .filter((song) => song.id && song.title)
+  // One of a search's kinds, as its own interface answers it: its result (its songs, artists or playlists in it),
+  // or null. Its songs' own rights are asked for after (its search's answer has none).
+  const searchKind = async (query, type) => {
+    const limit = type === SEARCH_KINDS.songs ? 60 : 30
+    const answer = await api(`/api/search/get?s=${encodeURIComponent(query)}&type=${type}&limit=${limit}&offset=0`)
+    return answer?.result ?? null
   }
   const answerSearch = async (query) => {
     const said = String(query ?? '').trim().slice(0, 60)
-    const answer = { search: { query: said, songs: [] } }
-    if (!said) return post(answer)
-    if (!open(`/search/m/?s=${encodeURIComponent(said)}&type=1`)) return post(answer)
-    const started = Date.now()
-    let songs = null
-    while (Date.now() - started < SEARCH_WAIT) {
-      await sleep(250)
-      if (!atPath('/search')) continue
-      // Its new search page's results, or an older search table's rows (whichever the page has).
-      songs = searchSongs() ?? songsNow()
-      if (songs) break
+    const token = ++searchAsked
+    const answer = {
+      search: { query: said, songs: [], artists: [], playlists: [], songsTotal: 0, artistsTotal: 0, playlistsTotal: 0 },
     }
-    post({ search: { query: said, songs: songs ?? [] } })
+    if (!said) return post(answer)
+    // Its three kinds at once (its own interface's own search), the songs' rights asked for after (its search's
+    // answer has none: its own song detail has each one's `st`).
+    const [songResults, artistResults, playlistResults] = await Promise.all([
+      searchKind(said, SEARCH_KINDS.songs),
+      searchKind(said, SEARCH_KINDS.artists),
+      searchKind(said, SEARCH_KINDS.playlists),
+    ])
+    if (token !== searchAsked) return
+    const raw = Array.isArray(songResults?.songs) ? songResults.songs : []
+    const details = await songsByIds(raw.map((song) => song.id))
+    if (token !== searchAsked) return
+    const known = new Map(details.map((song) => [song.id, song]))
+    answer.search.songs = raw
+      .map((song) => known.get(String(song.id)) ?? songOf(song))
+      .filter(Boolean)
+      .slice(0, 60)
+    answer.search.songsTotal = Math.max(0, Number(songResults?.songCount) || answer.search.songs.length)
+    answer.search.artists = (Array.isArray(artistResults?.artists) ? artistResults.artists : [])
+      .map((artist) => ({
+        id: String(artist?.id ?? ''),
+        name: String(artist?.name ?? ''),
+        cover: wide(artist?.picUrl ?? artist?.img1v1Url),
+      }))
+      .filter((artist) => artist.id && artist.name)
+      .slice(0, 30)
+    answer.search.artistsTotal = Math.max(0, Number(artistResults?.artistCount) || answer.search.artists.length)
+    answer.search.playlists = (Array.isArray(playlistResults?.playlists) ? playlistResults.playlists : [])
+      .map(playlistOf)
+      .filter(Boolean)
+      .slice(0, 30)
+    answer.search.playlistsTotal = Math.max(0, Number(playlistResults?.playlistCount) || answer.search.playlists.length)
+    post(answer)
+  }
+
+  // --- An artist's page ---------------------------------------------------------------------------------------
+
+  // An artist's page, from the page's own interface: its artist (name, alias, picture) and their most played songs
+  // (its own `hotSongs`, each with the account's own right). Its page is read instead only when that fails and
+  // nothing plays.
+  const answerArtist = async (id) => {
+    const answer = { artist: { id, name: '', alias: '', cover: null, songs: [] } }
+    const detail = await api(`/api/v1/artist/${encodeURIComponent(id)}`)
+    const artist = detail?.artist
+    if (artist) {
+      const alias = Array.isArray(artist.alias) ? artist.alias.filter(Boolean).join(' / ') : String(artist.alias ?? '')
+      const songs = (Array.isArray(detail.hotSongs) ? detail.hotSongs : []).map(songOf).filter(Boolean).slice(0, ARTIST_MOST)
+      return post({
+        artist: {
+          id,
+          name: String(artist.name ?? ''),
+          alias,
+          cover: wide(artist.cover ?? artist.picUrl ?? artist.img1v1Url),
+          songs,
+        },
+      })
+    }
+    if (isPlaying()) return post(answer)
+    if (!open(`/artist?id=${encodeURIComponent(id)}`)) return post(answer)
+    const started = Date.now()
+    let page = null
+    while (Date.now() - started < ARTIST_WAIT) {
+      await sleep(250)
+      if (!atPath('/artist') || idOf(frame()?.location?.search) !== id) continue
+      page = artistOnPage()
+      // Its own header's there: its songs come under it (an artist's page may have none at all).
+      if (page && page.songs.length > 0) break
+    }
+    post({ artist: page ? { id, ...page } : answer.artist })
+  }
+  // An artist's page's own header and table, as the fallback reads them.
+  const artistOnPage = () => {
+    const doc = frame()
+    if (!doc) return null
+    const name = text(doc.querySelector(S.artistName)).replace(/\s*-\s*$/, '')
+    if (!name) return null
+    const alias = text(doc.querySelector(S.artistAlias)).replace(/\s*-\s*$/, '')
+    const songs = []
+    for (const row of doc.querySelectorAll(S.artistRows)) {
+      const play = row.querySelector(S.artistRowPlay)
+      const link = row.querySelector(S.artistRowLink)
+      const songId = dataId(play?.getAttribute('data-res-id')) ?? idOf(link?.getAttribute('href'))
+      const title = row.querySelector(S.artistRowTitle)?.getAttribute('title') || text(link) || ''
+      if (!songId || !title) continue
+      songs.push({
+        id: songId,
+        title,
+        artist: name,
+        duration: seconds(text(row.querySelector(S.artistRowDuration))),
+        // The page's own "not playable" row (no right to the song, or VIP only).
+        playable: !row.classList.contains(S.rowDisabled),
+      })
+      if (songs.length >= ARTIST_MOST) break
+    }
+    return { name, alias, cover: wide(doc.querySelector(S.artistCover)?.getAttribute('src')), songs }
   }
 
   // --- The account's own recent songs ------------------------------------------------------------------------
@@ -791,34 +1011,112 @@
   }
   const answerRecent = async () => post({ recent: { songs: await recentSongs() } })
 
+  // --- 红心: the account's own 我喜欢的音乐 ---------------------------------------------------------------
+  //
+  // NetEase's "liked" is a song's place in the account's own 我喜欢的音乐 playlist (its `specialType` 5): the
+  // state is read from that playlist's own track ids (the page's own interface), and a like adds the song to it,
+  // an unlike takes it out (`/api/playlist/manipulate/tracks`, its own `csrf_token` the page's own cookie, the
+  // same the page's own collect menu sends). Verified on the owner's account 2026-11-19: add -> count 2748, the
+  // song in `trackIds`; del -> count 2747, gone.
+  let likedPlaylistId = null
+  let likedIds = null
+  let likedFetchedAt = 0
+  let likedForTrack = ''
+  const csrf = () => /(?:^|;\s*)__csrf=([^;]+)/.exec(document.cookie)?.[1] ?? ''
+  // The account's own 我喜欢的音乐 playlist's id (from its own user playlists): null while signed out.
+  const likedPlaylist = async () => {
+    if (likedPlaylistId) return likedPlaylistId
+    const uid = uidOf()
+    if (!uid) return null
+    const answer = await api(`/api/user/playlist?uid=${encodeURIComponent(uid)}&limit=100&offset=0`)
+    const lists = Array.isArray(answer?.playlist) ? answer.playlist : []
+    const liked = lists.find((list) => Number(list.specialType) === 5) ?? lists.find((list) => /喜欢的音乐$/.test(String(list.name ?? '')))
+    likedPlaylistId = liked?.id ? String(liked.id) : null
+    return likedPlaylistId
+  }
+  // That playlist's own track ids: a Set, kept a minute (a song's own like asks it for itself).
+  const likedSet = async (force = false) => {
+    const now = Date.now()
+    if (!force && likedIds && now - likedFetchedAt < 60000) return likedIds
+    const id = await likedPlaylist()
+    if (!id) {
+      likedIds = null
+      return null
+    }
+    const detail = await api(`/api/v1/playlist/detail?id=${encodeURIComponent(id)}`)
+    const ids = detail?.playlist?.trackIds
+    likedIds = Array.isArray(ids) ? new Set(ids.map((each) => String(each.id))) : null
+    likedFetchedAt = now
+    return likedIds
+  }
+  // Whether a song is in it now (null while the list isn't known: signed out, or still coming).
+  const likedNow = (id) => {
+    if (!likedIds || !id) return null
+    return likedIds.has(String(id))
+  }
+  // A like asked for (the app's own heart): added to or taken from 我喜欢的音乐, said as it's done (or not), and
+  // the state's own said after it. Never a press of its page's own button: this is the page's own collect
+  // interface, and whether it really landed is read back from the playlist itself.
+  const setLiked = async (id, liked) => {
+    const playlist = await likedPlaylist()
+    const token = csrf()
+    if (!playlist || !token) {
+      post({ like: { id, liked, ok: false, reason: playlist ? 'csrf' : 'account' } })
+      return
+    }
+    let ok = false
+    try {
+      const body = `op=${liked ? 'add' : 'del'}&pid=${encodeURIComponent(playlist)}&trackIds=${encodeURIComponent(`[${id}]`)}&csrf_token=${encodeURIComponent(token)}`
+      const response = await fetch('/api/playlist/manipulate/tracks', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
+        body,
+      })
+      const answer = await response.json().catch(() => null)
+      const code = Number(answer?.code)
+      // 200: done. 502 ("歌单内歌曲重复"): it was already liked (a state read a moment late): done, too.
+      ok = code === 200 || /重复/.test(String(answer?.message ?? '')) || /重复/.test(String(answer?.msg ?? ''))
+    } catch {
+      ok = false
+    }
+    // Whether it landed: the playlist's own ids again (never the answer alone).
+    if (ok) await likedSet(true)
+    post({ like: { id, liked, ok } })
+    tell(true)
+  }
+
   // --- The app's commands, as the host passes them on (netease.rs's Command) -----------------------------------
   //
-  //   { action: "play" }                        play on (its play/pause button, when it isn't playing)
-  //   { action: "play", value: "<song id>" }    that song played (its row's own play where its list shows it, so
-  //                                             the list stays the queue; else its own player `nm.x.ceo2i`; else
-  //                                             its page's play button). Only digits: the host lets no other id in.
-  //   { action: "pause" | "next" | "prev" }     its own play/pause, next and previous buttons
+  //   { action: "play" }                        play on (its own play button, when its state says paused)
+  //   { action: "play", value: "<song id>" }    that song played by its own player (`nm.x.ceo2i('play', 18, id)`),
+  //                                             watched for its sound, rescued if it doesn't come. Only digits:
+  //                                             the host lets no other id in.
+  //   { action: "pause" | "next" | "prev" }     its own play/pause, next and previous buttons (each timed)
   //   { action: "seek", value: <seconds> }      its progress bar, dragged there as a mouse drags it
   //   { action: "volume", value: <0 to 1> }     its own audio element's volume (kept over the page's own changes)
-  //   { action: "openPlaylist", value: "<id>" } that playlist's page opened, its songs answered with (`playlist`);
-  //                                             "daily" is the day's own songs (每日歌曲推荐)
+  //   { action: "setLike", value: "<id>", liked: <bool> }  that song added to or taken from 我喜欢的音乐, done
+  //                                             through the page's own collect interface (`like` answered)
+  //   { action: "openPlaylist", value: "<id>" } that playlist's songs asked of the page's own interface (`playlist`)
+  //   { action: "openArtist", value: "<id>" }   that artist's page asked of the page's own interface (`artist`)
   //   { action: "home" }                        Home's cards and the day's own songs (`home`)
   //   { action: "library" }                     the account's own playlists, by group (`library`)
-  //   { action: "search", value: "<words>" }    the page's own search of them, its songs answered (`search`)
+  //   { action: "search", value: "<words>" }    the page's own search of them, its songs, artists and playlists
+  //                                             answered (`search`)
   //   { action: "recent" }                      the account's recent songs (its 听歌排行 this week) (`recent`)
   //   { action: "refresh" }                     the state and the recommended playlists read again
   //
   // and the cab's own (cab_sound.js: speakers, head, outside, menu, equalizer, spectrum), not the app's.
   const CONTROLS = {
     play: ({ value }) => (value ? playSong(String(value)) : resume()),
-    pause: () => {
-      if (isPlaying()) click(S.play)
-    },
-    next: () => click(S.next),
-    prev: () => click(S.previous),
+    pause: () => pause(),
+    next: () => skip(1),
+    prev: () => skip(-1),
     seek: ({ value }) => seek(value),
     volume: ({ value }) => setVolume(value),
+    setLike: ({ value, liked }) => setLiked(String(value), Boolean(liked)),
     openPlaylist: ({ value }) => answerPlaylist(String(value)),
+    openArtist: ({ value }) => answerArtist(String(value)),
     home: () => answerHome(),
     library: () => answerLibrary(),
     search: ({ value }) => answerSearch(value),
@@ -853,97 +1151,88 @@
     else CONTROLS[data?.action]?.(data)?.catch?.(() => {})
   })
 
-  // --- A play the page's sound doesn't follow -----------------------------------------------------------------
+  // --- A play the page's sound doesn't follow (the last resort) -----------------------------------------------
   //
-  // The play bar can say it plays while its own audio element isn't (owner 2026-11-19: the bar 0:00 / 00:00, the
-  // element's duration 0 and paused, and its play button pressed again fixes it). The page alone is woken: its
-  // play button again, then its own player's way (or the playing song's row), at most twice a song — and not
-  // while it just started (a second there is a song loading, not a stuck one).
-  const HEAL_AFTER = 2200
-  const HEAL_TRIES = 3
-  const HEAL_INTERVAL = 1000
+  // A play's own watch (timePlay) rescues a song that doesn't start; this watches a play on (owner: "it plays three
+  // songs and sticks"): the play bar says it plays while its own clock stands still (and its element's). The page is
+  // left alone for 15 s first (a song loading, a buffering moment), then its own player's way once, and no more
+  // often than every 20 s — never a skip, never a burst of presses.
+  const HEAL_AFTER = 15000
+  const HEAL_COOLDOWN = 20000
+  const HEAL_INTERVAL = 1500
   let stuckSince = 0
-  let stuckTries = 0
   let stuckTrack = ''
   let lastHeal = 0
   let heals = 0
-  // The element's own clock, to tell a song loading from one that never comes: a stuck one's `at` stands still.
   let lastAt = null
   let lastAtSince = 0
-  // The playing song played again as the page's own player plays one: its row's own play where its list shows it
-  // (the list stays the queue), else its own player's way (`nm.x.ceo2i`, what its own links play a song by).
-  const playAgain = (id) => {
-    const doc = frame()
-    const row =
-      doc && [...doc.querySelectorAll(S.rows)].find((row) => dataId(row.querySelector(S.rowPlay)?.getAttribute('data-res-id')) === id)
-    if (row) {
-      row.querySelector(S.rowPlay)?.click()
-      return true
-    }
-    try {
-      const play = window.nm?.x?.ceo2i
-      if (typeof play === 'function') {
-        play('play', 18, id)
-        return true
-      }
-    } catch {
-      // Its own player's way, changed: its play button, then.
-    }
-    return false
-  }
   const heal = () => {
-    // Not playing: nothing stuck (and the next song is read anew).
     if (!isPlaying()) {
       stuckSince = 0
-      stuckTries = 0
       stuckTrack = ''
       return
     }
     const now = track()
     const audio = audioState()
-    // The page says it plays, and what it plays for the driver doesn't move: its play bar's own clock stands
-    // still (owner 2026-11-19: the bar 0:00 while it says playing; its sound element paused at an old song).
-    const at = barSeconds()
-    const stillborn = Boolean(now) && Number.isFinite(at) && at === 0 && !(now.duration > 0.5)
-    const frozen = Number.isFinite(at) && at === lastAt && Date.now() - lastAtSince > HEAL_AFTER
-    // And the element it carries (when one is found) going quiet counts too.
-    const quiet = audio.elements > 0 && !audio.playing && !Boolean(audio.at > 0 && audio.playing)
-    const stuck = Boolean(now) && (stillborn || frozen || quiet)
-    if (at !== lastAt) {
+    // Its own element (when one is known) going quiet is a stuck play too, even while its play bar's clock moves.
+    const silent = audio.elements > 0 && !audio.playing
+    const at = Number.isFinite(audio.at) ? audio.at : barSeconds()
+    const key = String(now?.id || now?.title || '')
+    if (key !== stuckTrack) {
+      stuckTrack = key
+      stuckSince = 0
+      lastAt = at
+      lastAtSince = Date.now()
+      return
+    }
+    if (!silent && at !== lastAt) {
       lastAt = at
       lastAtSince = Date.now()
     }
-    if (!stuck) {
+    // Its own clock moved a moment ago: a song loading, not one stuck.
+    if (!silent && Number.isFinite(at) && Date.now() - lastAtSince < HEAL_AFTER) {
       stuckSince = 0
-      stuckTries = 0
-      stuckTrack = ''
       return
     }
-    const key = String(now.id || now.title)
-    if (key !== stuckTrack) {
-      stuckTrack = key
-      stuckSince = Date.now()
-      stuckTries = 0
-    }
     if (!stuckSince) stuckSince = Date.now()
-    if (Date.now() - stuckSince < HEAL_AFTER || stuckTries >= HEAL_TRIES || Date.now() - lastHeal < HEAL_AFTER) return
+    if (Date.now() - stuckSince < HEAL_AFTER || Date.now() - lastHeal < HEAL_COOLDOWN) return
     lastHeal = Date.now()
-    stuckTries += 1
     heals += 1
-    // The song again as its own page plays one (its row's play, keeping the queue; else its own player), then its
-    // play button off and on (a load that never finished starts again), then the next song.
-    if (stuckTries === 1) {
-      if (!now.id || !playAgain(now.id)) click(S.play)
-    } else if (stuckTries === 2) {
-      click(S.play)
-      setTimeout(() => click(S.play), 500)
-    } else {
-      click(S.next)
-    }
-    // The next try's window starts now: a page that woke up is found playing, and this resets itself.
+    const state = elementState()
+    stepLine(`heal ${state ? JSON.stringify(state) : 'no-element'}`)
+    post({ timing: { action: 'heal', sounding: null, steps: watch.steps.join(', '), rescue: 0 } })
+    if (now?.id) playByPlayer(now.id)
+    else if (!audio.playing) click(S.play)
     stuckSince = Date.now()
   }
   setInterval(heal, HEAL_INTERVAL)
+
+  // A play whose own rescue reloaded the page (timePlay's level 3): the song played on once this script is back
+  // (the page's queue is lost; the sound isn't), at most a minute after the reload asked for it.
+  const resumeAfterReload = () => {
+    let saved = null
+    try {
+      saved = JSON.parse(sessionStorage.getItem(RELOAD_KEY) ?? 'null')
+      sessionStorage.removeItem(RELOAD_KEY)
+    } catch {
+      saved = null
+    }
+    const id = saved?.id ? String(saved.id) : ''
+    if (!id || Date.now() - Number(saved.at ?? 0) > 60000) return
+    let tries = 0
+    const timer = setInterval(() => {
+      tries += 1
+      if (isPlaying() || tries > 120) {
+        clearInterval(timer)
+        return
+      }
+      if (playByPlayer(id)) {
+        clearInterval(timer)
+        timePlay('play', id)
+      }
+    }, 500)
+  }
+
 
   // What the page says of itself, said to the host as it changes (once a second): signed in or not (said only
   // once the page knows), playing, the volume, what plays, and the recommended playlists when they change.
@@ -961,11 +1250,20 @@
       asked = true
       askFor()
     }
+    const playing = track()
+    // A song's own liked state: its playlist's ids asked as the song changes (never on every reading).
+    if (playing?.id && playing.id !== likedForTrack) {
+      likedForTrack = playing.id
+      likedSet().then((known) => {
+        if (known) tell(true)
+      })
+    }
     const state = {
       signedIn: signed,
       playing: isPlaying(),
       volume: volume(),
-      track: track(),
+      track: playing,
+      liked: likedNow(playing?.id),
       account: account(),
       audio: audioState(),
     }
@@ -999,10 +1297,16 @@
     rows: frame()?.querySelectorAll(S.rows)?.length ?? -1,
     // The play the sound didn't follow, and how often the page woke it (the live test watches the log's line).
     heals,
-    stuck: Boolean(stuckSince) && Date.now() - stuckSince > HEAL_AFTER && stuckTries < HEAL_TRIES,
+    stuck: Boolean(stuckSince) && Date.now() - stuckSince > HEAL_AFTER,
+    // The play's own timing steps, and the song's own liked state (the app's heart).
+    timing: watch.steps.join(', '),
+    liked: likedNow(track()?.id),
+    likedKnown: likedIds ? likedIds.size : null,
   })
 
   addEventListener('DOMContentLoaded', () => post({ ready: true }))
+  // A play its own rescue reloaded the page for: the song played on as this script is back.
+  resumeAfterReload()
   // The content's page (the frame) loads after this page: its recommended playlists are read once it has.
   tell()
 })()

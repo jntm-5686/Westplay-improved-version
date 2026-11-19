@@ -1,4 +1,5 @@
 import type {
+  NeteaseArtist,
   NeteaseHome,
   NeteaseLibraryGroup,
   NeteaseLibraryPlaylist,
@@ -74,6 +75,13 @@ const ARTISTS = [
   '南方货场',
 ]
 
+/** The artists as a search's cards say them (`preview-artist-1`…): a picture the preview has none of. */
+const ARTIST_CARDS: NeteaseArtist[] = ARTISTS.map((name, index) => ({
+  id: `preview-artist-${index + 1}`,
+  name,
+  cover: null,
+}))
+
 function seedOf(text: string): number {
   return [...text].reduce((sum, letter) => (sum * 31 + letter.charCodeAt(0)) % 9973, 7)
 }
@@ -134,20 +142,44 @@ export function previewRecent(): NeteaseSong[] {
   return PLAYLISTS[1].songs.slice(0, 10)
 }
 
+/** A search of the preview's own lists: its songs, its artists and its playlists, as the host's answer would have
+ * them (the host's own page's categories, invented here). */
+export interface PreviewSearch {
+  songs: NeteaseSong[]
+  artists: NeteaseArtist[]
+  playlists: NeteaseList[]
+}
+
 /** A search over the preview's own lists (the v1 app's local filter, as the preview's answer). */
-export function previewSearch(query: string): NeteaseSong[] {
+export function previewSearch(query: string): PreviewSearch {
   const wanted = query.trim().toLocaleLowerCase()
-  if (!wanted) return []
-  const found: NeteaseSong[] = []
+  if (!wanted) return { songs: [], artists: [], playlists: [] }
+  const songs: NeteaseSong[] = []
   for (const playlist of PLAYLISTS) {
     for (const song of playlist.songs) {
-      if (found.some((each) => each.id === song.id)) continue
+      if (songs.some((each) => each.id === song.id)) continue
       if (song.title.toLocaleLowerCase().includes(wanted) || song.artist.toLocaleLowerCase().includes(wanted)) {
-        found.push(song)
+        songs.push(song)
       }
     }
   }
-  return found.slice(0, 30)
+  const artists = ARTIST_CARDS.filter((artist) => artist.name.toLocaleLowerCase().includes(wanted))
+  const playlists = PLAYLISTS.map((each) => each.list).filter((list) => list.name.toLocaleLowerCase().includes(wanted))
+  return { songs: songs.slice(0, 30), artists, playlists }
+}
+
+/** An artist's page of the preview: their name and a slice of one list's songs, so each of them plays. */
+export function previewArtist(id: string): { name: string; alias: string; cover: null; songs: NeteaseSong[] } {
+  const at = Math.max(0, ARTIST_CARDS.findIndex((artist) => artist.id === id))
+  const name = ARTIST_CARDS[at]?.name ?? '艺人'
+  // The songs the preview's lists have of them, so a pressed one plays (and the page isn't empty).
+  const songs = PLAYLISTS.flatMap((each) => each.songs).filter((song) => song.artist === name)
+  return {
+    name,
+    alias: '',
+    cover: null,
+    songs: (songs.length > 0 ? songs : PLAYLISTS[at % PLAYLISTS.length].songs).slice(0, 20),
+  }
 }
 
 /** What a playlist page of the preview is headed with: its playlist, by id. */
@@ -190,13 +222,17 @@ export interface Preview {
   library(): NeteaseLibraryGroup[]
   /** The recent songs, as a `recent` answer would give. */
   recent(): NeteaseSong[]
-  /** A search's songs, as a `search` answer would give. */
-  search(query: string): NeteaseSong[]
+  /** A search's songs, artists and playlists, as a `search` answer would give. */
+  search(query: string): PreviewSearch
+  /** An artist's page, as an `artist` answer would give. */
+  artist(id: string): { name: string; alias: string; cover: null; songs: NeteaseSong[] }
   play(playing: boolean): void
   playPlaylist(id: string): void
   playSong(id: string, song: NeteaseSong): void
   /** A song of the session's recent list (no playlist known): the playlist the preview made it in. */
   playHistory(song: NeteaseSong): void
+  /** A heart pressed in the preview: its own liked songs, and whether the song is in them now. */
+  setLiked(id: string, liked: boolean): boolean
   skip(direction: 1 | -1): void
   seek(seconds: number): void
   setVolume(share: number): void
@@ -213,6 +249,8 @@ export function createPreview(): Preview {
   let queue: NeteaseSong[] = PLAYLISTS[0].songs
   let album = PLAYLISTS[0].list.name
   let index = 0
+  // The preview's own liked songs (its own 我喜欢的音乐): the playing one's heart says so.
+  const liked = new Set<string>()
   // 42 seconds in, as if the page had been playing all along.
   let position = 42
   let since = performance.now()
@@ -246,7 +284,7 @@ export function createPreview(): Preview {
 
   const read = (): NeteasePlayerState => {
     fold()
-    return { signedIn, signingIn, playing, volume, track: current(), lists: [...lists] }
+    return { signedIn, signingIn, playing, volume, track: current(), liked: queue[index] ? liked.has(queue[index].id) : null, lists: [...lists] }
   }
 
   return {
@@ -256,6 +294,7 @@ export function createPreview(): Preview {
     library: () => previewLibrary(),
     recent: () => previewRecent(),
     search: (query) => previewSearch(query),
+    artist: (id) => previewArtist(id),
     play: (next) => {
       fold()
       playing = next
@@ -284,6 +323,11 @@ export function createPreview(): Preview {
         ),
         found.list.name,
       )
+    },
+    setLiked: (id, now) => {
+      if (now) liked.add(id)
+      else liked.delete(id)
+      return liked.has(id)
     },
     skip: (direction) => {
       fold()

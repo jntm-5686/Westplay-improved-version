@@ -20,9 +20,10 @@
 //!
 //! The app's protocol is its own (`netease` in ui/src/shared/host.ts), not Spotify's: messages are
 //! `{"type":"netease","kind":"state",…}`, `{"type":"netease","kind":"playlist",…}`, `{"type":"netease",
-//! "kind":"home",…}`, `{"type":"netease","kind":"library",…}`, `{"type":"netease","kind":"search",…}` and
-//! `{"type":"netease","kind":"recent",…}` to the cabin page, and
-//! `{"type":"netease","kind":"command","command":{…}}` from it (see [`Command`]).
+//! "kind":"home",…}`, `{"type":"netease","kind":"library",…}`, `{"type":"netease","kind":"search",…}`,
+//! `{"type":"netease","kind":"artist",…}`, `{"type":"netease","kind":"recent",…}` and
+//! `{"type":"netease","kind":"like",…}` to the cabin page, and `{"type":"netease","kind":"command","command":{…}}`
+//! from it (see [`Command`]).
 
 use std::cell::RefCell;
 use std::path::Path;
@@ -65,6 +66,17 @@ pub enum Command {
     /// A playlist's page (`value`: its NetEase id), whose songs the page answers with (`kind: "playlist"`).
     OpenPlaylist {
         value: String,
+    },
+    /// An artist's page (`value`: their NetEase id), whose name, picture and songs the page answers with
+    /// (`kind: "artist"`).
+    OpenArtist {
+        value: String,
+    },
+    /// A song added to or taken from the account's 我喜欢的音乐 (`value`: the song's id; `liked`: whether it's to be
+    /// liked), the page answering with `kind: "like"` once its own interface says so.
+    SetLike {
+        value: String,
+        liked: bool,
     },
     /// Home: the account's cards and the day's own songs, answered with (`kind: "home"`).
     Home,
@@ -210,6 +222,63 @@ impl Playlist {
     }
 }
 
+/// An artist of a search: their NetEase id, name, and picture (on NetEase's own image hosts).
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ArtistCard {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub cover: Option<String>,
+}
+
+impl ArtistCard {
+    /// The artist cleaned, as [`Playlist`]'s fields: an id and a name it can be shown by, and only a picture on
+    /// NetEase's own image hosts.
+    fn checked(mut self) -> Option<Self> {
+        if !is_id(&self.id) {
+            return None;
+        }
+        self.name = short(self.name, 120);
+        if self.name.is_empty() {
+            return None;
+        }
+        self.cover = self.cover.filter(|cover| is_net_ease_image(cover));
+        Some(self)
+    }
+}
+
+/// An artist's page: their id, name and alias, their picture, and their most played songs — the page's answer to
+/// the app's `openArtist`.
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Artist {
+    pub id: String,
+    #[serde(default)]
+    pub name: String,
+    /// Their other names ("Jay Chou"), empty for one the page gives none of.
+    #[serde(default)]
+    pub alias: String,
+    #[serde(default)]
+    pub cover: Option<String>,
+    #[serde(default)]
+    pub songs: Vec<Song>,
+}
+
+impl Artist {
+    /// The answer cleaned: an id the app can ask for, a name it can show, a short alias, a picture on NetEase's own
+    /// image hosts, and their songs as a playlist's (at most [`Artist::MOST`]).
+    fn checked(mut self) -> Self {
+        const MOST: usize = 50;
+        self.id = if is_id(&self.id) { self.id } else { String::new() };
+        self.name = short(self.name, 120);
+        self.alias = short(self.alias, 120);
+        self.cover = self.cover.filter(|cover| is_net_ease_image(cover));
+        self.songs = checked_songs(self.songs, MOST);
+        self
+    }
+}
+
 /// A playlist of the account's own (My Music's side): its NetEase id, name and cover, how many songs it has, and
 /// who it's by (a collected one's owner, empty for one the account made).
 #[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
@@ -344,7 +413,9 @@ impl Home {
     }
 }
 
-/// A search's songs: the words asked, and the page's own results for them — its answer to the app's `search`.
+/// A search: the words asked, and the page's own results for them — its answer to the app's `search`. Its own
+/// categories are read: its songs (单曲), its artists (歌手) and its playlists (歌单); each list is the first the page
+/// gives of that kind, its total beside it (its own count).
 #[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Search {
@@ -352,15 +423,48 @@ pub struct Search {
     pub query: String,
     #[serde(default)]
     pub songs: Vec<Song>,
+    #[serde(default)]
+    pub artists: Vec<ArtistCard>,
+    #[serde(default)]
+    pub playlists: Vec<Playlist>,
+    #[serde(default)]
+    pub songs_total: u64,
+    #[serde(default)]
+    pub artists_total: u64,
+    #[serde(default)]
+    pub playlists_total: u64,
 }
 
 impl Search {
-    /// The answer cleaned: the words the app typed (short), and the songs it can show and play (at most
-    /// [`Search::MOST`]).
+    /// The answer cleaned: the words the app typed (short), the songs it can show and play (at most
+    /// [`Search::MOST`]), and the artists and playlists it can open (at most [`Search::LISTS`] each), their totals
+    /// real and never under the lists' own lengths.
     fn checked(mut self) -> Self {
         const MOST: usize = 60;
+        const LISTS: usize = 30;
         self.query = short(self.query, 60);
-        self.songs = checked_songs(self.songs, MOST);
+        let songs = checked_songs(self.songs, MOST);
+        let mut known = std::collections::HashSet::new();
+        let artists: Vec<ArtistCard> = self
+            .artists
+            .into_iter()
+            .filter_map(ArtistCard::checked)
+            .filter(|artist| known.insert(format!("artist-{}", artist.id)))
+            .take(LISTS)
+            .collect();
+        let playlists: Vec<Playlist> = self
+            .playlists
+            .into_iter()
+            .filter_map(Playlist::checked)
+            .filter(|list| known.insert(format!("playlist-{}", list.id)))
+            .take(LISTS)
+            .collect();
+        self.songs_total = self.songs_total.max(songs.len() as u64).min(10_000_000);
+        self.artists_total = self.artists_total.max(artists.len() as u64).min(10_000_000);
+        self.playlists_total = self.playlists_total.max(playlists.len() as u64).min(10_000_000);
+        self.songs = songs;
+        self.artists = artists;
+        self.playlists = playlists;
         self
     }
 }
@@ -408,6 +512,42 @@ pub struct Audio {
     pub at: Option<i64>,
 }
 
+/// A play, timed by the page (netease.js's own watch): what was asked (`play`, `resume`, `next`, `previous`, or
+/// `heal` for the last resort), how long its sound took to move (`None`: it didn't in the window), and each step's
+/// own record — its moments, the player's element at each rescue, which rescue came. For the host's log only.
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Timing {
+    #[serde(default)]
+    pub action: String,
+    /// How many ms until its sound moved (the normal way); `null`: ten seconds without a sound.
+    #[serde(default)]
+    pub sounding: Option<u64>,
+    #[serde(default)]
+    pub steps: String,
+    /// The rescue that came (`1`, `2` or `3`; `0`: the last resort's own wake): `null` for a normal play.
+    #[serde(default)]
+    pub rescue: Option<u64>,
+    /// Whether the page reloaded itself for the third rescue.
+    #[serde(default)]
+    pub reloading: Option<bool>,
+}
+
+/// A like asked of the page and what came of it (`kind: "like"`): the song's id, whether it was to be liked, and
+/// whether the page's own answer said it landed (`ok`; `reason`: why not, the page's own word).
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Like {
+    #[serde(default)]
+    pub id: String,
+    #[serde(default)]
+    pub liked: bool,
+    #[serde(default)]
+    pub ok: bool,
+    #[serde(default)]
+    pub reason: String,
+}
+
 /// Whether the page is signed in, playing, the player's volume (0 to 1), what plays (`None`: nothing), the
 /// recommended playlists, whose account it is and what its sound element is doing.
 #[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
@@ -419,6 +559,9 @@ pub struct State {
     pub volume: f64,
     #[serde(default)]
     pub track: Option<Track>,
+    /// The playing song's own liked state, as the page read it (`null`: not known yet, or signed out).
+    #[serde(default)]
+    pub liked: Option<bool>,
     #[serde(default)]
     pub lists: Vec<Playlist>,
     #[serde(default)]
@@ -440,6 +583,8 @@ struct PageState {
     volume: f64,
     #[serde(default)]
     track: Option<Track>,
+    #[serde(default)]
+    liked: Option<bool>,
     #[serde(default)]
     lists: Option<Vec<Playlist>>,
     #[serde(default)]
@@ -501,12 +646,18 @@ pub enum Report {
     State(State),
     /// A playlist's songs, the page's answer to the app's `openPlaylist`.
     Playlist(Box<Songs>),
+    /// An artist's page, the page's answer to the app's `openArtist`.
+    Artist(Box<Artist>),
     /// The account's own playlists, by group: the page's answer to the app's `library`.
     Library(Box<Library>),
-    /// A search's songs: the page's answer to the app's `search`.
+    /// A search's songs, artists and playlists: the page's answer to the app's `search`.
     Search(Box<Search>),
     /// The account's recent songs: the page's answer to the app's `recent`.
     Recent(Box<Recent>),
+    /// A like asked for, and whether it landed: the page's answer to the app's `setLike`.
+    Like(Box<Like>),
+    /// A play timed by the page: for the host's log.
+    Timing(Box<Timing>),
     /// What Home shows: the page's answer to the app's `home`.
     Home(Box<Home>),
     /// The sign-in window opened (`true`) or closed.
@@ -570,6 +721,8 @@ impl Netease {
             // addresses and lists (and a search's words stay short: its own page's search).
             Command::Play { value: Some(value) } if !is_id(value) => Ok(()),
             Command::OpenPlaylist { value } if !is_list_id(value) => Ok(()),
+            Command::OpenArtist { value } if !is_id(value) => Ok(()),
+            Command::SetLike { value, .. } if !is_id(value) => Ok(()),
             Command::Search { value } if value.trim().is_empty() || value.chars().count() > 60 => Ok(()),
             Command::Seek { value } if !value.is_finite() => Ok(()),
             Command::Volume { value } if !value.is_finite() => Ok(()),
@@ -696,6 +849,7 @@ impl Netease {
                             playing: page.playing,
                             volume: volume_of(page.volume),
                             track: page.track.map(Track::checked),
+                            liked: page.liked,
                             lists: self.lists.borrow().clone(),
                             account: page.account,
                             audio: page.audio,
@@ -703,9 +857,12 @@ impl Netease {
                     }
                 }
                 Some(Message::Playlist(songs)) => reports.push(Report::Playlist(Box::new(songs.checked()))),
+                Some(Message::Artist(artist)) => reports.push(Report::Artist(Box::new(artist.checked()))),
                 Some(Message::Library(library)) => reports.push(Report::Library(Box::new(library.checked()))),
                 Some(Message::Search(search)) => reports.push(Report::Search(Box::new(search.checked()))),
                 Some(Message::Recent(recent)) => reports.push(Report::Recent(Box::new(recent.checked()))),
+                Some(Message::Like(like)) => reports.push(Report::Like(Box::new(like))),
+                Some(Message::Timing(timing)) => reports.push(Report::Timing(Box::new(timing))),
                 Some(Message::Home(home)) => reports.push(Report::Home(Box::new(home.checked()))),
                 None => {}
             }
@@ -740,12 +897,18 @@ enum Message {
     State(PageState),
     /// A playlist's songs, answered.
     Playlist(Songs),
+    /// An artist's page, answered.
+    Artist(Artist),
     /// The account's own playlists, by group, answered.
     Library(Library),
-    /// A search's songs, answered.
+    /// A search's songs, artists and playlists, answered.
     Search(Search),
     /// The account's recent songs, answered.
     Recent(Recent),
+    /// A like asked for, answered.
+    Like(Like),
+    /// A play's own timing, said as it goes.
+    Timing(Timing),
     /// What Home shows, answered.
     Home(Home),
 }
@@ -758,6 +921,9 @@ fn read_message(message: &str) -> Option<Message> {
     if let Some(playlist) = value.get("playlist") {
         return serde_json::from_value::<Songs>(playlist.clone()).ok().map(Message::Playlist);
     }
+    if let Some(artist) = value.get("artist") {
+        return serde_json::from_value::<Artist>(artist.clone()).ok().map(Message::Artist);
+    }
     if let Some(library) = value.get("library") {
         return serde_json::from_value::<Library>(library.clone()).ok().map(Message::Library);
     }
@@ -766,6 +932,12 @@ fn read_message(message: &str) -> Option<Message> {
     }
     if let Some(recent) = value.get("recent") {
         return serde_json::from_value::<Recent>(recent.clone()).ok().map(Message::Recent);
+    }
+    if let Some(like) = value.get("like") {
+        return serde_json::from_value::<Like>(like.clone()).ok().map(Message::Like);
+    }
+    if let Some(timing) = value.get("timing") {
+        return serde_json::from_value::<Timing>(timing.clone()).ok().map(Message::Timing);
     }
     if let Some(home) = value.get("home") {
         return serde_json::from_value::<Home>(home.clone()).ok().map(Message::Home);
@@ -800,6 +972,21 @@ pub fn playlist_message(songs: &Songs) -> String {
     .to_string()
 }
 
+/// `{"type":"netease","kind":"artist","id":"…","name":"…","alias":"…","cover":…,"songs":[…]}`: an artist's page, the
+/// page's answer to the app's `openArtist`.
+pub fn artist_message(artist: &Artist) -> String {
+    serde_json::json!({
+        "type": "netease",
+        "kind": "artist",
+        "id": artist.id,
+        "name": artist.name,
+        "alias": artist.alias,
+        "cover": artist.cover,
+        "songs": artist.songs,
+    })
+    .to_string()
+}
+
 /// `{"type":"netease","kind":"home","daily":{"songs":[…]},"radar":…,"personal":[…],"recommended":[…]}`: what Home
 /// shows, the page's answer to the app's `home`.
 pub fn home_message(home: &Home) -> String {
@@ -825,7 +1012,8 @@ pub fn library_message(library: &Library) -> String {
     .to_string()
 }
 
-/// `{"type":"netease","kind":"search","query":"…","songs":[…]}`: a search's songs, the page's answer to the app's
+/// `{"type":"netease","kind":"search","query":"…","songs":[…],"artists":[…],"playlists":[…],"songsTotal":…,
+/// "artistsTotal":…,"playlistsTotal":…}`: a search's songs, artists and playlists, the page's answer to the app's
 /// `search`.
 pub fn search_message(search: &Search) -> String {
     serde_json::json!({
@@ -833,6 +1021,11 @@ pub fn search_message(search: &Search) -> String {
         "kind": "search",
         "query": search.query,
         "songs": search.songs,
+        "artists": search.artists,
+        "playlists": search.playlists,
+        "songsTotal": search.songs_total,
+        "artistsTotal": search.artists_total,
+        "playlistsTotal": search.playlists_total,
     })
     .to_string()
 }
@@ -844,6 +1037,20 @@ pub fn recent_message(recent: &Recent) -> String {
         "type": "netease",
         "kind": "recent",
         "songs": recent.songs,
+    })
+    .to_string()
+}
+
+/// `{"type":"netease","kind":"like","id":"…","liked":true,"ok":true,"reason":""}`: a like asked of the page, and
+/// whether its own interface said it landed.
+pub fn like_message(like: &Like) -> String {
+    serde_json::json!({
+        "type": "netease",
+        "kind": "like",
+        "id": like.id,
+        "liked": like.liked,
+        "ok": like.ok,
+        "reason": like.reason,
     })
     .to_string()
 }
@@ -926,6 +1133,18 @@ mod tests {
             serde_json::from_str::<Command>(r#"{"action":"openPlaylist","value":"456"}"#).unwrap(),
             Command::OpenPlaylist { value: "456".into() }
         );
+        assert_eq!(
+            serde_json::from_str::<Command>(r#"{"action":"openArtist","value":"5770"}"#).unwrap(),
+            Command::OpenArtist { value: "5770".into() }
+        );
+        assert_eq!(
+            serde_json::from_str::<Command>(r#"{"action":"setLike","value":"168091","liked":true}"#).unwrap(),
+            Command::SetLike { value: "168091".into(), liked: true }
+        );
+        assert_eq!(
+            serde_json::to_string(&Command::SetLike { value: "168091".into(), liked: false }).unwrap(),
+            r#"{"action":"setLike","value":"168091","liked":false}"#
+        );
         assert_eq!(serde_json::from_str::<Command>(r#"{"action":"refresh"}"#).unwrap(), Command::Refresh);
         assert!(serde_json::from_str::<Command>(r#"{"action":"explode"}"#).is_err());
     }
@@ -963,6 +1182,7 @@ mod tests {
                 playing: false,
                 volume: 0.8,
                 track: None,
+                liked: None,
                 lists: None,
                 account: None,
                 audio: None,
@@ -1019,6 +1239,7 @@ mod tests {
             playing: page.playing,
             volume: volume_of(page.volume),
             track: page.track.map(Track::checked),
+            liked: page.liked,
             lists: page.lists.expect("lists").into_iter().filter_map(Playlist::checked).collect(),
             account: None,
             audio: None,
@@ -1058,6 +1279,7 @@ mod tests {
                 position: 63.0,
                 playable: true,
             }),
+            liked: Some(true),
             lists: vec![Playlist {
                 id: "456".into(),
                 name: "歌单名".into(),
@@ -1206,6 +1428,42 @@ mod tests {
         let search = search.checked();
         assert_eq!(search.query, "周杰伦");
         assert_eq!(search.songs.len(), 60, "a search's answer is capped");
+        assert!(search.artists.is_empty() && search.playlists.is_empty(), "an old answer: no other kinds");
+        assert_eq!((search.songs_total, search.artists_total, search.playlists_total), (60, 0, 0));
+        // A search's three kinds, as its page gives them: songs, artists (their picture and name) and playlists
+        // (the cards the app opens), each cleaned, their totals the page's own and never under the lists' lengths.
+        let Some(Message::Search(search)) = read_message(
+            r##"{"search":{"query":"许巍","songs":[{"id":"168141","title":"故乡","artist":"许巍","duration":313,"playable":true}],
+                "artists":[{"id":"5770","name":"许巍","cover":"https://p1.music.126.net/a.jpg?param=130y130"},
+                    {"id":"5770","name":"许巍 again"},{"id":"bad","name":"no id"},{"id":"4721","name":""}],
+                "playlists":[{"id":"8866695219","name":"听·许巍热门精选|蓝莲花",
+                    "cover":"http://p1.music.126.net/b.jpg?param=140y140","playCount":3557000},
+                    {"id":"8866695219","name":"again"},{"id":"bad","name":"no id"}],
+                "songsTotal":296,"artistsTotal":14,"playlistsTotal":285}}"##,
+        ) else {
+            panic!("not a search answer")
+        };
+        let search = search.checked();
+        assert_eq!((search.songs_total, search.artists_total, search.playlists_total), (296, 14, 285));
+        assert_eq!(search.songs.len(), 1);
+        assert_eq!(search.artists.len(), 1, "only the artist the app can open: {search:?}");
+        assert_eq!(search.artists[0].name, "许巍");
+        assert_eq!(search.playlists.len(), 1, "only the playlist the app can open: {search:?}");
+        assert_eq!(search.playlists[0].play_count, 3_557_000);
+        assert_eq!(search.playlists[0].cover.as_deref(), Some("http://p1.music.126.net/b.jpg?param=140y140"));
+        // An artist's page: their name, alias, picture and songs, as its own page gives them.
+        let Some(Message::Artist(artist)) = read_message(
+            r##"{"artist":{"id":"5770","name":"许巍","alias":"","cover":"http://p1.music.126.net/c.jpg?param=640y300",
+                "songs":[{"id":"168091","title":"蓝莲花","artist":"许巍","duration":270,"playable":true},
+                    {"id":"","title":"no id"}]}}"##,
+        ) else {
+            panic!("not an artist answer")
+        };
+        let artist = artist.checked();
+        assert_eq!(artist.id, "5770");
+        assert_eq!(artist.name, "许巍");
+        assert_eq!(artist.cover.as_deref(), Some("http://p1.music.126.net/c.jpg?param=640y300"));
+        assert_eq!(artist.songs.len(), 1);
         // The recent songs: cleaned the same way, at most 100.
         let Some(Message::Recent(recent)) = read_message(
             r#"{"recent":{"songs":[{"id":"1","title":"歌","artist":"人","duration":201,"playable":true},
@@ -1240,11 +1498,74 @@ mod tests {
         assert_eq!(value["groups"][0]["title"], "创建的歌单");
         assert_eq!(value["groups"][0]["playlists"][0]["songCount"], 2747);
 
-        let search = Search { query: "周杰伦".into(), songs: vec![song.clone()] }.checked();
+        let search = Search {
+            query: "周杰伦".into(),
+            songs: vec![song.clone()],
+            artists: vec![ArtistCard {
+                id: "6452".into(),
+                name: "周杰伦".into(),
+                cover: Some("https://p1.music.126.net/j.jpg?param=130y130".into()),
+            }],
+            playlists: vec![Playlist {
+                id: "952897240".into(),
+                name: "周杰伦精选".into(),
+                cover: None,
+                play_count: 120_000,
+            }],
+            songs_total: 1204,
+            artists_total: 12,
+            playlists_total: 386,
+        }
+        .checked();
         let value: serde_json::Value = serde_json::from_str(&search_message(&search)).unwrap();
         assert_eq!(value["kind"], "search");
         assert_eq!(value["query"], "周杰伦");
         assert_eq!(value["songs"][0]["title"], "歌");
+        assert_eq!(value["artists"][0]["name"], "周杰伦");
+        assert_eq!(value["playlists"][0]["playCount"], 120_000);
+        assert_eq!(
+            (value["songsTotal"].as_u64(), value["artistsTotal"].as_u64(), value["playlistsTotal"].as_u64()),
+            (Some(1204), Some(12), Some(386))
+        );
+
+        let artist = Artist {
+            id: "6452".into(),
+            name: "周杰伦".into(),
+            alias: "Jay Chou".into(),
+            cover: Some("https://p1.music.126.net/j.jpg?param=300y300".into()),
+            songs: vec![Song { id: "2".into(), title: "晴天".into(), artist: "周杰伦".into(), duration: 269.0, playable: true }],
+        }
+        .checked();
+        let value: serde_json::Value = serde_json::from_str(&artist_message(&artist)).unwrap();
+        assert_eq!((value["type"].as_str(), value["kind"].as_str()), (Some("netease"), Some("artist")));
+        assert_eq!(value["name"], "周杰伦");
+        assert_eq!(value["alias"], "Jay Chou");
+        assert_eq!(value["songs"][0]["title"], "晴天");
+
+        // The heart's answer, and a play's timing, each its own kind and fields.
+        let like = Like { id: "168091".into(), liked: true, ok: true, reason: String::new() };
+        let value: serde_json::Value = serde_json::from_str(&like_message(&like)).unwrap();
+        assert_eq!((value["type"].as_str(), value["kind"].as_str()), (Some("netease"), Some("like")));
+        assert_eq!((value["id"].as_str(), value["liked"].as_bool(), value["ok"].as_bool()), (Some("168091"), Some(true), Some(true)));
+        assert_eq!(
+            read_message(r#"{"timing":{"action":"play","sounding":1234,"steps":"command@0ms, sounding 1234ms"}}"#),
+            Some(Message::Timing(Timing {
+                action: "play".into(),
+                sounding: Some(1234),
+                steps: "command@0ms, sounding 1234ms".into(),
+                rescue: None,
+                reloading: None,
+            }))
+        );
+        assert_eq!(
+            read_message(r#"{"like":{"id":"168091","liked":false,"ok":false,"reason":"account"}}"#),
+            Some(Message::Like(Like {
+                id: "168091".into(),
+                liked: false,
+                ok: false,
+                reason: "account".into(),
+            }))
+        );
 
         let recent = Recent { songs: vec![song.clone()] }.checked();
         let value: serde_json::Value = serde_json::from_str(&recent_message(&recent)).unwrap();

@@ -104,6 +104,28 @@
   flex: 1;
   min-width: 0;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* The search bar at the page's top (always there), and the pages under it. */
+.netease-app .ne-topbar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.netease-app .ne-topbar .ne-search-field {
+  flex: 1;
+  min-width: 0;
+}
+
+.netease-app .ne-viewport {
+  position: relative;
+  flex: 1;
+  min-height: 0;
 }
 
 /* --- The rail ----------------------------------------------------------------------------------------- */
@@ -2284,3 +2306,474 @@
   height: 22px;
   border-width: 2.5px;
 }
+
+/* --- v3: the search bar at the page's top, Home's own order, Search's categories, the heart ----------------- */
+
+/* A heart's own red (the two styles' own shades, the cab's light or dark). */
+.netease-app {
+  --ne-heart: #e20000;
+}
+
+.netease-app[data-style='red'] {
+  --ne-heart: #ff4d4f;
+}
+
+.shell.appearance-light .netease-app {
+  --ne-heart: #d40000;
+}
+
+/* Home's day's songs: two columns on a wide page (its rows keep their own size). */
+.netease-app .ne-song-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(430px, 1fr));
+  column-gap: 22px;
+  row-gap: 2px;
+  margin-inline: -12px;
+}
+
+.netease-app .ne-daily .ne-section-head {
+  align-items: center;
+}
+
+/* The day's songs shown longer: one word under them (all of them play from Play all). */
+.netease-app .ne-more {
+  align-self: flex-start;
+  height: 46px;
+  padding-inline: 20px;
+  border-radius: 999px;
+  background: var(--ne-surface);
+  color: var(--ne-dim);
+  font-size: var(--ne-type-small);
+  font-weight: 600;
+  transition:
+    background-color var(--ne-quick),
+    color var(--ne-quick);
+}
+
+.netease-app .ne-more:hover {
+  background: var(--ne-hover);
+  color: var(--ne-text);
+}
+
+/* The radar's row (私人雷达, and 私人漫游's own card): wide cards, one under the other only where there's no room
+   for two. */
+.netease-app .ne-spot-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 16px;
+}
+
+.netease-app .ne-spot {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  min-height: 108px;
+  padding: 12px 18px 12px 12px;
+  border-radius: var(--ne-radius-large);
+  background: var(--ne-surface);
+  text-align: left;
+  transition:
+    background-color var(--ne-quick),
+    scale var(--ne-quick) var(--ne-ease);
+}
+
+.netease-app .ne-spot:hover {
+  background: var(--ne-hover);
+}
+
+.netease-app .ne-spot:active {
+  scale: 0.995;
+}
+
+.netease-app .ne-spot-cover {
+  width: 84px;
+  border-radius: 16px;
+  box-shadow: var(--ne-shadow);
+}
+
+.netease-app .ne-spot-mark {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 84px;
+  height: 84px;
+  border-radius: 50%;
+  background: var(--ne-accent-soft);
+  color: var(--ne-accent);
+}
+
+.netease-app .ne-spot-mark svg {
+  width: 40px;
+  height: 40px;
+}
+
+.netease-app .ne-spot-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.netease-app .ne-spot-kicker {
+  font-size: var(--ne-type-caption);
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ne-dim);
+}
+
+.netease-app .ne-spot-name {
+  font-size: var(--ne-type-heading);
+  font-weight: 800;
+  line-height: 1.2;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+  overflow: hidden;
+  overflow-wrap: break-word;
+}
+
+.netease-app .ne-spot-hint {
+  font-size: var(--ne-type-small);
+  line-height: 1.35;
+  color: var(--ne-dim);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+.netease-app .ne-spot-go {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--ne-accent-soft);
+  color: var(--ne-accent);
+}
+
+.netease-app .ne-spot-go svg {
+  width: 22px;
+  height: 22px;
+}
+
+.netease-app .ne-spot.placeholder {
+  border: 2px dashed var(--ne-line);
+  background: transparent;
+}
+
+.netease-app .ne-spot.placeholder:hover {
+  background: var(--ne-surface);
+}
+
+/* Search: its page's own categories (the tabs of 歌曲, 艺人, 歌单), and what it says before a search. */
+.netease-app .ne-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.netease-app .ne-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  height: 52px;
+  padding-inline: 22px;
+  border-radius: 999px;
+  background: var(--ne-surface);
+  color: var(--ne-dim);
+  font-size: var(--ne-type-label);
+  font-weight: 700;
+  transition:
+    background-color var(--ne-quick),
+    color var(--ne-quick),
+    scale var(--ne-quick) var(--ne-ease);
+}
+
+.netease-app .ne-filter:hover {
+  background: var(--ne-hover);
+  color: var(--ne-text);
+}
+
+.netease-app .ne-filter:active {
+  scale: 0.97;
+}
+
+.netease-app .ne-filter em {
+  font-style: normal;
+  padding: 1px 10px;
+  border-radius: 999px;
+  background: var(--ne-surface-strong);
+  color: var(--ne-dim);
+  font-size: var(--ne-type-small);
+  font-weight: 600;
+}
+
+.netease-app .ne-filter.on {
+  background: var(--ne-accent);
+  color: var(--ne-on-accent);
+}
+
+.netease-app .ne-filter.on em {
+  background: color-mix(in srgb, var(--ne-on-accent) 20%, transparent);
+  color: inherit;
+}
+
+.netease-app .ne-filters .ne-spinner {
+  width: 22px;
+  height: 22px;
+  border-width: 2.5px;
+}
+
+.netease-app .ne-search-idle {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px 4px 4px;
+}
+
+.netease-app .ne-search-idle h2 {
+  margin: 0;
+  font-size: var(--ne-type-title);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.netease-app .ne-search-idle > p {
+  margin: 0;
+  font-size: var(--ne-type-label);
+  line-height: 1.45;
+  color: var(--ne-dim);
+}
+
+.netease-app .ne-search-idle .ne-section {
+  margin-top: 18px;
+}
+
+/* An artist's cards (a search's artists): their picture round, their name under it. */
+.netease-app .ne-card.artist {
+  align-items: center;
+  text-align: center;
+}
+
+.netease-app .ne-card.artist .ne-card-cover {
+  width: min(100%, 210px);
+  border-radius: 50%;
+}
+
+.netease-app .ne-card.artist .ne-card-plays {
+  justify-content: center;
+}
+
+/* An artist's page: their picture round, as NetEase's own page draws it. */
+.netease-app .ne-ar-cover {
+  border-radius: 50%;
+}
+
+/* The heart: the player bar's and Now Playing's. */
+.netease-app .ne-like {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  background: var(--ne-surface);
+  color: var(--ne-dim);
+  transition:
+    background-color var(--ne-quick),
+    color var(--ne-quick),
+    scale var(--ne-quick) var(--ne-ease);
+}
+
+.netease-app .ne-like svg {
+  width: 30px;
+  height: 30px;
+}
+
+.netease-app .ne-like:hover {
+  background: var(--ne-hover);
+  color: var(--ne-heart);
+}
+
+.netease-app .ne-like:active {
+  scale: 0.92;
+}
+
+.netease-app .ne-like.liked {
+  color: var(--ne-heart);
+  background: color-mix(in srgb, var(--ne-heart) 12%, transparent);
+}
+
+.netease-app .ne-like:disabled {
+  opacity: 0.4;
+  background: transparent;
+  cursor: default;
+}
+
+.netease-app .ne-like.large {
+  width: 72px;
+  height: 72px;
+}
+
+.netease-app .ne-like.large svg {
+  width: 38px;
+  height: 38px;
+}
+
+.netease-app .ne-like.waiting svg {
+  opacity: 0.35;
+}
+
+.netease-app .ne-player .ne-like {
+  width: 50px;
+  height: 50px;
+  background: transparent;
+}
+
+.netease-app .ne-player .ne-like svg {
+  width: 28px;
+  height: 28px;
+}
+
+.netease-app .ne-player .ne-like.liked {
+  background: color-mix(in srgb, var(--ne-heart) 12%, transparent);
+}
+
+.netease-app .ne-now-tools {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.netease-app .ne-now-tools .ne-controls {
+  flex: none;
+}
+
+/* A page's own head with the top bar over it: a little less air between them than on the old page. */
+.netease-app .ne-scroll {
+  padding-top: 0;
+}
+
+@container (max-width: 920px) {
+  .netease-app .ne-song-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .netease-app .ne-filter {
+    height: 46px;
+    padding-inline: 16px;
+    font-size: var(--ne-type-small);
+  }
+
+  .netease-app .ne-like.large {
+    width: 60px;
+    height: 60px;
+  }
+}
+
+@container (max-height: 540px) {
+  .netease-app .ne-main {
+    gap: 8px;
+  }
+
+  .netease-app .ne-topbar .ne-search-field {
+    height: 46px;
+  }
+
+  .netease-app .ne-topbar .ne-search-field .text-field {
+    font-size: var(--ne-type-label);
+    gap: 10px;
+  }
+
+  .netease-app .ne-topbar .ne-search-field .text-field > svg {
+    width: 22px;
+    height: 22px;
+  }
+
+  .netease-app .ne-topbar .ne-search-field .text-field-caret {
+    height: 22px;
+  }
+
+  .netease-app .ne-song-grid {
+    column-gap: 14px;
+  }
+
+  .netease-app .ne-more {
+    height: 36px;
+    padding-inline: 14px;
+    font-size: var(--ne-type-caption);
+  }
+
+  .netease-app .ne-spot {
+    min-height: 76px;
+    gap: 12px;
+    padding: 8px 14px 8px 8px;
+  }
+
+  .netease-app .ne-spot-cover,
+  .netease-app .ne-spot-mark {
+    width: 56px;
+    height: 56px;
+    border-radius: 12px;
+  }
+
+  .netease-app .ne-spot-mark {
+    border-radius: 50%;
+  }
+
+  .netease-app .ne-spot-mark svg {
+    width: 28px;
+    height: 28px;
+  }
+
+  .netease-app .ne-spot-name {
+    font-size: var(--ne-type-body);
+  }
+
+  .netease-app .ne-spot-hint {
+    font-size: var(--ne-type-caption);
+    -webkit-line-clamp: 1;
+  }
+
+  .netease-app .ne-spot-go {
+    width: 38px;
+    height: 38px;
+  }
+
+  .netease-app .ne-filter {
+    height: 38px;
+    padding-inline: 14px;
+    gap: 8px;
+    font-size: var(--ne-type-small);
+  }
+
+  .netease-app .ne-filter em {
+    padding-inline: 8px;
+    font-size: var(--ne-type-caption);
+  }
+
+  .netease-app .ne-like {
+    width: 44px;
+    height: 44px;
+  }
+
+  .netease-app .ne-like svg {
+    width: 24px;
+    height: 24px;
+  }
+
+  .netease-app .ne-player .ne-like {
+    width: 40px;
+    height: 40px;
+  }
+
+  .netease-app .ne-now-tools {
+    gap: 10px;
+  }
+}
+

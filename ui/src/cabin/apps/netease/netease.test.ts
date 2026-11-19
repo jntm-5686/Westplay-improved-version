@@ -319,13 +319,148 @@ describe('the preview’s v2 answers', () => {
     expect(home.recommended.length).toBeGreaterThan(0)
     expect(preview.library().map((group) => group.title)).toEqual(['创建的歌单', '收藏的歌单'])
     expect(preview.library().flatMap((group) => group.playlists).every((list) => list.songCount > 0)).toBe(true)
-    expect(preview.search('夜航').length).toBeGreaterThan(0)
-    expect(preview.search('')).toEqual([])
+    expect(preview.search('夜航').songs.length).toBeGreaterThan(0)
+    expect(preview.search('')).toEqual({ songs: [], artists: [], playlists: [] })
     expect(preview.recent().length).toBeGreaterThan(0)
     // A found song plays in the preview (its own queue): the same one is what plays then.
-    const found = preview.search('夜航')[0]
+    const found = preview.search('夜航').songs[0]
     preview.playHistory(found)
     expect(preview.read().track?.title).toBe(found.title)
+  })
+})
+
+describe('the search’s own categories', () => {
+  it('applies a search’s songs, artists and playlists, each with the page’s own count', async () => {
+    inHost()
+    const { receiveMessage, searchFor, useNetease } = await import('./netease')
+    searchFor('许巍')
+    receiveMessage({
+      type: 'netease',
+      kind: 'search',
+      query: '许巍',
+      songs: [{ id: '168141', title: '故乡', artist: '许巍', duration: 313, playable: true }],
+      artists: [{ id: '5770', name: '许巍', cover: 'https://p1.music.126.net/a.jpg' }],
+      playlists: [{ id: '8866695219', name: '听·许巍热门精选', cover: null, playCount: 3557669 }],
+      songsTotal: 296,
+      artistsTotal: 14,
+      playlistsTotal: 285,
+    })
+    const search = useNetease.getState().search
+    expect(search?.songs[0].title).toBe('故乡')
+    expect(search?.artists[0]).toMatchObject({ id: '5770', name: '许巍' })
+    expect(search?.playlists[0]).toMatchObject({ id: '8866695219', name: '听·许巍热门精选', playCount: 3557669 })
+    expect([search?.songsTotal, search?.artistsTotal, search?.playlistsTotal]).toEqual([296, 14, 285])
+    expect(useNetease.getState().searchAsking).toEqual({ waiting: false, failed: false })
+  })
+
+  it('reads a search of the old shape (no artists or playlists): its counts are its lists’ own', async () => {
+    inHost()
+    const { receiveMessage, searchFor, useNetease } = await import('./netease')
+    searchFor('周杰伦')
+    receiveMessage({
+      type: 'netease',
+      kind: 'search',
+      query: '周杰伦',
+      songs: [{ id: '1', title: '屋顶', artist: '周杰伦', duration: 300, playable: true }],
+    })
+    const search = useNetease.getState().search
+    expect(search?.artists).toEqual([])
+    expect(search?.playlists).toEqual([])
+    expect([search?.songsTotal, search?.artistsTotal, search?.playlistsTotal]).toEqual([1, 0, 0])
+  })
+
+  it('opens an artist’s page and applies its own answer', async () => {
+    const host = inHost()
+    const { openArtist, receiveMessage, searchFor, useNetease } = await import('./netease')
+    searchFor('许巍')
+    receiveMessage({
+      type: 'netease',
+      kind: 'search',
+      query: '许巍',
+      artists: [{ id: '5770', name: '许巍', cover: null }],
+      songs: [],
+      playlists: [],
+    })
+    openArtist('5770')
+    expect(host.commands()).toContainEqual({ action: 'openArtist', value: '5770' })
+    const view = useNetease.getState().views[useNetease.getState().tab].at(-1)
+    expect(view).toMatchObject({ kind: 'artist', artistId: '5770' })
+    // Its card from the search draws its page's head before the page's own answer comes.
+    expect(useNetease.getState().artists['5770']).toMatchObject({ name: '许巍', songs: null, waiting: true })
+    receiveMessage({
+      type: 'netease',
+      kind: 'artist',
+      id: '5770',
+      name: '许巍',
+      alias: '',
+      cover: 'https://p1.music.126.net/a.jpg',
+      songs: [{ id: '168091', title: '蓝莲花', artist: '许巍', duration: 270, playable: true }],
+    })
+    const page = useNetease.getState().artists['5770']
+    expect(page?.songs?.map((song) => song.title)).toEqual(['蓝莲花'])
+    expect(page?.waiting).toBe(false)
+  })
+
+  it('keeps a search’s playlist known for its own page’s head', async () => {
+    inHost()
+    const { findPlaylistMeta } = await import('./netease')
+    const search = {
+      query: '许巍',
+      songs: [],
+      artists: [],
+      playlists: [{ id: '8866695219', name: '听·许巍热门精选', cover: null, playCount: 3557669 }],
+      songsTotal: 0,
+      artistsTotal: 0,
+      playlistsTotal: 1,
+    }
+    expect(findPlaylistMeta({ lists: [], home: null, library: null, search }, '8866695219')?.name).toBe(
+      '听·许巍热门精选',
+    )
+  })
+})
+
+describe('the heart', () => {
+  it('asks the page to like the playing song, and changes only as its answer says it landed', async () => {
+    const host = inHost()
+    const { receiveMessage, receiveState, setLiked, useNetease } = await import('./netease')
+    receiveState({
+      signedIn: true,
+      signingIn: false,
+      playing: true,
+      volume: 0.7,
+      track: { ...SONG, id: '42', album: 'x', cover: null, position: 0, playable: true },
+      liked: false,
+      lists: [],
+    })
+    setLiked(true)
+    expect(host.commands()).toContainEqual({ action: 'setLike', value: '42', liked: true })
+    expect(useNetease.getState().liking).toBe(true)
+    // Not yet: the heart is still empty until the page's own answer says the song is in 我喜欢的音乐.
+    expect(useNetease.getState().liked).toBe(false)
+    receiveMessage({ type: 'netease', kind: 'like', id: '42', liked: true, ok: true, reason: '' })
+    expect(useNetease.getState().liked).toBe(true)
+    expect(useNetease.getState().liking).toBe(false)
+    // A like that didn't land leaves the heart as it was, and says so.
+    setLiked(false)
+    receiveMessage({ type: 'netease', kind: 'like', id: '42', liked: false, ok: false, reason: 'account' })
+    expect(useNetease.getState().liked).toBe(true)
+    expect(useNetease.getState().likeFailure?.reason).toBe('account')
+  })
+
+  it('never asks for a heart on a song it doesn’t know yet', async () => {
+    const host = inHost()
+    const { receiveState, setLiked } = await import('./netease')
+    receiveState({
+      signedIn: false,
+      signingIn: false,
+      playing: true,
+      volume: 0.7,
+      track: { ...SONG, id: '42', album: 'x', cover: null, position: 0, playable: true },
+      liked: null,
+      lists: [],
+    })
+    setLiked(true)
+    expect(host.commands()).toEqual([])
   })
 })
 

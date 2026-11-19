@@ -171,6 +171,44 @@ export function ClockGlyph() {
   )
 }
 
+/** The heart: filled (red) when the playing song is in the account's 我喜欢的音乐, an outline when it isn't. */
+export function HeartGlyph({ filled }: { filled: boolean }) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        d="M12 20.7 4.2 13a5.5 5.5 0 0 1 0-7.8 5.6 5.6 0 0 1 7.8 0 5.6 5.6 0 0 1 7.8 0 5.5 5.5 0 0 1 0 7.8z"
+        fill={filled ? 'currentColor' : 'none'}
+        stroke="currentColor"
+        strokeWidth={filled ? 0 : 2}
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
+/** 私人漫游's own (NetEase's phone app has it): a signal broadcast — a dot in its waves. */
+export function RadioGlyph() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="12" cy="12" r="2.8" fill="currentColor" />
+      <path
+        d="M7.4 7.4a6.5 6.5 0 0 0 0 9.2M16.6 16.6a6.5 6.5 0 0 0 0-9.2"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.2"
+        strokeLinecap="round"
+      />
+      <path
+        d="M4.2 4.2a11 11 0 0 0 0 15.6M19.8 19.8a11 11 0 0 0 0-15.6"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.2"
+        strokeLinecap="round"
+      />
+    </svg>
+  )
+}
+
 export function BackGlyph() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">

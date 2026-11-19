@@ -86,10 +86,39 @@ export interface NeteaseHome {
   recommended: NeteaseList[]
 }
 
-/** A search's songs, as the host's page searched them (`netease` `search`). */
+/** An artist of a search, as the host's hidden page says (`netease` `search`'s artists). */
+export interface NeteaseArtist {
+  id: string
+  name: string
+  /** Their picture, on NetEase's own image hosts. */
+  cover: string | null
+}
+
+/** A search's answer, as the host's page searched it (`netease` `search`): its own categories' results — songs,
+ * artists and playlists — and how many of each its page says it found. */
 export interface NeteaseSearch {
   query: string
   songs: NeteaseSong[]
+  artists: NeteaseArtist[]
+  playlists: NeteaseList[]
+  /** The page's own count of each kind (its note: "找到 296 首单曲"): the lists are the first of them. */
+  songsTotal: number
+  artistsTotal: number
+  playlistsTotal: number
+}
+
+/** A search's own categories, in its page's order (单曲, 歌手, 歌单): the app's tabs over one answer. */
+export type SearchTab = 'songs' | 'artists' | 'playlists'
+
+/** An artist's page, as the host's hidden page read it (`netease` `artist`), and whether it's still coming. */
+export interface NeteaseArtistPage {
+  name: string
+  /** Their other names ("Jay Chou"), empty for one the page gives none of. */
+  alias: string
+  cover: string | null
+  songs: NeteaseSong[] | null
+  waiting: boolean
+  failed: boolean
 }
 
 /** Whether something asked of the host's page is still coming, and whether it didn't come. */
@@ -109,6 +138,8 @@ export interface NeteasePlayerState {
   /** 0 to 1. */
   volume: number
   track: NeteaseTrack | null
+  /** Whether the playing song is in the account's 我喜欢的音乐 (`null`: not known, or signed out). */
+  liked?: boolean | null
   lists: NeteaseList[]
   /** The account's name and picture, once its page knows it. */
   account?: NeteaseAccount | null
@@ -122,6 +153,11 @@ export type NeteaseCommand =
   | { action: 'signIn' | 'signOut' }
   /** Continues playing; with a song's id, plays that song (the host clicks its row in the hidden page). */
   | { action: 'play'; value?: string }
+  /** Opens an artist's page in the hidden page; their name, picture and songs come back as an `artist` message. */
+  | { action: 'openArtist'; value: string }
+  /** Adds the song (`value`: its id) to the account's 我喜欢的音乐, or takes it out (`liked`): the page's own
+   * interface, answered with a `like` message once it says so. */
+  | { action: 'setLike'; value: string; liked: boolean }
   | { action: 'pause' | 'next' | 'prev' | 'refresh' }
   | { action: 'seek'; value: number }
   | { action: 'volume'; value: number }
@@ -140,10 +176,17 @@ export type NeteaseCommand =
 export type Tab = 'home' | 'mine' | 'search' | 'now'
 
 /** A page over a tab's own. */
-export type View = { id: number; kind: 'playlist'; playlistId: string } | { id: number; kind: 'recent' }
+export type View =
+  | { id: number; kind: 'playlist'; playlistId: string }
+  | { id: number; kind: 'artist'; artistId: string }
+  | { id: number; kind: 'recent' }
 
 /** How the app is drawn: WestPlay's own neutral look, or NetEase's red. Both follow the cab's light or dark. */
 export type Style = 'follow' | 'red'
+
+/** The search bar's field (NeteaseApp.tsx's top bar): the keyboard types there, and lets go as a result is picked
+ * (each page's own, and the rail's, detach it). */
+export const SEARCH_FIELD = 'netease-search'
 
 /** What's known of a playlist page: its songs, asked of the hidden page. */
 export interface PlaylistPage {
@@ -162,6 +205,12 @@ interface NeteaseAppState {
   /** 0 to 1, the page's own player's. */
   volume: number
   track: NeteaseTrack | null
+  /** Whether the playing song is liked (in 我喜欢的音乐): `null` until the page has read it. */
+  liked: boolean | null
+  /** A like asked of the page, not answered yet. */
+  liking: boolean
+  /** A like that didn't land, for the app's own one-line word over the player (`reason`: the page's own). */
+  likeFailure: { reason: string; id: number } | null
   /** `performance.now()` when `track`'s position was read: the time runs on from there. */
   trackAt: number
   /** Home's recommended playlists (v1's list: kept for the fallback while `home` isn't read yet). */
@@ -184,6 +233,12 @@ interface NeteaseAppState {
   /** The page's answer to the last search asked. */
   search: NeteaseSearch | null
   searchAsking: Asking
+  /** The words in the search bar at the page's top (the app's own, asked of the page by `searchFor`). */
+  query: string
+  /** A search's own category showing (its page's tabs). */
+  searchTab: SearchTab
+  /** Artist pages by id, as asked. */
+  artists: Record<string, NeteaseArtistPage>
 
   tab: Tab
   /** Each tab's pages over its own, the one showing last (each tab stays where it was left). */
@@ -213,7 +268,7 @@ function fromPlayer(
   state: NeteasePlayerState,
 ): Pick<
   NeteaseAppState,
-  'signedIn' | 'signingIn' | 'playing' | 'volume' | 'track' | 'trackAt' | 'lists' | 'heard' | 'account'
+  'signedIn' | 'signingIn' | 'playing' | 'volume' | 'track' | 'liked' | 'trackAt' | 'lists' | 'heard' | 'account'
 > {
   return {
     signedIn: state.signedIn,
@@ -221,6 +276,7 @@ function fromPlayer(
     playing: state.track ? state.playing : false,
     volume: state.volume,
     track: state.track,
+    liked: state.liked ?? null,
     trackAt: performance.now(),
     lists: state.lists,
     heard: true,
@@ -241,6 +297,7 @@ export const useNetease = create<NeteaseAppState>()(() => ({
         playing: false,
         volume: 0.8,
         track: null,
+        liked: null,
         account: null,
         trackAt: performance.now(),
         lists: [],
@@ -260,6 +317,11 @@ export const useNetease = create<NeteaseAppState>()(() => ({
   recentAsking: IDLE_ASKING,
   search: null,
   searchAsking: IDLE_ASKING,
+  query: '',
+  searchTab: 'songs',
+  artists: {},
+  liking: false,
+  likeFailure: null,
 }))
 
 // --- Talking to the host's hidden page ---------------------------------------------------------------------
@@ -275,7 +337,7 @@ export function netease(command: NeteaseCommand): void {
  * playlists, a search, the recent songs). */
 interface NeteaseMessage {
   type: 'netease'
-  kind?: 'state' | 'playlist' | 'home' | 'library' | 'search' | 'recent'
+  kind?: 'state' | 'playlist' | 'home' | 'library' | 'search' | 'artist' | 'recent' | 'like'
   state?: unknown
   id?: unknown
   songs?: unknown
@@ -285,6 +347,17 @@ interface NeteaseMessage {
   radar?: unknown
   personal?: unknown
   recommended?: unknown
+  artists?: unknown
+  playlists?: unknown
+  songsTotal?: unknown
+  artistsTotal?: unknown
+  playlistsTotal?: unknown
+  name?: unknown
+  alias?: unknown
+  cover?: unknown
+  liked?: unknown
+  ok?: unknown
+  reason?: unknown
 }
 
 function text(value: unknown): string {
@@ -337,8 +410,43 @@ function readLists(raw: unknown): NeteaseList[] {
   return lists
 }
 
-function readSongs(raw: unknown): NeteaseSong[] {
+/** A search's artists, as its `search` message says them. */
+function readArtists(raw: unknown): NeteaseArtist[] {
   if (!Array.isArray(raw)) return []
+  const artists: NeteaseArtist[] = []
+  for (const entry of raw) {
+    if (!entry || typeof entry !== 'object') continue
+    const artist = entry as Record<string, unknown>
+    const id = text(artist.id)
+    const name = text(artist.name)
+    if (!id || !name) continue
+    artists.push({ id, name, cover: typeof artist.cover === 'string' && artist.cover ? artist.cover : null })
+  }
+  return artists
+}
+
+/** A count a search's message says for a category, never under the list it came with. */
+function total(raw: unknown, list: unknown[]): number {
+  return Math.max(Math.max(0, count(raw, 0)), list.length)
+}
+
+/** The `search` message: the words, and the page's own categories' results for them. */
+function readSearch(message: NeteaseMessage): NeteaseSearch {
+  const songs = readSongs(message.songs)
+  const artists = readArtists(message.artists)
+  const playlists = readLists(message.playlists)
+  return {
+    query: text(message.query),
+    songs,
+    artists,
+    playlists,
+    songsTotal: total(message.songsTotal, songs),
+    artistsTotal: total(message.artistsTotal, artists),
+    playlistsTotal: total(message.playlistsTotal, playlists),
+  }
+}
+
+function readSongs(raw: unknown): NeteaseSong[] {  if (!Array.isArray(raw)) return []
   const songs: NeteaseSong[] = []
   for (const entry of raw) {
     if (!entry || typeof entry !== 'object') continue
@@ -446,6 +554,7 @@ function readPlayer(raw: unknown): NeteasePlayerState | null {
     playing: state.playing === true,
     volume: clamp(count(state.volume, 0.8), 0, 1),
     track: readTrack(state.track),
+    liked: typeof state.liked === 'boolean' ? state.liked : null,
     lists: readLists(state.lists),
     account: readAccount(state.account),
   }
@@ -500,11 +609,15 @@ const playAllWhenReady = new Set<string>()
 /** How long a playlist page waits for the hidden page before saying it couldn't open it. */
 const PLAYLIST_WAIT = 10000
 
+/** How long an artist's page waits for the hidden page before saying it couldn't open it. */
+const ARTIST_WAIT = 14000
+
 /** How long each of the page's other readings may take (Home's day's page follows its cards' one): past that the
  * app says it couldn't read it, and its page's Retry asks again. */
 const HOME_WAIT = 26000
 const LIBRARY_WAIT = 20000
-const SEARCH_WAIT = 16000
+// A search reads the page's own three categories (its 单曲, 歌手 and 歌单 tabs): each its own page's wait.
+const SEARCH_WAIT = 30000
 const RECENT_WAIT = 15000
 
 /** The preview answers a moment later, as the hidden page would. */
@@ -549,10 +662,10 @@ export function receiveRecent(songs: NeteaseSong[]): void {
 let searchWanted = ''
 
 /** The page's answer to a search (`netease` `search`): only the last asked shows. */
-export function receiveSearch(query: string, songs: NeteaseSong[]): void {
-  if (query !== searchWanted) return
+export function receiveSearch(search: NeteaseSearch): void {
+  if (search.query !== searchWanted) return
   clearTimeout(searchWait)
-  useNetease.setState({ search: { query, songs }, searchAsking: IDLE_ASKING })
+  useNetease.setState({ search, searchAsking: IDLE_ASKING })
 }
 
 /** Reads Home again (`again`: the page's Refresh, or a read that didn't come): the day's songs and its cards. */
@@ -615,16 +728,37 @@ export function requestRecent(again = false): void {
   }, PREVIEW_ANSWER)
 }
 
+/** What the search bar at the page's top says: a search of the words starts a moment after the last key (in
+ * `SearchBar`, NeteaseApp.tsx), and typing switches to the search's page. */
+export function setQuery(value: string): void {
+  const said = value.slice(0, 60)
+  if (useNetease.getState().query === said) return
+  useNetease.setState({ query: said })
+  const { tab } = useNetease.getState()
+  if (said.trim() && tab !== 'search') openTab('search')
+}
+
+/** A search's own category picked (its page's tab): what the last answer's lists show. */
+export function setSearchTab(tab: SearchTab): void {
+  useNetease.setState({ searchTab: tab })
+}
+
+/** The search bar pressed (the page's own tab): its page, with its own last search's answer still there. */
+export function openSearch(): void {
+  if (useNetease.getState().tab !== 'search') openTab('search')
+}
+
 /** Searches the page for `query` (`''`: its results put away). Only the last asked shows, as the player types. */
 export function searchFor(query: string): void {
   const said = query.trim().slice(0, 60)
+  const changed = said !== searchWanted
   searchWanted = said
   clearTimeout(searchWait)
   if (!said) {
     useNetease.setState({ search: null, searchAsking: IDLE_ASKING })
     return
   }
-  useNetease.setState({ searchAsking: { waiting: true, failed: false } })
+  useNetease.setState({ searchAsking: { waiting: true, failed: false }, ...(changed ? { searchTab: 'songs' as const } : {}) })
   if (isInHost()) {
     netease({ action: 'search', value: said })
     searchWait = setTimeout(
@@ -634,7 +768,17 @@ export function searchFor(query: string): void {
     return
   }
   setTimeout(() => {
-    if (PREVIEW && searchWanted === said) receiveSearch(said, PREVIEW.search(said))
+    if (!PREVIEW || searchWanted !== said) return
+    const found = PREVIEW.search(said)
+    receiveSearch({
+      query: said,
+      songs: found.songs,
+      artists: found.artists,
+      playlists: found.playlists,
+      songsTotal: found.songs.length,
+      artistsTotal: found.artists.length,
+      playlistsTotal: found.playlists.length,
+    })
   }, PREVIEW_ANSWER)
 }
 
@@ -668,6 +812,67 @@ function requestPlaylist(id: string, again = false): void {
     if (!PREVIEW) return
     receivePlaylist(id, PREVIEW.songs(id))
   }, PREVIEW_ANSWER)
+}
+
+/** The artist pages asked of the hidden page and not heard back about, with the moment each gives up. */
+const waitingForArtist = new Map<string, ReturnType<typeof setTimeout>>()
+
+/** Applies an artist's page as the hidden page answered (`netease` `artist`): their name, alias, picture and
+ * songs. */
+export function receiveArtist(
+  id: string,
+  artist: Pick<NeteaseArtistPage, 'name' | 'alias' | 'cover'> & { songs: NeteaseSong[] },
+): void {
+  clearTimeout(waitingForArtist.get(id))
+  waitingForArtist.delete(id)
+  useNetease.setState((state) => ({
+    artists: { ...state.artists, [id]: { ...artist, waiting: false, failed: false } },
+  }))
+}
+
+/** Asks the hidden page for an artist's page, once per page: their name, picture and songs come as an `artist`
+ * message. `meta`: their card a search already showed, so the page's head draws while the page loads. */
+function requestArtist(id: string, again = false, meta: NeteaseArtist | null = null): void {
+  const page = useNetease.getState().artists[id]
+  if (!again && (page?.songs || page?.waiting)) return
+  clearTimeout(waitingForArtist.get(id))
+  useNetease.setState((state) => ({
+    artists: {
+      ...state.artists,
+      [id]: {
+        name: meta?.name ?? page?.name ?? '',
+        alias: page?.alias ?? '',
+        cover: meta?.cover ?? page?.cover ?? null,
+        songs: again ? (page?.songs ?? null) : null,
+        waiting: true,
+        failed: false,
+      },
+    },
+  }))
+  if (isInHost()) {
+    netease({ action: 'openArtist', value: id })
+    waitingForArtist.set(
+      id,
+      setTimeout(() => {
+        waitingForArtist.delete(id)
+        useNetease.setState((state) => {
+          const current = state.artists[id]
+          if (!current?.waiting) return state
+          return { artists: { ...state.artists, [id]: { ...current, waiting: false, failed: true } } }
+        })
+      }, ARTIST_WAIT),
+    )
+    return
+  }
+  setTimeout(() => {
+    if (!PREVIEW) return
+    receiveArtist(id, PREVIEW.artist(id))
+  }, PREVIEW_ANSWER)
+}
+
+/** Asks the hidden page for the artist's page again (its page's Retry). */
+export function retryArtist(artistId: string): void {
+  requestArtist(artistId, true)
 }
 
 /** A toast: one line over the player, gone in a moment. */
@@ -717,6 +922,13 @@ export function openPlaylist(playlistId: string): void {
   requestPlaylist(playlistId)
 }
 
+/** The page an artist card opens: asked of the hidden page (their card from the search draws its head first). */
+export function openArtist(artistId: string): void {
+  const { tab, views, search } = useNetease.getState()
+  useNetease.setState({ views: { ...views, [tab]: [...views[tab], { id: nextId++, kind: 'artist', artistId }] } })
+  requestArtist(artistId, false, search?.artists.find((artist) => artist.id === artistId) ?? null)
+}
+
 /** The page the recent-play entry opens: the account's recent songs, asked of the hidden page if not known yet. */
 export function openRecent(): void {
   const { tab, views } = useNetease.getState()
@@ -724,11 +936,13 @@ export function openRecent(): void {
   requestRecent()
 }
 
-/** Where a playlist's own card may be known from: Home's shelves, My Music's groups, and the state's own lists. */
+/** Where a playlist's own card may be known from: Home's shelves, My Music's groups, the state's own lists, and a
+ * search's playlists (a result pressed). */
 export interface PlaylistSources {
   lists: NeteaseList[]
   home: NeteaseHome | null
   library: NeteaseLibraryGroup[] | null
+  search?: NeteaseSearch | null
 }
 
 /** A playlist card as the app knows it, or `null` for one not known yet: its page shows the name and cover as soon
@@ -736,6 +950,8 @@ export interface PlaylistSources {
 export function findPlaylistMeta(sources: PlaylistSources, id: string): NeteaseList | null {
   const known = sources.lists.find((list) => list.id === id)
   if (known) return known
+  const searched = sources.search?.playlists.find((list) => list.id === id)
+  if (searched) return searched
   const home = sources.home
   if (home) {
     if (home.radar?.id === id) return home.radar
@@ -749,12 +965,19 @@ export function findPlaylistMeta(sources: PlaylistSources, id: string): NeteaseL
   return null
 }
 
-/** A playlist's card for its page: from Home, My Music or the state's lists (the first that knows it). */
+/** A playlist's card for its page: from Home, My Music, the state's lists or a search (the first that knows it). */
 export function usePlaylistMeta(id: string): NeteaseList | null {
   const lists = useNetease((state) => state.lists)
   const home = useNetease((state) => state.home)
   const library = useNetease((state) => state.library)
-  return useMemo(() => findPlaylistMeta({ lists, home, library }, id), [lists, home, library, id])
+  const search = useNetease((state) => state.search)
+  return useMemo(() => findPlaylistMeta({ lists, home, library, search }, id), [lists, home, library, search, id])
+}
+
+/** An artist's card for its page: from the search that opened it (the page's own answer draws the rest). */
+export function useArtistMeta(id: string): NeteaseArtist | null {
+  const search = useNetease((state) => state.search)
+  return useMemo(() => search?.artists.find((artist) => artist.id === id) ?? null, [search, id])
 }
 
 /** Asks the hidden page for the playlist's songs again (its page's Retry, Refresh). */
@@ -794,6 +1017,48 @@ export function playPause(): void {
   if (next) netease({ action: 'play' })
   else netease({ action: 'pause' })
   useNetease.setState({ playing: next, trackAt: performance.now() })
+}
+
+// --- The heart (喜欢: the account's own 我喜欢的音乐) ---------------------------------------------------------
+
+/** How long a heart waits for the page's own answer before it says the like didn't land. */
+const LIKE_WAIT = 12000
+
+let likeWait: ReturnType<typeof setTimeout> | undefined
+let likeFailureId = 0
+
+/** A heart pressed: the playing song added to (or taken from) the account's own 我喜欢的音乐 by the hidden page,
+ * through its own interface. The heart changes only when the page's own answer says it landed (`receiveLike`); a
+ * `false` says so over the player (`likeFailure`). */
+export function setLiked(liked: boolean): void {
+  const { track, liked: current, liking } = useNetease.getState()
+  if (!track?.id || liking || current === null || current === liked) return
+  clearTimeout(likeWait)
+  useNetease.setState({ liking: true })
+  if (isInHost()) {
+    netease({ action: 'setLike', value: track.id, liked })
+    likeWait = setTimeout(() => {
+      useNetease.setState({ liking: false, likeFailure: { reason: 'timeout', id: ++likeFailureId } })
+    }, LIKE_WAIT)
+    return
+  }
+  setTimeout(() => {
+    if (!PREVIEW) return
+    const now = PREVIEW.setLiked(track.id!, liked)
+    useNetease.setState({ liked: now, liking: false })
+  }, PREVIEW_ANSWER)
+}
+
+/** The page's answer to a heart pressed (`netease` `like`): the heart changes only if its own answer says the song
+ * really is (or no longer is) in the account's 我喜欢的音乐. */
+export function receiveLike(id: string, liked: boolean, ok: boolean, reason: string): void {
+  clearTimeout(likeWait)
+  const { track } = useNetease.getState()
+  useNetease.setState((state) => ({
+    liking: false,
+    liked: ok && track?.id === id ? liked : state.liked,
+    likeFailure: ok ? state.likeFailure : { reason, id: ++likeFailureId },
+  }))
 }
 
 /** Plays the playlist from its start (its page's Play): its first playable song, by id, once the songs are
@@ -952,11 +1217,28 @@ export function receiveMessage(message: unknown): void {
       receiveLibrary(readLibrary(each.groups))
       return
     case 'search':
-      receiveSearch(text(each.query), readSongs(each.songs))
+      receiveSearch(readSearch(each))
       return
+    case 'artist': {
+      const id = text(each.id)
+      if (id) {
+        receiveArtist(id, {
+          name: text(each.name),
+          alias: text(each.alias),
+          cover: typeof each.cover === 'string' && each.cover ? each.cover : null,
+          songs: readSongs(each.songs),
+        })
+      }
+      return
+    }
     case 'recent':
       receiveRecent(readSongs(each.songs))
       return
+    case 'like': {
+      const id = text(each.id)
+      if (id) receiveLike(id, each.liked === true, each.ok === true, text(each.reason))
+      return
+    }
     default:
       return
   }

@@ -1577,6 +1577,10 @@ pub fn run(mut config: Config, stop: Arc<AtomicBool>) -> Result<(), Error> {
                         netease::Report::Playlist(songs) => {
                             let _ = webview.post_json(&netease::playlist_message(&songs));
                         }
+                        // An artist's page goes straight on to the page too (never logged).
+                        netease::Report::Artist(artist) => {
+                            let _ = webview.post_json(&netease::artist_message(&artist));
+                        }
                         // What Home shows, the account's own playlists, a search's songs and the account's
                         // recent ones: straight on to the page (never logged).
                         netease::Report::Home(home) => {
@@ -1590,6 +1594,20 @@ pub fn run(mut config: Config, stop: Arc<AtomicBool>) -> Result<(), Error> {
                         }
                         netease::Report::Recent(recent) => {
                             let _ = webview.post_json(&netease::recent_message(&recent));
+                        }
+                        // A like asked for: its answer goes to the page (the app's heart), never logged.
+                        netease::Report::Like(like) => {
+                            let _ = webview.post_json(&netease::like_message(&like));
+                        }
+                        // A play timed by the page: its steps, for the log only.
+                        netease::Report::Timing(timing) => {
+                            log!(
+                                "[netease] a play ({}): sounding {:?}, rescue {:?}, steps {}",
+                                timing.action,
+                                timing.sounding,
+                                timing.rescue,
+                                timing.steps,
+                            );
                         }
                         netease::Report::SignInWindow(open) => {
                             netease_window_open = open;

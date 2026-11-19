@@ -1,10 +1,43 @@
-import { useRef } from 'react'
+import { useEffect, useRef } from 'react'
 import { Cover, Slider, clock } from './parts'
-import { NextGlyph, PauseGlyph, PlayGlyph, PreviousGlyph, UnplayableGlyph, VolumeGlyph } from './glyphs'
-import { openTab, playPause, positionOf, seek, setVolume, skip, useNetease, useNow } from './netease'
+import { HeartGlyph, NextGlyph, PauseGlyph, PlayGlyph, PreviousGlyph, UnplayableGlyph, VolumeGlyph } from './glyphs'
+import { openTab, playPause, positionOf, seek, setLiked, setVolume, showToast, skip, useNetease, useNow } from './netease'
 import { useNeteaseWords } from './strings'
 
 /** The NetEase app's player: the bar at the screen's foot (always there), and its Now Playing page. */
+
+/** The heart (喜欢): the playing song in the account's 我喜欢的音乐, added or taken out by the hidden page. Filled
+ * (red) when it's there; the heart changes only as the page's own answer says it landed, and a heart that didn't
+ * land says so over the player. */
+export function LikeButton({ large = false }: { large?: boolean }) {
+  const words = useNeteaseWords()
+  const track = useNetease((state) => state.track)
+  const liked = useNetease((state) => state.liked)
+  const liking = useNetease((state) => state.liking)
+  const failure = useNetease((state) => state.likeFailure)
+  const failureId = failure?.id ?? 0
+  // A like that didn't land (or couldn't: signed out): one line over the player, once per answer.
+  useEffect(() => {
+    if (!failureId) return
+    const reason = useNetease.getState().likeFailure?.reason
+    showToast(reason === 'account' ? words.likeSignIn : words.likeFailed)
+    // The words are the cabin's, read at this answer only.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [failureId])
+  const known = Boolean(track?.id) && liked !== null
+  return (
+    <button
+      type="button"
+      className={`ne-like${liked ? ' liked' : ''}${liking ? ' waiting' : ''}${large ? ' large' : ''}`}
+      aria-label={liked ? words.unlike : words.like}
+      aria-pressed={Boolean(liked)}
+      disabled={!known || liking}
+      onClick={() => setLiked(!liked)}
+    >
+      <HeartGlyph filled={Boolean(liked)} />
+    </button>
+  )
+}
 
 /** The playing page's volume: the speaker (pressed, it mutes, or plays again as loud as it was) and its bar. */
 function VolumeControl({ volume }: { volume: number }) {
@@ -107,6 +140,7 @@ export function PlayerBar() {
         </span>
       </button>
       <Controls playing={playing} disabled={!track} />
+      <LikeButton />
       <Progress position={position} duration={track?.duration ?? 0} />
       <VolumeControl volume={volume} />
     </footer>
@@ -160,7 +194,10 @@ export function NowPlayingPage() {
             </p>
           )}
           <Progress position={position} duration={track.duration} />
-          <Controls playing={playing} />
+          <div className="ne-now-tools">
+            <Controls playing={playing} />
+            <LikeButton large />
+          </div>
           <VolumeControl volume={volume} />
         </div>
       </div>
