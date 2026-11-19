@@ -8,6 +8,7 @@ import { pauseYouTubeWithGame, youtubePlayer } from './apps/youtube/pauseWithGam
 import { pauseYouTubeMusicWithGame, youtubeMusicPlayer } from './apps/youtubeMusic/pauseWithGame'
 import { pausePlayerWithGame, playerAppPlayer } from './apps/player/pauseWithGame'
 import { pauseSafariWithGame, safariPlayer } from './apps/safari/pauseWithGame'
+import { neteasePlayer, pauseNeteaseWithGame } from './apps/netease/netease'
 import { AppScreen } from './apps/AppScreen'
 import { BootScreen } from './boot/BootScreen'
 import { Dashboard } from './dashboard/Dashboard'
@@ -33,7 +34,7 @@ import { followTimeZone } from './state/timeZone'
 const FOLLOW_POWER = isInHost() || new URLSearchParams(location.search).has('power')
 
 /** The cab's music players, and Safari's pages' sound (it plays one at a time with them, owner 2026-11-07). */
-const PLAYERS = [youtubePlayer, spotifyPlayer, appleMusicPlayer, youtubeMusicPlayer, playerAppPlayer, safariPlayer]
+const PLAYERS = [youtubePlayer, spotifyPlayer, appleMusicPlayer, neteasePlayer, youtubeMusicPlayer, playerAppPlayer, safariPlayer]
 
 /** The in-cabin screen: the shell around the screen for the current route, after the boot sequence. */
 export function CabinApp() {
@@ -48,6 +49,7 @@ export function CabinApp() {
   useEffect(() => pauseYouTubeMusicWithGame(), [])
   useEffect(() => pausePlayerWithGame(), [])
   useEffect(() => pauseSafariWithGame(), [])
+  useEffect(() => pauseNeteaseWithGame(), [])
   // One of them at a time: the newest to start plays on, the others pause (apps/oneAtATime.ts).
   useEffect(() => oneAtATime(PLAYERS), [])
   // The player's keybinds pressed in the game: the music's volume, or play/pause (apps/keybinds.ts).

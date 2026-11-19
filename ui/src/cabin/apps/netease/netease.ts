@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { create } from 'zustand'
 import { isInHost, postToHost, subscribeHostMessages } from '../../../shared/host'
 import type { MediaSource } from '../../../shared/media'
+import { type MusicPlayer, pauseMusicWithGame } from '../musicWithGame'
 import { createPreview, type Preview } from './preview'
 
 /**
@@ -632,4 +633,30 @@ export function useNeteaseSource(): { source: MediaSource; artwork: string | nul
       artwork: track.cover,
     }
   }, [track, playing, at])
+}
+
+/** It as one of the cab's players (apps/musicWithGame.ts): so the media keybinds drive it, the newest to start
+ * pauses the others (apps/oneAtATime.ts), and it pauses with the game's menu and plays on after, as they do. */
+export const neteasePlayer: MusicPlayer = {
+  name: 'netease',
+  playingHere: () => useNetease.getState().playing,
+  pauseHere: () => {
+    if (useNetease.getState().playing) playPause()
+  },
+  resumeHere: () => {
+    if (!useNetease.getState().playing) playPause()
+  },
+  volume: () => useNetease.getState().volume,
+  sendVolume: (share) => setVolume(share),
+  setVolume: (share) => setVolume(share),
+  skip: (direction) => netease({ action: direction > 0 ? 'next' : 'prev' }),
+  subscribe: (changed) =>
+    useNetease.subscribe((now, before) => {
+      if (now.playing && !before.playing) changed(true)
+    }),
+}
+
+/** NetEase with the game: the music pauses while the player is away from it, and plays on after. */
+export function pauseNeteaseWithGame(): () => void {
+  return pauseMusicWithGame(neteasePlayer)
 }
