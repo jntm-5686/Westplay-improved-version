@@ -39,7 +39,7 @@ export interface NeteaseWords {
   signOut: string
   signOutHint: string
 
-  /** The style switch (the rail's foot): WestPlay's own look, or NetEase's red; both follow the cab. */
+  /** The skin (the settings page's 外观): WestPlay's own look, or NetEase's red; both follow the cab. */
   style: string
   styleFollow: string
   styleRed: string

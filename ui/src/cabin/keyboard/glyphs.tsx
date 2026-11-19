@@ -64,3 +64,12 @@ export function KeysGlyph() {
     </svg>
   )
 }
+
+/** The IME's way into all its candidates (ImeBar.tsx), turned up while the panel is open (keyboard.css). */
+export function ExpandGlyph() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2.4">
+      <path d="m5 9.5 7 7 7-7" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}

@@ -25,11 +25,25 @@ export interface ImeCandidate {
 
 /** At most `limit` of what `typed` could be, the most common first. */
 export function imeCandidates(typed: string, limit = 6): ImeCandidate[] {
+  return candidatesOf(typed, limit)
+}
+
+/** Every candidate the dictionary has for `typed`, the most common first: the expanded panel's list (ImeBar's
+ * 展开全部候选), where a bar's few aren't enough to find a rarer character. */
+export function imeAllCandidates(typed: string): ImeCandidate[] {
+  return candidatesOf(typed)
+}
+
+/** The dictionary's candidates for `typed` (before any limit), each with the letters it replaces. */
+function candidatesOf(typed: string, limit = Number.MAX_SAFE_INTEGER): ImeCandidate[] {
   const input = typed.trim().toLowerCase()
   if (!/^[a-z']+$/.test(input)) return []
   try {
     const { candidates } = imeEngine().getCandidates(input)
-    return candidates.slice(0, limit).map((candidate) => ({ word: candidate.word, matched: candidate.matchedLength }))
+    return candidates.slice(0, Math.max(0, limit)).map((candidate) => ({
+      word: candidate.word,
+      matched: candidate.matchedLength,
+    }))
   } catch {
     // A dictionary that won't read is no IME: the letters stay as typed.
     return []

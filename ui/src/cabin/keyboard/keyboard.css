@@ -1,4 +1,4 @@
-/* The on-screen keyboard (Keyboard.tsx) and WestPlay's text field (TextField.tsx), iOS 26 style: a glass
+﻿/* The on-screen keyboard (Keyboard.tsx) and WestPlay's text field (TextField.tsx), iOS 26 style: a glass
    panel inside the screen's margins, rounded translucent keys with no shadow under each, lighter letter keys
    and quieter function keys, a bubble over the key being pressed. */
 
@@ -351,7 +351,6 @@
   }
 }
 
-
 /* A browser preview's field: the page has the player's own keyboard there, so the field takes it as an input. */
 .text-field-input {
   flex: 1;
@@ -370,13 +369,15 @@
 
 /* The pinyin IME's bar: a strip of its own just above the keyboard, raised while letters are being spelled
    (ImeBar.tsx). Out of the keyboard's grid (position: absolute), so the keys keep their size and place; the strip
-   comes up over what's on the screen, and each word shows in turn, in a card of its own. */
+   comes up over what's on the screen, and each word shows in turn, in a card of its own. At its right, a chevron
+   opens the whole candidate list (`.ime-panel`), for a word the strip's few don't have. */
 .ime-bar {
   position: absolute;
   left: 0;
   right: 0;
   bottom: calc(100% + 10px);
   display: flex;
+  align-items: center;
   gap: 10px;
   justify-content: center;
   padding: 10px;
@@ -387,9 +388,20 @@
   animation: ime-bar-in 240ms cubic-bezier(0.32, 0.72, 0, 1);
 }
 
-/* A card each: framed, so a word reads as something to press (owner 2026-11-17: "给每个字或词语加上一个框"). */
-.ime-bar button {
-  min-width: 105px;
+/* The strip's own candidates: as many as it shows, never wider than the keyboard (a narrow screen's cards close
+   up rather than run off it). */
+.ime-words {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+/* A card each: framed, so a word reads as something to press (owner 2026-11-17: "缁欐瘡涓瓧鎴栬瘝璇姞涓婁竴涓"). */
+.ime-bar .ime-word {
+  flex: 0 1 auto;
+  min-width: 88px;
   height: 61px;
   padding: 0 14px;
   border: 2px solid rgb(255 255 255 / 0.62);
@@ -418,7 +430,7 @@
 }
 
 /* The light look's cards: dark words on a light pane, its frame the pane's own edge. */
-.appearance-light .ime-bar button {
+.appearance-light .ime-bar .ime-word {
   border-color: rgb(0 0 0 / 0.2);
   background: rgb(255 255 255 / 0.86);
   box-shadow: 0 2px 10px rgb(0 0 0 / 0.12);
@@ -433,13 +445,253 @@
   opacity: 0.55;
 }
 
-.ime-bar button:active {
+.ime-bar .ime-word:active {
   scale: 0.95;
   background: rgb(255 255 255 / 0.28);
 }
 
-.appearance-light .ime-bar button:active {
+.appearance-light .ime-bar .ime-word:active {
   background: rgb(0 0 0 / 0.08);
+}
+
+/* The way into every candidate (ImeBar's 灞曞紑鍏ㄩ儴鍊欓€?: a chevron at the strip's right, turned up while the
+   panel is open. Its own card, so it's found without reading. */
+.keyboard .ime-expand {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 61px;
+  padding: 0;
+  border: 2px solid rgb(255 255 255 / 0.34);
+  border-radius: 18px;
+  background: rgb(255 255 255 / 0.16);
+  color: #fff;
+  cursor: pointer;
+  transition:
+    background-color 180ms ease,
+    border-color 180ms ease,
+    scale 180ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.keyboard .ime-expand svg {
+  width: 26px;
+  height: 26px;
+  transition: rotate 200ms ease;
+}
+
+.keyboard .ime-expand.on {
+  background: rgb(255 255 255 / 0.32);
+  border-color: rgb(255 255 255 / 0.72);
+}
+
+.keyboard .ime-expand.on svg {
+  rotate: 180deg;
+}
+
+.keyboard .ime-expand:active {
+  scale: 0.94;
+}
+
+.appearance-light .keyboard .ime-expand {
+  border-color: rgb(0 0 0 / 0.16);
+  background: rgb(255 255 255 / 0.56);
+  color: #14161a;
+}
+
+.appearance-light .keyboard .ime-expand.on {
+  background: rgb(255 255 255 / 0.92);
+  border-color: rgb(0 0 0 / 0.3);
+}
+
+/* The whole candidate list, over the strip: the dictionary's every word for the letters being typed, in a grid
+   that scrolls. It comes by the strip's own height-and-opacity arrival (about a quarter second, ease), the keys
+   under it never move: it's out of the keyboard's grid, as the strip is. Its own tint is denser than the keys'
+   glass: a grid of words must read over whatever page is behind it. */
+.ime-panel {
+  /* As tall as the keyboard leaves it: over a short screen it stays on the screen. */
+  --ime-panel-height: min(
+    46vh,
+    380px,
+    calc(100vh - var(--keyboard-height, 336px) - var(--keyboard-bottom, 32px) - 112px)
+  );
+  --glass: rgb(24 26 31 / 0.9);
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 10px);
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  max-height: var(--ime-panel-height);
+  overflow: hidden;
+  border-radius: var(--keyboard-radius);
+  color: var(--text);
+  animation: ime-panel-in 230ms ease both;
+}
+
+.appearance-light .ime-panel {
+  --glass: rgb(248 249 252 / 0.95);
+}
+
+.ime-panel.closing {
+  pointer-events: none;
+  animation: ime-panel-out 220ms ease both;
+}
+
+/* Over the glass's own rim (liquidGlass.css's `.glass::before` is the first layer of it). */
+.ime-panel > * {
+  position: relative;
+  z-index: 2;
+}
+
+/* What's being typed and how many there are: a quiet line over the grid, pressed to fold the panel away (the
+   strip's chevron does it too, where it shows). */
+.keyboard .ime-panel-head {
+  flex: none;
+  width: 100%;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 11px 18px 2px;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.keyboard .ime-panel-head svg {
+  flex: none;
+  align-self: center;
+  width: 18px;
+  height: 18px;
+  margin-left: 4px;
+  rotate: 180deg;
+  opacity: 0.65;
+}
+
+.keyboard .ime-panel-head:active {
+  opacity: 0.8;
+}
+
+.ime-panel-typed {
+  font-size: calc(19px * var(--text-scale, 1));
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+}
+
+.ime-panel-count {
+  margin-left: auto;
+  font-size: calc(15px * var(--text-scale, 1));
+  font-weight: 600;
+  color: var(--text-dim);
+}
+
+/* The grid itself: every candidate a card of its own, the list scrolled by the wheel, a finger, or the cab's
+   mouse dragged over it. */
+.ime-panel-list {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(78px, 1fr));
+  grid-auto-rows: min-content;
+  align-content: start;
+  gap: 8px;
+  padding: 8px 16px 10px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+  user-select: none;
+  scrollbar-width: none;
+}
+
+.ime-panel-list::-webkit-scrollbar {
+  display: none;
+}
+
+.keyboard .ime-panel-word {
+  min-height: 52px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 14px;
+  background: rgb(255 255 255 / 0.22);
+  color: #fff;
+  font: inherit;
+  /* As the strip's cards: keys, sized to be read at a glance. */
+  font-size: 30px !important;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  transition:
+    background-color 160ms ease,
+    scale 160ms ease;
+}
+
+.keyboard .ime-panel-word:active {
+  scale: 0.94;
+  background: rgb(255 255 255 / 0.32);
+}
+
+.appearance-light .keyboard .ime-panel-word {
+  border: 1px solid rgb(0 0 0 / 0.09);
+  background: rgb(255 255 255 / 0.82);
+  color: #14161a;
+}
+
+.appearance-light .keyboard .ime-panel-word:active {
+  background: rgb(0 0 0 / 0.1);
+}
+
+/* A page more of them, with how many are shown of the whole list. */
+.keyboard .ime-panel-more {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 44px;
+  margin: 0 16px 11px;
+  border: 0;
+  border-radius: 14px;
+  background: rgb(255 255 255 / 0.14);
+  color: #fff;
+  font: inherit;
+  font-size: calc(17px * var(--text-scale, 1));
+  font-weight: 650;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+}
+
+.keyboard .ime-panel-more svg {
+  width: 20px;
+  height: 20px;
+}
+
+.keyboard .ime-panel-more:active {
+  background: rgb(255 255 255 / 0.26);
+}
+
+.appearance-light .keyboard .ime-panel-more {
+  background: rgb(0 0 0 / 0.07);
+  color: #14161a;
+}
+
+/* The whole list showing: its count, quietly, where the button was. */
+.ime-panel-foot {
+  flex: none;
+  margin: 0;
+  padding: 0 18px 11px;
+  font-size: calc(14px * var(--text-scale, 1));
+  font-weight: 600;
+  color: var(--text-dim);
+  text-align: center;
 }
 
 @keyframes ime-bar-in {
@@ -461,5 +713,136 @@
   to {
     opacity: 1;
     transform: none;
+  }
+}
+
+/* Height and opacity together: the pane comes out of the strip's top edge, and folds back into it. */
+@keyframes ime-panel-in {
+  from {
+    max-height: 0;
+    opacity: 0;
+  }
+  to {
+    max-height: var(--ime-panel-height);
+    opacity: 1;
+  }
+}
+
+@keyframes ime-panel-out {
+  from {
+    max-height: var(--ime-panel-height);
+    opacity: 1;
+  }
+  to {
+    max-height: 0;
+    opacity: 0;
+  }
+}
+
+/* The cab's reduced motion: the pane is simply there (a hair of animation, so it also folds away at once). */
+@media (prefers-reduced-motion: reduce) {
+  .ime-bar,
+  .ime-bar .ime-word,
+  .keyboard .ime-expand {
+    animation: none;
+  }
+
+  .keyboard .ime-expand svg,
+  .keyboard .ime-panel-word {
+    transition: none;
+  }
+
+  .ime-panel,
+  .ime-panel.closing {
+    animation-duration: 1ms;
+  }
+}
+
+/* --- The IME's strip and its pane over a short or narrow screen ----------------------------------------- */
+
+/* A short screen (shell.css's keyboard is two thirds as tall): smaller cards, and a pane that covers the strip
+   as well — there is little room above the keys, so its own head folds it back. */
+@container carplay (max-height: 520px) {
+  .ime-bar {
+    gap: 6px;
+    padding: 6px;
+    bottom: calc(100% + 8px);
+  }
+
+  .ime-words {
+    gap: 6px;
+  }
+
+  .ime-bar .ime-word {
+    min-width: 72px;
+    height: 48px;
+    padding: 0 10px;
+    border-radius: 13px;
+    font-size: 26px !important;
+  }
+
+  .keyboard .ime-expand {
+    width: 44px;
+    height: 48px;
+    border-radius: 13px;
+  }
+
+  .keyboard .ime-expand svg {
+    width: 22px;
+    height: 22px;
+  }
+
+  .ime-panel {
+    bottom: -8px;
+    --ime-panel-height: min(56vh, calc(100vh - var(--keyboard-height, 230px) - var(--keyboard-bottom, 32px) - 6px));
+  }
+
+  .keyboard .ime-panel-head {
+    padding: 7px 14px 0;
+  }
+
+  .keyboard .ime-panel-head svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  .ime-panel-list {
+    grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
+    gap: 6px;
+    padding: 6px 12px 8px;
+  }
+
+  .keyboard .ime-panel-word {
+    min-height: 44px;
+    border-radius: 12px;
+    font-size: 26px !important;
+  }
+
+  /* The pane is short here: scrolling walks the list on (a page more as it reaches the foot), so the button
+     that would sit under it goes. */
+  .keyboard .ime-panel-more {
+    display: none;
+  }
+}
+
+/* A narrow screen (the 7" Scania's 690 across): the strip's cards close up so the chevron always has room at
+   its right. */
+@container carplay (max-width: 800px) {
+  .ime-bar {
+    gap: 7px;
+  }
+
+  .ime-words {
+    gap: 7px;
+  }
+
+  .ime-bar .ime-word {
+    min-width: 70px;
+    padding: 0 9px;
+    font-size: 28px !important;
+  }
+
+  .keyboard .ime-expand {
+    width: 48px;
   }
 }

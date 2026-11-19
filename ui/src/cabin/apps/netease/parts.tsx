@@ -1,4 +1,5 @@
 import { type CSSProperties, type PointerEvent, type ReactNode, useRef, useState } from 'react'
+import { coverColourOf } from './coverColors'
 import { useNeteaseWords } from './strings'
 import { ChevronGlyph, ClockGlyph, Equalizer, NoteGlyph, PlayGlyph, UnplayableGlyph } from './glyphs'
 import {
@@ -12,15 +13,10 @@ import {
 
 /** The pieces the NetEase app's pages share: covers, cards, song rows, sliders, heads, loading shapes. */
 
-/** A colour for a cover there's no picture of: the same every time for the same name. */
-function coverColour(name: string): string {
-  const seed = [...name].reduce((sum, letter) => (sum * 17 + letter.charCodeAt(0)) % 997, 3)
-  return `hsl(${(seed * 47) % 360} 38% 40%)`
-}
-
 /**
  * A cover: the picture the hidden page gave, or — no picture (and in the preview, whose covers have none) —
- * one drawn in the name's colour, as NetEase's own covers are: a colour, its first letter, a note.
+ * one drawn in the name's colour, as NetEase's own covers are: a colour, its first letter, a note. The colour is
+ * coverColors.ts's (Now Playing reads the same one for its page when there's no picture).
  */
 export function Cover({ name, cover, className = '' }: { name: string; cover: string | null; className?: string }) {
   const [failed, setFailed] = useState(false)
@@ -33,7 +29,7 @@ export function Cover({ name, cover, className = '' }: { name: string; cover: st
     )
   }
   return (
-    <span className={`${classes} drawn`} style={{ '--cover': coverColour(name) } as CSSProperties}>
+    <span className={`${classes} drawn`} style={{ '--cover': coverColourOf(name) } as CSSProperties}>
       <NoteGlyph />
       <b>{[...name][0] ?? '♪'}</b>
     </span>

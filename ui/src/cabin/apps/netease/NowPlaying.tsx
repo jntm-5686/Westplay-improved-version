@@ -1,7 +1,8 @@
-import { useEffect, useRef } from 'react'
+import { type CSSProperties, useEffect, useLayoutEffect, useRef } from 'react'
+import { useCoverPalette } from './coverColors'
 import { Cover, Slider, clock } from './parts'
 import { HeartGlyph, NextGlyph, PauseGlyph, PlayGlyph, PreviousGlyph, UnplayableGlyph, VolumeGlyph } from './glyphs'
-import { openTab } from './nav'
+import { openTab, useNav } from './nav'
 import { expectChange, usePlayback } from './playback'
 import { playPause, positionOf, seek, setLiked, setVolume, showToast, skip, useNetease, useNow } from './netease'
 import { useNeteaseWords } from './strings'
@@ -156,7 +157,14 @@ export function PlayerBar() {
   )
 }
 
-/** Now Playing: the song large, its time, the controls and the volume, as NetEase's desktop player has it. */
+/** Now Playing: the song large, its time, the controls and the volume, as NetEase's desktop player has it.
+ *
+ * Immersive as NetEase's own app: the cover fills the page's top as a blurred backdrop, a gradient made of the
+ * cover's colours runs the whole page down into the dark, the cover sits large in front of it (breathing while the
+ * song plays), and the song's own large words, the time, the controls, the volume and the heart are laid over that.
+ * The colours come from the picture when it will give them (coverColors.ts), from the drawn cover's colour when
+ * there's no picture, and from the app's own dark gradient when the picture won't — the page never waits on any of
+ * it. The veil over the colours keeps white words and glyphs readable on any cover. */
 export function NowPlayingPage() {
   const words = useNeteaseWords()
   const track = useNetease((state) => state.track)
@@ -165,9 +173,23 @@ export function NowPlayingPage() {
   const trackAt = useNetease((state) => state.trackAt)
   const now = useNow(playing)
   const position = positionOf(track, playing, trackAt, now)
+  // The drawn cover's name: the cover is named by its album, or by the song when it has none.
+  const art = track ? track.album || track.title : ''
+  const layers = useCoverPalette(track?.cover ?? null, art)
+  // The page fades and scales in each time it's opened (it's kept mounted while another page shows, so the app's
+  // own layer switch can't do it): the class is put back before the frame it shows in.
+  const shown = useNav((state) => state.tab === 'now' && state.stacks.now.length === 0)
+  const root = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    const element = root.current
+    if (!shown || !element) return
+    element.classList.remove('entering')
+    void element.offsetWidth
+    element.classList.add('entering')
+  }, [shown])
   if (!track) {
     return (
-      <div className="ne-scroll ne-now-page">
+      <div className="ne-scroll">
         <div className="ne-empty">
           <span className="ne-empty-mark">
             <PlayGlyph />
@@ -178,39 +200,71 @@ export function NowPlayingPage() {
       </div>
     )
   }
+  const palette = layers.current.palette
+  const tint = (colours: string[]): CSSProperties =>
+    ({
+      '--ne-now-a': colours[0],
+      '--ne-now-b': colours[1],
+      '--ne-now-c': colours[2],
+    }) as CSSProperties
   return (
-    <div className="ne-scroll ne-now-page">
-      <div className="ne-now-wash" aria-hidden="true">
-        <Cover name={track.album || track.title} cover={track.cover} className="ne-now-wash-cover" />
+    <div
+      ref={root}
+      className={playing ? 'ne-now-page playing' : 'ne-now-page'}
+      style={
+        palette
+          ? ({ '--ne-now-accent': palette.accent, '--ne-now-on-accent': palette.onAccent } as CSSProperties)
+          : undefined
+      }
+    >
+      <div className="ne-now-backdrop" aria-hidden="true">
+        <Cover name={art} cover={track.cover} className="ne-now-backdrop-cover" />
       </div>
-      <header className="ne-now-head">
-        <span className="ne-kicker">{words.brand}</span>
-        <h2>{words.nowPlaying}</h2>
-      </header>
-      <div className="ne-now-body">
-        <Cover name={track.album || track.title} cover={track.cover} className="ne-now-cover" />
-        <div className="ne-now-side">
-          <h1 className="ne-now-title" title={track.title}>
-            {track.title}
-          </h1>
-          <p className="ne-now-artist">{track.artist}</p>
-          {track.album && (
-            <p className="ne-now-album">
-              {words.album} · {track.album}
-            </p>
-          )}
-          {!track.playable && (
-            <p className="ne-warn">
-              <UnplayableGlyph />
-              {words.unplayableHint}
-            </p>
-          )}
+      <div className="ne-now-tints" aria-hidden="true">
+        {layers.previous?.palette && (
+          <div key={layers.previous.key} className="ne-now-tint" style={tint(layers.previous.palette.colors)} />
+        )}
+        <div
+          key={`${layers.current.key}:${palette ? 'colour' : 'plain'}`}
+          className="ne-now-tint live"
+          style={palette ? tint(palette.colors) : undefined}
+        />
+      </div>
+      <div className="ne-now-veil" aria-hidden="true" />
+      <div className="ne-now-stage">
+        <header className="ne-now-head">
+          <span className="ne-kicker">{words.brand}</span>
+          <h2>{words.nowPlaying}</h2>
+        </header>
+        <div className="ne-now-body">
+          <div className="ne-now-art">
+            <Cover name={art} cover={track.cover} className="ne-now-cover" />
+          </div>
+          <div className="ne-now-side">
+            <h1 className="ne-now-title" title={track.title}>
+              {track.title}
+            </h1>
+            <p className="ne-now-artist">{track.artist}</p>
+            {track.album && (
+              <p className="ne-now-album">
+                {words.album} · {track.album}
+              </p>
+            )}
+            {!track.playable && (
+              <p className="ne-warn">
+                <UnplayableGlyph />
+                {words.unplayableHint}
+              </p>
+            )}
+          </div>
+        </div>
+        <div className="ne-now-foot">
           <Progress position={position} duration={track.duration} />
           <div className="ne-now-tools">
+            <VolumeControl volume={volume} />
             <Controls playing={playing} />
             <LikeButton large />
           </div>
-          <VolumeControl volume={volume} />
         </div>
       </div>
     </div>
