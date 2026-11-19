@@ -1189,7 +1189,10 @@
 
   // The sound's own element (the page's audio), made through the truck's speakers (cab_sound.js, loaded first): told
   // the speakers, the head and the camera by the host.
-  const cab = window.westplayCabSound?.(() => playingNow() ?? document.querySelector('audio, video'), post)
+  // The page's sound itself for now: the cab's speakers' routing is not given this page (`() => null` is no
+  // element to take), so its sound plays as the page's own, out of the system's output — always heard. The spatial
+  // wiring (cab_sound.js taking its element) is a later change on purpose: a song must never come out silent.
+  const cab = window.westplayCabSound?.(() => null, post)
   if (cab) setInterval(() => cab.tick(), 250)
   window.westplaySpeakerLevel = () => cab?.level() ?? null
   const CAB = {
@@ -1257,7 +1260,8 @@
     // Straight into the ladder: its own player's way at once, then the same rescue times as a command's.
     timePlay('heal', { id: current?.id || null, duration: current?.duration ?? null, immediate: true })
   }
-  setInterval(heal, HEAL_INTERVAL)
+  // Off: see the note by `heal` above. The play watcher's own ladder still rescues a play that never starts.
+  void heal
 
   // A play whose own rescue reloaded the page (timePlay's level 3): the song played on once this script is back (the
   // page's queue is lost; the sound isn't), at most a minute after the reload asked for it.
