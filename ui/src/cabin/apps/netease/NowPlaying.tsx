@@ -1,10 +1,20 @@
 import { type CSSProperties, useEffect, useLayoutEffect, useRef } from 'react'
 import { useCoverPalette } from './coverColors'
 import { Cover, Slider, clock } from './parts'
-import { HeartGlyph, NextGlyph, PauseGlyph, PlayGlyph, PreviousGlyph, UnplayableGlyph, VolumeGlyph } from './glyphs'
+import {
+  BackGlyph,
+  HeartGlyph,
+  NextGlyph,
+  PauseGlyph,
+  PlayGlyph,
+  PreviousGlyph,
+  UnplayableGlyph,
+  VolumeGlyph,
+} from './glyphs'
 import { openTab, useNav } from './nav'
 import { expectChange, usePlayback } from './playback'
 import { playPause, positionOf, seek, setLiked, setVolume, showToast, skip, useNetease, useNow } from './netease'
+import { fullScreen, leftFullScreen } from './stack'
 import { useNeteaseWords } from './strings'
 
 /** The NetEase app's player: the bar at the screen's foot (always there), and its Now Playing page. */
@@ -164,13 +174,18 @@ export function PlayerBar() {
  * song plays), and the song's own large words, the time, the controls, the volume and the heart are laid over that.
  * The colours come from the picture when it will give them (coverColors.ts), from the drawn cover's colour when
  * there's no picture, and from the app's own dark gradient when the picture won't — the page never waits on any of
- * it. The veil over the colours keeps white words and glyphs readable on any cover. */
+ * it. The veil over the colours keeps white words and glyphs readable on any cover.
+ *
+ * It's the app's full screen (NeteaseApp.tsx sets the app's `data-immersive` from `stack.ts`'s `fullScreen`): the
+ * app's rail, top bar and player bar are out of sight under it, and the page itself carries the way back, a round
+ * button at its top left — Back out of the app's history, or Home where there's none behind it. */
 export function NowPlayingPage() {
   const words = useNeteaseWords()
   const track = useNetease((state) => state.track)
   const playing = useNetease((state) => state.playing)
   const volume = useNetease((state) => state.volume)
   const trackAt = useNetease((state) => state.trackAt)
+  const style = useNetease((state) => state.style)
   const now = useNow(playing)
   const position = positionOf(track, playing, trackAt, now)
   // The drawn cover's name: the cover is named by its album, or by the song when it has none.
@@ -178,7 +193,7 @@ export function NowPlayingPage() {
   const layers = useCoverPalette(track?.cover ?? null, art)
   // The page fades and scales in each time it's opened (it's kept mounted while another page shows, so the app's
   // own layer switch can't do it): the class is put back before the frame it shows in.
-  const shown = useNav((state) => state.tab === 'now' && state.stacks.now.length === 0)
+  const shown = useNav(fullScreen)
   const root = useRef<HTMLDivElement>(null)
   useLayoutEffect(() => {
     const element = root.current
@@ -187,6 +202,8 @@ export function NowPlayingPage() {
     void element.offsetWidth
     element.classList.add('entering')
   }, [shown])
+  /** Out of the full screen: the app's own Back, or Home when there's nowhere behind it (never no way out). */
+  const leave = () => useNav.setState((nav) => leftFullScreen(nav))
   if (!track) {
     return (
       <div className="ne-scroll">
@@ -201,6 +218,11 @@ export function NowPlayingPage() {
     )
   }
   const palette = layers.current.palette
+  // The cover's accent, on WestPlay's own skin; NetEase's red keeps NetEase's own accent on the app's controls.
+  const accent =
+    palette && style !== 'red'
+      ? ({ '--ne-now-accent': palette.accent, '--ne-now-on-accent': palette.onAccent } as CSSProperties)
+      : undefined
   const tint = (colours: string[]): CSSProperties =>
     ({
       '--ne-now-a': colours[0],
@@ -208,15 +230,7 @@ export function NowPlayingPage() {
       '--ne-now-c': colours[2],
     }) as CSSProperties
   return (
-    <div
-      ref={root}
-      className={playing ? 'ne-now-page playing' : 'ne-now-page'}
-      style={
-        palette
-          ? ({ '--ne-now-accent': palette.accent, '--ne-now-on-accent': palette.onAccent } as CSSProperties)
-          : undefined
-      }
-    >
+    <div ref={root} className={playing ? 'ne-now-page playing' : 'ne-now-page'} style={accent}>
       <div className="ne-now-backdrop" aria-hidden="true">
         <Cover name={art} cover={track.cover} className="ne-now-backdrop-cover" />
       </div>
@@ -233,6 +247,9 @@ export function NowPlayingPage() {
       <div className="ne-now-veil" aria-hidden="true" />
       <div className="ne-now-stage">
         <header className="ne-now-head">
+          <button type="button" className="ne-now-back" aria-label={words.back} title={words.back} onClick={leave}>
+            <BackGlyph />
+          </button>
           <span className="ne-kicker">{words.brand}</span>
           <h2>{words.nowPlaying}</h2>
         </header>

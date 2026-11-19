@@ -1968,6 +1968,39 @@
     0 18px 40px rgb(0 0 0 / 0.18);
 }
 
+/* --- 正在播放 on the whole app (NeteaseApp.tsx's `data-immersive`) ---------------------------------------- */
+
+/* While it shows, the app's own rail, top bar and player bar are out of sight under the page — out of reach of
+   the pointer and the reader too, but never unmounted: their place, their scroll and their state stay as they
+   were. The shell's own sidebar is outside the app panel, so it never goes. */
+.netease-app[data-immersive] {
+  padding: 0;
+  gap: 0;
+}
+
+.netease-app[data-immersive] .ne-rail,
+.netease-app[data-immersive] .ne-topbar,
+.netease-app[data-immersive] .ne-player {
+  visibility: hidden;
+}
+
+/* The pages' viewport leaves the layout and fills the app panel, corner to corner (the panel's own rounded
+   corners cut it); its layers fill that. */
+.netease-app[data-immersive] .ne-main {
+  position: static;
+}
+
+.netease-app[data-immersive] .ne-viewport {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+}
+
+.netease-app[data-immersive] .ne-now-page {
+  border-radius: 0;
+  box-shadow: none;
+}
+
 /* The cover as the page's top: large, blurred, its colours washing down. */
 .netease-app .ne-now-backdrop {
   position: absolute;
@@ -2035,7 +2068,8 @@
     linear-gradient(90deg, rgb(0 0 0 / 0.2) 0%, transparent 48%);
 }
 
-/* The page's content, over the colours: the head, the cover and the song, and the controls at its foot. */
+/* The page's content, over the colours: the head, the cover and the song, and the controls at its foot. It's the
+   whole app here, so its edges keep clear of the panel's rounded corners. */
 .netease-app .ne-now-stage {
   position: relative;
   z-index: 3;
@@ -2044,7 +2078,7 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
-  padding: 22px 30px 22px;
+  padding: 26px 42px 26px;
   overflow-y: auto;
   overflow-x: hidden;
   scrollbar-width: none;
@@ -2057,8 +2091,43 @@
 .netease-app .ne-now-head {
   flex: none;
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 14px;
+}
+
+/* The full screen's own way out (the app's top bar is under it): a round glass button at its top left. */
+.netease-app .ne-now-back {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 54px;
+  height: 54px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgb(255 255 255 / 0.14);
+  color: #fff;
+  box-shadow:
+    0 8px 24px rgb(0 0 0 / 0.28),
+    inset 0 0 0 1px rgb(255 255 255 / 0.16);
+  backdrop-filter: blur(18px);
+  cursor: pointer;
+  transition:
+    background-color var(--ne-quick),
+    scale var(--ne-quick) var(--ne-ease);
+}
+
+.netease-app .ne-now-back:hover {
+  background: rgb(255 255 255 / 0.24);
+}
+
+.netease-app .ne-now-back:active {
+  scale: 0.94;
+}
+
+.netease-app .ne-now-back svg {
+  width: 26px;
+  height: 26px;
 }
 
 .netease-app .ne-now-head .ne-kicker {
@@ -2093,18 +2162,18 @@
 .netease-app .ne-now-art::before {
   content: '';
   position: absolute;
-  inset: -16%;
+  inset: -13%;
   z-index: -1;
   border-radius: 50%;
-  background: radial-gradient(closest-side, color-mix(in srgb, var(--ne-now-accent) 40%, transparent), transparent 72%);
-  filter: blur(26px);
-  opacity: 0.6;
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--ne-now-accent) 34%, transparent), transparent 72%);
+  filter: blur(28px);
+  opacity: 0.45;
 }
 
 .netease-app .ne-now-cover {
-  width: clamp(200px, 26.5cqw, 380px);
-  max-height: min(43cqh, 380px);
-  border-radius: 24px;
+  width: clamp(220px, 29cqw, 430px);
+  max-height: min(46cqh, 430px);
+  border-radius: 28px;
   box-shadow: 0 30px 70px rgb(0 0 0 / 0.52);
   transform-origin: center;
 }
@@ -3284,6 +3353,16 @@
     gap: 8px;
   }
 
+  .netease-app .ne-now-back {
+    width: 48px;
+    height: 48px;
+  }
+
+  .netease-app .ne-now-back svg {
+    width: 23px;
+    height: 23px;
+  }
+
   .netease-app .ne-now-cover {
     width: clamp(132px, 22cqw, 210px);
     border-radius: 18px;
@@ -3735,6 +3814,20 @@
     gap: 6px;
   }
 
+  .netease-app .ne-now-back {
+    width: 44px;
+    height: 44px;
+  }
+
+  .netease-app .ne-now-back svg {
+    width: 21px;
+    height: 21px;
+  }
+
+  .netease-app .ne-now-head {
+    gap: 10px;
+  }
+
   .netease-app .ne-now-head h2 {
     font-size: calc(16px * var(--text-scale, 1));
   }
@@ -3745,7 +3838,7 @@
   }
 
   .netease-app .ne-now-cover {
-    width: clamp(104px, 21cqw, 168px);
+    width: clamp(120px, 24cqw, 190px);
     border-radius: 16px;
   }
 

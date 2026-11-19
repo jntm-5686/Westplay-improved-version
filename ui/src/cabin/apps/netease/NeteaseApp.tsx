@@ -16,7 +16,7 @@ import { useCanGoBack, useNav } from './nav'
 import { PlayerBar } from './NowPlaying'
 import { PageBody, TabPage } from './pages'
 import { usePrefs } from './prefs'
-import { TABS, pageKey, type Tab } from './stack'
+import { TABS, fullScreen, pageKey, type Tab } from './stack'
 import { accountOf, searchFor, SEARCH_FIELD, setQuery, useNetease, useNeteaseBridge } from './netease'
 import { useNeteaseWords } from './strings'
 import type { NeteaseWords } from './strings'
@@ -33,12 +33,17 @@ import './netease.css'
  * screen. Light and dark follow the cab's appearance; the skin (WestPlay's own neutral look or NetEase's red) is
  * chosen on the settings page, and keeps the choice. Nothing of the page's ads, comments, radio or podcasts is
  * ever read.
+ *
+ * 正在播放 is the app's full-screen page: while it shows, NetEase's own rail, its top bar and the player bar under
+ * the pages step aside (they stay mounted, so none of their state is lost) and the page fills the app panel, with
+ * its own way back in it (NowPlaying.tsx). WestPlay's own sidebar is the shell's, outside the app, and stays.
  */
 export function NeteaseApp() {
   const words = useNeteaseWords()
   const style = useNetease((state) => state.style)
   const tab = useNav((state) => state.tab)
   const opened = useNav((state) => state.stacks[state.tab].length)
+  const immersive = useNav(fullScreen)
   const motion = usePrefs((state) => state.motion)
   useNeteaseBridge()
   // Leaving the page puts the keyboard away (the search bar stays where it is: only a result picked, or another
@@ -47,7 +52,13 @@ export function NeteaseApp() {
     useKeyboard.getState().detach(SEARCH_FIELD)
   }, [tab, opened])
   return (
-    <section className="app-panel netease-app" data-style={style} data-motion={motion} aria-label={words.brand}>
+    <section
+      className="app-panel netease-app"
+      data-style={style}
+      data-motion={motion}
+      data-immersive={immersive ? '' : undefined}
+      aria-label={words.brand}
+    >
       <div className="ne-layout">
         <Rail />
         <main className="ne-main">

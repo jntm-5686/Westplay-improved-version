@@ -79,6 +79,23 @@ export function canGoBack(nav: Nav): boolean {
   return nav.history.some((tab) => tab !== nav.tab)
 }
 
+/**
+ * The app's one full-screen page: 正在播放, the now tab's own page with nothing over it. Shown, it fills the whole
+ * app — NetEase's rail, its top bar and its player bar step aside (NeteaseApp.tsx) — and it leaves by Back
+ * (leftFullScreen).
+ */
+export function fullScreen(nav: Nav): boolean {
+  return nav.tab === 'now' && nav.stacks.now.length === 0
+}
+
+/**
+ * The app after leaving that page: Back (to the tab it was opened from), or Home for one with nowhere behind it
+ * (the app opened on 正在播放): the full screen is never one with no way out.
+ */
+export function leftFullScreen(nav: Nav): Nav {
+  return back(nav) ?? goToTab(nav, 'home')
+}
+
 /** The tab the player came from last (skipping the current one), or `null`. */
 function previousTab(nav: Nav): Tab | null {
   for (let at = nav.history.length - 1; at >= 0; at--) {

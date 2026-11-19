@@ -1,5 +1,17 @@
 import { describe, expect, it } from 'vitest'
-import { activePage, back, canGoBack, depth, goToTab, initialNav, openPage, pageKey, type Nav } from './stack'
+import {
+  activePage,
+  back,
+  canGoBack,
+  depth,
+  fullScreen,
+  goToTab,
+  initialNav,
+  leftFullScreen,
+  openPage,
+  pageKey,
+  type Nav,
+} from './stack'
 import { hasResults, resultCounts, searchSections } from './sections'
 import type { NeteaseArtist, NeteaseList, NeteaseSearch, NeteaseSong } from './netease'
 
@@ -167,5 +179,39 @@ describe('a search’s page', () => {
       artists: 11,
       playlists: 31,
     })
+  })
+})
+
+describe('the app’s full-screen page (正在播放)', () => {
+  it('is the now tab’s own page, with no page over it', () => {
+    expect(fullScreen(initialNav('home'))).toBe(false)
+    expect(fullScreen(initialNav('now'))).toBe(true)
+    // Another tab is never full screen, however deep its pages go.
+    expect(fullScreen(openPage(initialNav('home'), { kind: 'playlist', id: 'p1' }))).toBe(false)
+  })
+
+  it('leaves by Back, to the tab it was opened from', () => {
+    // From Home (or any other tab), opening 正在播放 fills the app; Back gives that tab back.
+    let nav = initialNav('home')
+    nav = goToTab(nav, 'now')
+    expect(fullScreen(nav)).toBe(true)
+    nav = leftFullScreen(nav)
+    expect(nav.tab).toBe('home')
+    expect(fullScreen(nav)).toBe(false)
+    // Back is still the app's own: pages opened before it are where they were left.
+    nav = openPage(nav, { kind: 'playlist', id: 'p1' })
+    nav = goToTab(nav, 'now')
+    nav = leftFullScreen(nav)
+    expect(nav.tab).toBe('home')
+    expect(activePage(nav)).toMatchObject({ kind: 'playlist', id: 'p1' })
+  })
+
+  it('leaves for Home when there is nowhere behind it (and never nowhere)', () => {
+    // The app opened straight on the now tab: no tab came before it.
+    const alone = initialNav('now')
+    expect(fullScreen(alone)).toBe(true)
+    const left = leftFullScreen(alone)
+    expect(left.tab).toBe('home')
+    expect(fullScreen(left)).toBe(false)
   })
 })
