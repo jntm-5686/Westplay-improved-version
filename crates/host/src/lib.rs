@@ -1527,8 +1527,9 @@ pub fn run(mut config: Config, stop: Arc<AtomicBool>) -> Result<(), Error> {
             }
         }
 
-        // What NetEase Cloud Music's page says (signed in, playing, what plays, a playlist's songs) and its
-        // sign-in window, for the page; its WebView failing closes it (the page opens it again).
+        // What NetEase Cloud Music's page says (signed in, playing, what plays, a playlist's songs, Home, My Music's
+        // own, a search, the recent songs, NetEase's rankings, the account's profile) and its sign-in window, for the
+        // page; its WebView failing closes it (the page opens it again).
         if let Some(player) = &netease {
             if player.failed() || players_closing {
                 if players_closing {
@@ -1594,6 +1595,13 @@ pub fn run(mut config: Config, stop: Arc<AtomicBool>) -> Result<(), Error> {
                         }
                         netease::Report::Recent(recent) => {
                             let _ = webview.post_json(&netease::recent_message(&recent));
+                        }
+                        // NetEase's own rankings and the account's profile (v3): straight on to the page too.
+                        netease::Report::Rankings(rankings) => {
+                            let _ = webview.post_json(&netease::rankings_message(&rankings));
+                        }
+                        netease::Report::Profile(profile) => {
+                            let _ = webview.post_json(&netease::profile_message(profile.as_deref()));
                         }
                         // A like asked for: its answer goes to the page (the app's heart), never logged.
                         netease::Report::Like(like) => {
@@ -3108,7 +3116,7 @@ mod tests {
         assert_eq!(
             parse_page_message(r#"{"type":"netease","kind":"command","command":{"action":"play","value":"12"}}"#)
                 .unwrap(),
-            PageMessage::Netease { command: super::netease::Command::Play { value: Some("12".into()) } }
+            PageMessage::Netease { command: super::netease::Command::Play { value: Some("12".into()), list: None } }
         );
         assert_eq!(
             parse_page_message(r#"{"type":"netease","kind":"command","command":{"action":"start"}}"#).unwrap(),

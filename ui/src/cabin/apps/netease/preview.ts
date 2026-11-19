@@ -5,16 +5,20 @@ import type {
   NeteaseLibraryPlaylist,
   NeteaseList,
   NeteasePlayerState,
+  NeteaseProfile,
+  NeteaseRanking,
   NeteaseSong,
   NeteaseTrack,
+  PlaylistMeta,
 } from './netease'
 
 /**
  * DEVELOPMENT PREVIEW: the invented player a plain browser gets, so the app's whole screen can be looked at
  * without WestPlay's host and NetEase's page running. Twelve recommended playlists, a song playing, and each
  * playlist's songs; the controls work (the preview's own queue, its own clock). Home's day's songs, My Music's
- * groups and a search are invented the same way (a slice of those playlists, so a song of them plays). Nothing
- * here is anyone's real music, and nothing here is anyone's real account.
+ * groups, a search, NetEase's rankings and the account's profile are invented the same way (a slice of those
+ * playlists, so a song of them plays). Nothing here is anyone's real music, and nothing here is anyone's real
+ * account.
  */
 
 interface PreviewPlaylist {
@@ -75,6 +79,9 @@ const ARTISTS = [
   '南方货场',
 ]
 
+/** The albums: each list's songs are from one, so the preview's rows have an album to show. */
+const ALBUMS = ['夜航', '沿海', '雨天', '山雾', '晚风', '零点', '副驾', '长途', '磁带', '隧道', '货场', '码头']
+
 /** The artists as a search's cards say them (`preview-artist-1`…): a picture the preview has none of. */
 const ARTIST_CARDS: NeteaseArtist[] = ARTISTS.map((name, index) => ({
   id: `preview-artist-${index + 1}`,
@@ -91,14 +98,16 @@ function songsOf(listIndex: number, name: string): NeteaseSong[] {
   return Array.from({ length: 14 }, (_, index): NeteaseSong => {
     const pick = seed + index * 17
     const title = TITLES[pick % TITLES.length]
-    return {
+    const song: NeteaseSong = {
       id: `preview-${listIndex + 1}-${index + 1}`,
       title: index === 0 ? name : title,
       artist: ARTISTS[(seed + index * 7) % ARTISTS.length],
       duration: 174 + (pick % 11) * 17,
       // A few that the preview can't play, so the app's mark for them is there to see.
       playable: !(index === 5 || (index === 2 && listIndex % 3 === 1) || (listIndex % 4 === 2 && index === 9)),
+      album: ALBUMS[listIndex % ALBUMS.length],
     }
+    return song
   })
 }
 
@@ -139,7 +148,75 @@ export function previewLibrary(): NeteaseLibraryGroup[] {
 
 /** The account's recent songs, invented (a slice of one list, so a pressed one plays). */
 export function previewRecent(): NeteaseSong[] {
-  return PLAYLISTS[1].songs.slice(0, 10)
+  return PLAYLISTS[1].songs.slice(0, 10).map((song, index) => ({
+    ...song,
+    // The week's own count, as the page's 听歌排行 says it.
+    playCount: 9 - index,
+  }))
+}
+
+/** NetEase's own rankings, invented: the four charts the page always has (官方榜) and a few of its genre charts,
+ * each over one of the preview's own lists so a ranking's songs play here too. */
+interface PreviewRanking {
+  ranking: NeteaseRanking
+  playlist: number
+}
+
+const RANKINGS: PreviewRanking[] = [
+  { ranking: { id: 'preview-rank-1', name: '飙升榜', cover: null, updateFrequency: '每天更新', trackCount: 100, playCount: 6529254400, official: true }, playlist: 0 },
+  { ranking: { id: 'preview-rank-2', name: '新歌榜', cover: null, updateFrequency: '每天更新', trackCount: 100, playCount: 3227623936, official: true }, playlist: 1 },
+  { ranking: { id: 'preview-rank-3', name: '原创榜', cover: null, updateFrequency: '每周四更新', trackCount: 100, playCount: 624830656, official: true }, playlist: 2 },
+  { ranking: { id: 'preview-rank-4', name: '热歌榜', cover: null, updateFrequency: '每天更新', trackCount: 200, playCount: 14253657088, official: true }, playlist: 3 },
+  { ranking: { id: 'preview-rank-5', name: '网易云古典榜', cover: null, updateFrequency: '每周更新', trackCount: 100, playCount: 76434272, official: false }, playlist: 4 },
+  { ranking: { id: 'preview-rank-6', name: '网易云电音榜', cover: null, updateFrequency: '每周五更新', trackCount: 50, playCount: 414691008, official: false }, playlist: 5 },
+  { ranking: { id: 'preview-rank-7', name: '网易云中文说唱榜', cover: null, updateFrequency: '每周五更新', trackCount: 50, playCount: 553007744, official: false }, playlist: 6 },
+  { ranking: { id: 'preview-rank-8', name: '网易云ACG榜', cover: null, updateFrequency: '每周更新', trackCount: 100, playCount: 93148744, official: false }, playlist: 7 },
+  { ranking: { id: 'preview-rank-9', name: '黑胶VIP爱听榜', cover: null, updateFrequency: '刚刚更新', trackCount: 100, playCount: 249090928, official: false }, playlist: 8 },
+  { ranking: { id: 'preview-rank-10', name: 'UK排行榜周榜', cover: null, updateFrequency: '每周一更新', trackCount: 81, playCount: 157148384, official: false }, playlist: 9 },
+]
+
+/** NetEase's own rankings, as a `rankings` answer would give them. */
+export function previewRankings(): NeteaseRanking[] {
+  return RANKINGS.map((each) => each.ranking)
+}
+
+/** One of those rankings: its own head and its songs (a slice of the preview's own list). */
+export function previewRanking(id: string): { meta: PlaylistMeta; songs: NeteaseSong[] } | null {
+  const found = RANKINGS.find((each) => each.ranking.id === id)
+  if (!found) return null
+  const source = PLAYLISTS[found.playlist]
+  const songs = source.songs.map((song, index) => ({ ...song, id: `${found.ranking.id}-${index + 1}` }))
+  return {
+    songs,
+    meta: {
+      id: found.ranking.id,
+      name: found.ranking.name,
+      cover: found.ranking.cover,
+      playCount: found.ranking.playCount,
+      trackCount: found.ranking.trackCount,
+      updateFrequency: found.ranking.updateFrequency,
+      creator: '',
+      description: '',
+    },
+  }
+}
+
+/** The account's own profile, invented (nothing here is anyone's real account). */
+export function previewProfile(): NeteaseProfile {
+  return {
+    uid: 'preview-user-1',
+    name: '夜航司机',
+    avatar: null,
+    signature: '把车停在海边，再开一会儿。',
+    level: 9,
+    listenSongs: 6682,
+    follows: 46,
+    fans: 7,
+    playlistCount: 12,
+    createDays: 2764,
+    vipType: 11,
+    background: null,
+  }
 }
 
 /** A search of the preview's own lists: its songs, its artists and its playlists, as the host's answer would have
@@ -168,16 +245,23 @@ export function previewSearch(query: string): PreviewSearch {
   return { songs: songs.slice(0, 30), artists, playlists }
 }
 
-/** An artist's page of the preview: their name and a slice of one list's songs, so each of them plays. */
-export function previewArtist(id: string): { name: string; alias: string; cover: null; songs: NeteaseSong[] } {
+/** An artist's page of the preview: their name, alias and a slice of one list's songs, so each of them plays. */
+export function previewArtist(id: string): {
+  name: string
+  alias: string
+  cover: null
+  description: string
+  songs: NeteaseSong[]
+} {
   const at = Math.max(0, ARTIST_CARDS.findIndex((artist) => artist.id === id))
   const name = ARTIST_CARDS[at]?.name ?? '艺人'
   // The songs the preview's lists have of them, so a pressed one plays (and the page isn't empty).
   const songs = PLAYLISTS.flatMap((each) => each.songs).filter((song) => song.artist === name)
   return {
     name,
-    alias: '',
+    alias: 'Preview Artist',
     cover: null,
+    description: '纯粹是预演里假造的一位艺人，好让他的页面有个样子。',
     songs: (songs.length > 0 ? songs : PLAYLISTS[at % PLAYLISTS.length].songs).slice(0, 20),
   }
 }
@@ -193,7 +277,7 @@ function toTrack(song: NeteaseSong, album: string): NeteaseTrack {
     id: song.id,
     title: song.title,
     artist: song.artist,
-    album,
+    album: song.album ?? album,
     cover: null,
     duration: song.duration,
     position: 0,
@@ -225,7 +309,13 @@ export interface Preview {
   /** A search's songs, artists and playlists, as a `search` answer would give. */
   search(query: string): PreviewSearch
   /** An artist's page, as an `artist` answer would give. */
-  artist(id: string): { name: string; alias: string; cover: null; songs: NeteaseSong[] }
+  artist(id: string): { name: string; alias: string; cover: null; description: string; songs: NeteaseSong[] }
+  /** NetEase's own rankings, as a `rankings` answer would give them. */
+  rankings(): NeteaseRanking[]
+  /** One of those rankings, as an `openRanking` answer would give it (a `playlist` message's own head and songs). */
+  ranking(id: string): { meta: PlaylistMeta; songs: NeteaseSong[] } | null
+  /** The account's own profile, as a `profile` answer would give it. */
+  profile(): NeteaseProfile
   play(playing: boolean): void
   playPlaylist(id: string): void
   playSong(id: string, song: NeteaseSong): void
@@ -287,29 +377,48 @@ export function createPreview(): Preview {
     return { signedIn, signingIn, playing, volume, track: current(), liked: queue[index] ? liked.has(queue[index].id) : null, lists: [...lists] }
   }
 
+  // The list a page of the preview plays from: a playlist's own, or the one a ranking's songs were made of.
+  const songsOfId = (id: string): NeteaseSong[] => {
+    const found = PLAYLISTS.find((each) => each.list.id === id)
+    if (found) return found.songs
+    return []
+  }
+
   return {
     read,
-    songs: (id) => PLAYLISTS.find((each) => each.list.id === id)?.songs ?? [],
+    songs: (id) => songsOfId(id),
     home: () => previewHome(),
     library: () => previewLibrary(),
     recent: () => previewRecent(),
     search: (query) => previewSearch(query),
     artist: (id) => previewArtist(id),
+    rankings: () => previewRankings(),
+    ranking: (id) => previewRanking(id),
+    profile: () => previewProfile(),
     play: (next) => {
       fold()
       playing = next
     },
     playPlaylist: (id) => {
-      const found = PLAYLISTS.find((each) => each.list.id === id)
+      // A ranking's page plays the list its own songs were made of.
+      const ranking = RANKINGS.find((each) => each.ranking.id === id)
+      const found = PLAYLISTS.find((each) => each.list.id === id) ?? (ranking ? PLAYLISTS[ranking.playlist] : undefined)
       if (!found) return
-      startAt(found.songs, playableFrom(found.songs, 0), found.list.name)
+      startAt(
+        ranking ? previewRanking(id)?.songs ?? found.songs : found.songs,
+        playableFrom(ranking ? previewRanking(id)?.songs ?? found.songs : found.songs, 0),
+        ranking?.ranking.name ?? found.list.name,
+      )
     },
     playSong: (id, song) => {
       if (!song.playable) return
-      const found = PLAYLISTS.find((each) => each.list.id === id)
+      const ranking = RANKINGS.find((each) => each.ranking.id === id)
+      const made = ranking ? previewRanking(id) : null
+      const found = PLAYLISTS.find((each) => each.list.id === id) ?? (ranking ? PLAYLISTS[ranking.playlist] : undefined)
       if (!found) return
-      const at = found.songs.findIndex((each) => each.id === song.id)
-      startAt(found.songs, Math.max(0, at), found.list.name)
+      const songs = made ? made.songs : found.songs
+      const at = songs.findIndex((each) => each.id === song.id)
+      startAt(songs, Math.max(0, at < 0 && made ? songs.findIndex((each) => each.title === song.title) : at), ranking?.ranking.name ?? found.list.name)
     },
     playHistory: (song) => {
       if (!song.playable) return

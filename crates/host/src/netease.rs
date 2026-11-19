@@ -1,29 +1,33 @@
 //! NetEase Cloud Music (网易云音乐): its own web player (music.163.com), in a WebView of its own, hidden under the
-//! cabin page. The NetEase app the player sees is WestPlay's own (ui/src/cabin/apps/netease); the web player
-//! plays, under its own account and quality, and answers the app with what its page shows, from a script in it
-//! (`netease.js`): the player's state read from its own DOM (its play bar), the recommended playlists and a
-//! playlist's songs read from the page's own content, and the page's own buttons pressed.
+//! cabin page. The NetEase app the player sees is WestPlay's own (ui/src/cabin/apps/netease); the web player plays,
+//! under its own account and quality, and answers the app with what its page says, from a script in it
+//! (`netease.js`): its player's state read from its own play bar, and every reading of the account from the page's
+//! own same-origin interface (`fetch('/api/…')`, its session's own cookies) — Home's day and shelves, the account's
+//! playlists, NetEase's rankings and its own profile, a playlist's and a ranking's songs, a search, an artist's page,
+//! the recent songs and the heart.
 //!
-//! The page is a shell of its own (`https://music.163.com/`) with the player at the bottom and the content in a
-//! frame of the same origin (`#g_iframe`, on `https://music.163.com/discover`): the frame's document is reachable
-//! from the shell's page, so all of it is read there (in `netease.js`).
+//! The page is a shell of its own (`https://music.163.com/`) with the player at the bottom and the content in a frame
+//! of the same origin (`#g_iframe`, on `https://music.163.com/discover`). v3 reads nothing of that frame but one row a
+//! rescue plays from: no page is navigated for data (navigating rebuilds the player and loses its queue), and playing
+//! is the page's own player's way, watched from the first moment and rescued at 1.2 s / 2.5 s / 4 s (`netease.js`).
 //!
-//! Signing in is NetEase's own QR code dialog, on its page, in a window on the PC's desktop (`signin.rs`), on
-//! this WebView's profile (one of its own: signing out forgets NetEase's cookies alone); signed in there, the web
-//! player here loads again, signed in (`netease_sign_in.js` says so, and the page's top bar then shows the
-//! account). Nothing of the account passes through WestPlay: the page's session stays in the page; what comes out
-//! is what the app shows (names, covers, what plays), only the fields below (anything else the page might say is
-//! dropped here), and whether it's signed in. Nothing of it is kept or logged.
+//! Signing in is NetEase's own QR code dialog, on its page, in a window on the PC's desktop (`signin.rs`), on this
+//! WebView's profile (one of its own: signing out forgets NetEase's cookies alone); signed in there, the web player
+//! here loads again, signed in (`netease_sign_in.js` says so, and the page's top bar then shows the account). Nothing
+//! of the account passes through WestPlay: the page's session stays in the page; what comes out is what the app shows
+//! (names, covers, what plays), only the fields below (anything else the page might say is dropped here), and whether
+//! it's signed in. Nothing of it is kept or logged.
 //!
-//! Its sound comes from the truck's own speakers, as Spotify's does (`cab_sound.js`, told the truck's speakers,
-//! the driver's head and the camera). The page's own audio element is the sound's source, as its page makes it.
+//! Its sound comes from the truck's own speakers, as Spotify's does (`cab_sound.js`, told the truck's speakers, the
+//! driver's head and the camera). The page's own audio element is the sound's source, as its page makes it.
 //!
 //! The app's protocol is its own (`netease` in ui/src/shared/host.ts), not Spotify's: messages are
-//! `{"type":"netease","kind":"state",…}`, `{"type":"netease","kind":"playlist",…}`, `{"type":"netease",
-//! "kind":"home",…}`, `{"type":"netease","kind":"library",…}`, `{"type":"netease","kind":"search",…}`,
-//! `{"type":"netease","kind":"artist",…}`, `{"type":"netease","kind":"recent",…}` and
+//! `{"type":"netease","kind":"state",…}`, `{"type":"netease","kind":"playlist",…}`, `{"type":"netease","kind":"home",…}`,
+//! `{"type":"netease","kind":"library",…}`, `{"type":"netease","kind":"search",…}`,
+//! `{"type":"netease","kind":"artist",…}`, `{"type":"netease","kind":"recent",…}`,
+//! `{"type":"netease","kind":"rankings",…}`, `{"type":"netease","kind":"profile",…}` and
 //! `{"type":"netease","kind":"like",…}` to the cabin page, and `{"type":"netease","kind":"command","command":{…}}`
-//! from it (see [`Command`]).
+//! from it (see [`Command`]). The whole protocol is written down in notes/netease-v3-protocol.md.
 
 use std::cell::RefCell;
 use std::path::Path;
@@ -45,11 +49,15 @@ pub enum Command {
     SignIn,
     /// Forget the sign-in, and start again signed out.
     SignOut,
-    /// Play on, or a song (`value`: its NetEase id) — the page's own list played from it where the page lists it
-    /// (the list stays the queue), or its own player's way (as its own links play a song).
+    /// Play on, or a song (`value`: its NetEase id) — the page's own player's way (as its own links play a song),
+    /// watched for its sound and rescued at once if it doesn't come. `list`: the list it's from, when the app knows
+    /// it (a playlist's or a ranking's id, `daily`, `recent`, `search`, `artist:<id>`): the page then plays it in its
+    /// own queue, so a switch is the page's own and near instant.
     Play {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         value: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        list: Option<String>,
     },
     Pause,
     Next,
@@ -65,6 +73,11 @@ pub enum Command {
     },
     /// A playlist's page (`value`: its NetEase id), whose songs the page answers with (`kind: "playlist"`).
     OpenPlaylist {
+        value: String,
+    },
+    /// One of NetEase's rankings (`value`: its id, the playlist's own), whose own head and songs the page answers with
+    /// (`kind: "playlist"`, `id`: the same).
+    OpenRanking {
         value: String,
     },
     /// An artist's page (`value`: their NetEase id), whose name, picture and songs the page answers with
@@ -88,6 +101,10 @@ pub enum Command {
     },
     /// The account's recent songs, answered with (`kind: "recent"`).
     Recent,
+    /// NetEase's own rankings list, answered with (`kind: "rankings"`).
+    Rankings,
+    /// The account's own profile, answered with (`kind: "profile"`).
+    Profile,
     /// Read the state and the recommended playlists again (a page that reloaded does it itself).
     Refresh,
 }
@@ -107,31 +124,69 @@ pub struct Song {
     pub title: String,
     #[serde(default)]
     pub artist: String,
+    /// The song's album, when its answer said one (a playlist's songs, the recent ones, a search's).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub album: String,
     #[serde(default, deserialize_with = "some_f64")]
     pub duration: f64,
     #[serde(default)]
     pub playable: bool,
+    /// How many times the account played it, when its list says (the recent songs: 本周播放). Zeo left out.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub play_count: u64,
 }
 
-/// A playlist's songs: the page's answer to the app's `openPlaylist`.
+impl Song {
+    /// The song cleaned: its words as the app shows them (short), its times real, its own count sane.
+    fn checked(mut self) -> Self {
+        self.title = short(self.title, 300);
+        self.artist = short(self.artist, 300);
+        self.album = short(self.album, 300);
+        self.duration = finite(self.duration);
+        self.play_count = self.play_count.min(1_000_000);
+        self
+    }
+}
+
+/// A playlist's (or a ranking's) songs: the page's answer to the app's `openPlaylist` / `openRanking`. Its own head
+/// (cover, play count, update frequency, who made it, what it says of itself) is v3's, and left out when the page gave
+/// none of it (a v2 answer is a v2 answer still).
 #[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Songs {
-    /// The playlist's NetEase id, as asked.
+    /// The playlist's NetEase id (a ranking's own), as asked.
     pub id: String,
     /// Its name, as its page shows it (the app shows it as the playlist's title at once).
     #[serde(default)]
     pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cover: Option<String>,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub play_count: u64,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub track_count: u64,
+    /// How often a ranking updates, in NetEase's own words ("每天更新"); empty for a plain playlist.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub update_frequency: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub creator: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub description: String,
     #[serde(default)]
     pub songs: Vec<Song>,
 }
 
 impl Songs {
-    /// The answer cleaned: only songs the app can show and ask to play (a NetEase id, a name), no duplicate,
-    /// and not more than [`Songs::MOST`] of them (a list of thousands would hold up the page).
+    /// The answer cleaned: only songs the app can show and ask to play (a NetEase id, a name), no duplicate, and not
+    /// more than [`Songs::MOST`] of them (a list of thousands would hold up the page), its own head as short as the
+    /// app shows it, its cover only on NetEase's own image hosts.
     fn checked(mut self) -> Self {
         const MOST: usize = 500;
         self.name = short(self.name, 200);
+        self.cover = self.cover.filter(|cover| is_net_ease_image(cover));
+        self.update_frequency = short(self.update_frequency, 40);
+        self.creator = short(self.creator, 60);
+        self.description = short(self.description, 400);
         self.songs = checked_songs(self.songs, MOST);
         self
     }
@@ -146,12 +201,7 @@ fn checked_songs(songs: Vec<Song>, most: usize) -> Vec<Song> {
         .filter(|song| is_id(&song.id) && !song.title.is_empty())
         .filter(|song| known.insert(song.id.clone()))
         .take(most)
-        .map(|mut song| {
-            song.title = short(song.title, 300);
-            song.artist = short(song.artist, 300);
-            song.duration = finite(song.duration);
-            song
-        })
+        .map(Song::checked)
         .collect()
 }
 
@@ -178,8 +228,8 @@ pub struct Track {
 }
 
 impl Track {
-    /// The song cleaned: its words as the app shows them (short), its times real, and only a cover on NetEase's
-    /// own image hosts (whatever else the page might say is dropped).
+    /// The song cleaned: its words as the app shows them (short), its times real, and only a cover on NetEase's own
+    /// image hosts (whatever else the page might say is dropped).
     fn checked(mut self) -> Self {
         self.id = if is_id(&self.id) { self.id } else { String::new() };
         self.title = short(self.title, 300);
@@ -192,8 +242,8 @@ impl Track {
     }
 }
 
-/// A recommended playlist: its NetEase id, name, cover (on NetEase's own image hosts) and how many times it's
-/// been played.
+/// A recommended playlist: its NetEase id, name, cover (on NetEase's own image hosts) and how many times it's been
+/// played.
 #[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Playlist {
@@ -206,9 +256,9 @@ pub struct Playlist {
 }
 
 impl Playlist {
-    /// The playlist cleaned, as [`Track`]'s fields: an id and a name it can be shown by, a real play count, and
-    /// only a cover on NetEase's own image hosts. "daily" (每日歌曲推荐, the app's own name for the day's page) is
-    /// a list the app opens as any other; a card without a cover is still one (the day's card has none).
+    /// The playlist cleaned, as [`Track`]'s fields: an id and a name it can be shown by, a real play count, and only
+    /// a cover on NetEase's own image hosts. "daily" (每日歌曲推荐, the app's own name for the day's page) is a list
+    /// the app opens as any other; a card without a cover is still one (the day's card has none).
     fn checked(mut self) -> Option<Self> {
         if !is_list_id(&self.id) {
             return None;
@@ -218,6 +268,134 @@ impl Playlist {
             return None;
         }
         self.cover = self.cover.filter(|cover| is_net_ease_image(cover));
+        Some(self)
+    }
+}
+
+/// One of NetEase's own rankings (榜单): a playlist in NetEase's own right (its id opens it, `/api/toplist`).
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Ranking {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub cover: Option<String>,
+    /// How often it updates, in NetEase's own words ("每天更新", "刚刚更新", "每周五更新").
+    #[serde(default)]
+    pub update_frequency: String,
+    #[serde(default)]
+    pub track_count: u64,
+    #[serde(default)]
+    pub play_count: u64,
+    /// One of NetEase's own charts (飙升榜, 新歌榜, 原创榜, 热歌榜 and its partners): not a community list.
+    #[serde(default)]
+    pub official: bool,
+}
+
+impl Ranking {
+    /// The ranking cleaned: an id and a name it can be shown and opened by, its own words short, its counts real, and
+    /// only a cover on NetEase's own image hosts.
+    fn checked(mut self) -> Option<Self> {
+        if !is_id(&self.id) {
+            return None;
+        }
+        self.name = short(self.name, 200);
+        if self.name.is_empty() {
+            return None;
+        }
+        self.cover = self.cover.filter(|cover| is_net_ease_image(cover));
+        self.update_frequency = short(self.update_frequency, 40);
+        self.track_count = self.track_count.min(1_000_000);
+        self.play_count = self.play_count.min(1_000_000_000_000);
+        Some(self)
+    }
+}
+
+/// NetEase's own rankings list: the page's answer to the app's `rankings`.
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Rankings {
+    #[serde(default)]
+    pub rankings: Vec<Ranking>,
+}
+
+impl Rankings {
+    /// The answer cleaned: the charts the app can show and open (a NetEase id, a name), no duplicate, at most
+    /// [`Rankings::MOST`] of them.
+    fn checked(mut self) -> Self {
+        const MOST: usize = 100;
+        let mut known = std::collections::HashSet::new();
+        self.rankings = self
+            .rankings
+            .into_iter()
+            .filter_map(Ranking::checked)
+            .filter(|ranking| known.insert(ranking.id.clone()))
+            .take(MOST)
+            .collect();
+        self
+    }
+}
+
+/// Whose account it is, as NetEase's own user detail says it: its user id, name and picture, its signature, its music
+/// level and its counts. The page's answer to the app's `profile`.
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Profile {
+    /// NetEase's own user id (digits).
+    pub uid: String,
+    pub name: String,
+    #[serde(default)]
+    pub avatar: Option<String>,
+    /// The account's signature line (empty for one the page gives none).
+    #[serde(default)]
+    pub signature: String,
+    /// The account's music level (网易云等级), 0 when the page doesn't say.
+    #[serde(default)]
+    pub level: u64,
+    /// How many songs it has ever listened to.
+    #[serde(default)]
+    pub listen_songs: u64,
+    /// How many accounts it follows.
+    #[serde(default)]
+    pub follows: u64,
+    /// How many accounts follow it (the page's own `followeds`).
+    #[serde(default)]
+    pub fans: u64,
+    /// How many playlists it has (created, collected and the heart's own).
+    #[serde(default)]
+    pub playlist_count: u64,
+    /// How many days since the account was made.
+    #[serde(default)]
+    pub create_days: u64,
+    /// NetEase's own vip flag (0: none; 11: 黑胶 VIP, as the page says it).
+    #[serde(default)]
+    pub vip_type: u64,
+    /// The account page's own background picture, on NetEase's image hosts.
+    #[serde(default)]
+    pub background: Option<String>,
+}
+
+impl Profile {
+    /// The profile cleaned: an id and a name the app can show, its words short, its counts real, and only pictures on
+    /// NetEase's own image hosts.
+    fn checked(mut self) -> Option<Self> {
+        if !is_id(&self.uid) {
+            return None;
+        }
+        self.name = short(self.name, 120);
+        if self.name.is_empty() {
+            return None;
+        }
+        self.avatar = self.avatar.filter(|avatar| is_net_ease_image(avatar));
+        self.signature = short(self.signature, 200);
+        self.background = self.background.filter(|background| is_net_ease_image(background));
+        self.level = self.level.min(1_000);
+        self.listen_songs = self.listen_songs.min(100_000_000);
+        self.follows = self.follows.min(100_000_000);
+        self.fans = self.fans.min(100_000_000);
+        self.playlist_count = self.playlist_count.min(100_000);
+        self.create_days = self.create_days.min(100_000);
+        self.vip_type = self.vip_type.min(1_000);
         Some(self)
     }
 }
@@ -248,8 +426,8 @@ impl ArtistCard {
     }
 }
 
-/// An artist's page: their id, name and alias, their picture, and their most played songs — the page's answer to
-/// the app's `openArtist`.
+/// An artist's page: their id, name and alias, their picture, their brief introduction and their songs — the page's
+/// answer to the app's `openArtist`.
 #[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Artist {
@@ -261,26 +439,30 @@ pub struct Artist {
     pub alias: String,
     #[serde(default)]
     pub cover: Option<String>,
+    /// Their brief introduction, empty for one the page gives none.
+    #[serde(default)]
+    pub description: String,
     #[serde(default)]
     pub songs: Vec<Song>,
 }
 
 impl Artist {
-    /// The answer cleaned: an id the app can ask for, a name it can show, a short alias, a picture on NetEase's own
-    /// image hosts, and their songs as a playlist's (at most [`Artist::MOST`]).
+    /// The answer cleaned: an id the app can ask for, a name it can show, a short alias and introduction, a picture on
+    /// NetEase's own image hosts, and their songs as a playlist's (at most [`Artist::MOST`]).
     fn checked(mut self) -> Self {
         const MOST: usize = 50;
         self.id = if is_id(&self.id) { self.id } else { String::new() };
         self.name = short(self.name, 120);
         self.alias = short(self.alias, 120);
         self.cover = self.cover.filter(|cover| is_net_ease_image(cover));
+        self.description = short(self.description, 600);
         self.songs = checked_songs(self.songs, MOST);
         self
     }
 }
 
-/// A playlist of the account's own (My Music's side): its NetEase id, name and cover, how many songs it has, and
-/// who it's by (a collected one's owner, empty for one the account made).
+/// A playlist of the account's own (My Music's side): its NetEase id, name and cover, how many songs it has, and who
+/// it's by (a collected one's owner, empty for one the account made).
 #[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LibraryPlaylist {
@@ -399,13 +581,12 @@ impl Home {
         let radar = self.radar.as_ref().map(|list| list.id.clone());
         let mut known = radar.into_iter().collect::<std::collections::HashSet<_>>();
         let mut shelf = |mut lists: Vec<Playlist>| {
-            let kept: Vec<Playlist> = lists
+            lists
                 .drain(..)
                 .filter_map(Playlist::checked)
                 .filter(|list| known.insert(list.id.clone()))
                 .take(LISTS)
-                .collect();
-            kept
+                .collect()
         };
         self.personal = shelf(self.personal);
         self.recommended = shelf(self.recommended);
@@ -512,20 +693,21 @@ pub struct Audio {
     pub at: Option<i64>,
 }
 
-/// A play, timed by the page (netease.js's own watch): what was asked (`play`, `resume`, `next`, `previous`, or
-/// `heal` for the last resort), how long its sound took to move (`None`: it didn't in the window), and each step's
-/// own record — its moments, the player's element at each rescue, which rescue came. For the host's log only.
+/// A play, timed by the page (netease.js's own watch): what was asked (`play`, `resume`, `next`, `previous`, or `heal`
+/// for a player that says it plays while its sound doesn't), how long its sound took to move (`None`: it didn't in the
+/// ladder's window), and each step's own record — its moments, the player's element at each rescue, which rescue came.
+/// For the host's log only.
 #[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Timing {
     #[serde(default)]
     pub action: String,
-    /// How many ms until its sound moved (the normal way); `null`: ten seconds without a sound.
+    /// How many ms until its sound moved (the normal way); `null`: four seconds without a sound.
     #[serde(default)]
     pub sounding: Option<u64>,
     #[serde(default)]
     pub steps: String,
-    /// The rescue that came (`1`, `2` or `3`; `0`: the last resort's own wake): `null` for a normal play.
+    /// The rescue that came (`1`, `2` or `3`; `null` for a play whose sound came at once).
     #[serde(default)]
     pub rescue: Option<u64>,
     /// Whether the page reloaded itself for the third rescue.
@@ -644,7 +826,7 @@ pub enum Report {
     /// The music's spectrum, while the cab's Equalizer asks for it ([`speakers::read_spectrum`]).
     Spectrum(Vec<u8>),
     State(State),
-    /// A playlist's songs, the page's answer to the app's `openPlaylist`.
+    /// A playlist's (or a ranking's) songs, the page's answer to the app's `openPlaylist` / `openRanking`.
     Playlist(Box<Songs>),
     /// An artist's page, the page's answer to the app's `openArtist`.
     Artist(Box<Artist>),
@@ -654,6 +836,11 @@ pub enum Report {
     Search(Box<Search>),
     /// The account's recent songs: the page's answer to the app's `recent`.
     Recent(Box<Recent>),
+    /// NetEase's own rankings: the page's answer to the app's `rankings`.
+    Rankings(Box<Rankings>),
+    /// The account's own profile (`None`: the page had none to say, signed out): the page's answer to the app's
+    /// `profile`.
+    Profile(Option<Box<Profile>>),
     /// A like asked for, and whether it landed: the page's answer to the app's `setLike`.
     Like(Box<Like>),
     /// A play timed by the page: for the host's log.
@@ -675,8 +862,7 @@ pub struct Netease {
     pending: RefCell<Vec<Report>>,
     /// The cab as the page was told it ([`Netease::cab`]).
     told: RefCell<Told>,
-    /// The recommended playlists last read (the page sends them when they change; the state to the app always
-    /// has them).
+    /// The recommended playlists last read (the v1 part of the state to the app).
     lists: RefCell<Vec<Playlist>>,
 }
 
@@ -717,10 +903,12 @@ impl Netease {
                 self.view.delete_cookies()?;
                 self.view.navigate(HOME)
             }
-            // A song, a playlist, a search: only NetEase's own ids and the app's own words go into the page's own
-            // addresses and lists (and a search's words stay short: its own page's search).
-            Command::Play { value: Some(value) } if !is_id(value) => Ok(()),
+            // A song, a playlist, a ranking, a search: only NetEase's own ids and the app's own words go into the page's
+            // own addresses and lists (and a search's words stay short: its own page's search).
+            Command::Play { value: Some(value), .. } if !is_id(value) => Ok(()),
+            Command::Play { list: Some(list), .. } if !is_context(list) => Ok(()),
             Command::OpenPlaylist { value } if !is_list_id(value) => Ok(()),
+            Command::OpenRanking { value } if !is_id(value) => Ok(()),
             Command::OpenArtist { value } if !is_id(value) => Ok(()),
             Command::SetLike { value, .. } if !is_id(value) => Ok(()),
             Command::Search { value } if value.trim().is_empty() || value.chars().count() > 60 => Ok(()),
@@ -861,6 +1049,10 @@ impl Netease {
                 Some(Message::Library(library)) => reports.push(Report::Library(Box::new(library.checked()))),
                 Some(Message::Search(search)) => reports.push(Report::Search(Box::new(search.checked()))),
                 Some(Message::Recent(recent)) => reports.push(Report::Recent(Box::new(recent.checked()))),
+                Some(Message::Rankings(rankings)) => reports.push(Report::Rankings(Box::new(rankings.checked()))),
+                Some(Message::Profile(profile)) => {
+                    reports.push(Report::Profile(profile.and_then(Profile::checked).map(Box::new)))
+                }
                 Some(Message::Like(like)) => reports.push(Report::Like(Box::new(like))),
                 Some(Message::Timing(timing)) => reports.push(Report::Timing(Box::new(timing))),
                 Some(Message::Home(home)) => reports.push(Report::Home(Box::new(home.checked()))),
@@ -895,7 +1087,7 @@ enum Message {
     Ready,
     /// What the page says of itself (signed in, playing, what plays, and the lists when they changed).
     State(PageState),
-    /// A playlist's songs, answered.
+    /// A playlist's (or a ranking's) songs, answered.
     Playlist(Songs),
     /// An artist's page, answered.
     Artist(Artist),
@@ -905,6 +1097,10 @@ enum Message {
     Search(Search),
     /// The account's recent songs, answered.
     Recent(Recent),
+    /// NetEase's own rankings, answered.
+    Rankings(Rankings),
+    /// The account's own profile, answered (`None`: the page had none to say).
+    Profile(Option<Profile>),
     /// A like asked for, answered.
     Like(Like),
     /// A play's own timing, said as it goes.
@@ -933,6 +1129,12 @@ fn read_message(message: &str) -> Option<Message> {
     if let Some(recent) = value.get("recent") {
         return serde_json::from_value::<Recent>(recent.clone()).ok().map(Message::Recent);
     }
+    if let Some(rankings) = value.get("rankings") {
+        return serde_json::from_value::<Rankings>(rankings.clone()).ok().map(Message::Rankings);
+    }
+    if let Some(profile) = value.get("profile") {
+        return serde_json::from_value::<Option<Profile>>(profile.clone()).ok().map(Message::Profile);
+    }
     if let Some(like) = value.get("like") {
         return serde_json::from_value::<Like>(like.clone()).ok().map(Message::Like);
     }
@@ -959,21 +1161,41 @@ pub fn state_message(state: Option<&State>, signing_in: bool) -> String {
     serde_json::json!({ "type": "netease", "kind": "state", "state": state }).to_string()
 }
 
-/// `{"type":"netease","kind":"playlist","id":"…","name":"…","songs":[…]}`: a playlist's songs, the page's answer
-/// to the app's `openPlaylist`.
+/// `{"type":"netease","kind":"playlist","id":"…","name":"…","songs":[…]}`: a playlist's (or a ranking's) songs, the
+/// page's answer to the app's `openPlaylist` / `openRanking`. Its head (cover, play count, update frequency, who made
+/// it, its description) is there when the page gave one.
 pub fn playlist_message(songs: &Songs) -> String {
-    serde_json::json!({
+    let mut value = serde_json::json!({
         "type": "netease",
         "kind": "playlist",
         "id": songs.id,
         "name": songs.name,
         "songs": songs.songs,
-    })
-    .to_string()
+    });
+    let map = value.as_object_mut().expect("an object");
+    if let Some(cover) = &songs.cover {
+        map.insert("cover".into(), cover.clone().into());
+    }
+    if songs.play_count > 0 {
+        map.insert("playCount".into(), songs.play_count.into());
+    }
+    if songs.track_count > 0 {
+        map.insert("trackCount".into(), songs.track_count.into());
+    }
+    if !songs.update_frequency.is_empty() {
+        map.insert("updateFrequency".into(), songs.update_frequency.clone().into());
+    }
+    if !songs.creator.is_empty() {
+        map.insert("creator".into(), songs.creator.clone().into());
+    }
+    if !songs.description.is_empty() {
+        map.insert("description".into(), songs.description.clone().into());
+    }
+    value.to_string()
 }
 
-/// `{"type":"netease","kind":"artist","id":"…","name":"…","alias":"…","cover":…,"songs":[…]}`: an artist's page, the
-/// page's answer to the app's `openArtist`.
+/// `{"type":"netease","kind":"artist","id":"…","name":"…","alias":"…","cover":…,"description":"…","songs":[…]}`: an
+/// artist's page, the page's answer to the app's `openArtist`.
 pub fn artist_message(artist: &Artist) -> String {
     serde_json::json!({
         "type": "netease",
@@ -982,6 +1204,7 @@ pub fn artist_message(artist: &Artist) -> String {
         "name": artist.name,
         "alias": artist.alias,
         "cover": artist.cover,
+        "description": artist.description,
         "songs": artist.songs,
     })
     .to_string()
@@ -1041,6 +1264,28 @@ pub fn recent_message(recent: &Recent) -> String {
     .to_string()
 }
 
+/// `{"type":"netease","kind":"rankings","rankings":[…]}`: NetEase's own rankings, the page's answer to the app's
+/// `rankings`.
+pub fn rankings_message(rankings: &Rankings) -> String {
+    serde_json::json!({
+        "type": "netease",
+        "kind": "rankings",
+        "rankings": rankings.rankings,
+    })
+    .to_string()
+}
+
+/// `{"type":"netease","kind":"profile","profile":{…}}` (`profile`: `null` when the page had none to say, signed out):
+/// the account's own profile, the page's answer to the app's `profile`.
+pub fn profile_message(profile: Option<&Profile>) -> String {
+    serde_json::json!({
+        "type": "netease",
+        "kind": "profile",
+        "profile": profile,
+    })
+    .to_string()
+}
+
 /// `{"type":"netease","kind":"like","id":"…","liked":true,"ok":true,"reason":""}`: a like asked of the page, and
 /// whether its own interface said it landed.
 pub fn like_message(like: &Like) -> String {
@@ -1064,6 +1309,15 @@ fn is_id(id: &str) -> bool {
 /// itself: its card has no playlist id of NetEase's).
 fn is_list_id(id: &str) -> bool {
     id == "daily" || is_id(id)
+}
+
+/// A list the app plays a song from, as the page names its own: NetEase's own (a playlist's or a ranking's id),
+/// "daily" (the day's own songs), "recent" (its 听歌排行), "search" (its last search's songs) or "artist:<id>" (an
+/// artist's songs). Anything else is no list of the page's, and the command is dropped.
+fn is_context(list: &str) -> bool {
+    is_list_id(list)
+        || matches!(list, "recent" | "search")
+        || list.strip_prefix("artist:").is_some_and(is_id)
 }
 
 /// A cover on NetEase's own image hosts (`https://p2.music.126.net/…`, `http://s4.music.126.net/…`): its CDN's
@@ -1100,6 +1354,11 @@ where
     Ok(<Option<f64> as serde::Deserialize>::deserialize(deserializer)?.unwrap_or(0.0))
 }
 
+/// Whether a count is zero (left out of a message when it is: a playlist's songs have no play count to show).
+fn is_zero(value: &u64) -> bool {
+    *value == 0
+}
+
 /// `text` as the app shows it: not longer than `most` characters (the page's own words, never anything else of
 /// it).
 fn short(text: String, most: usize) -> String {
@@ -1115,10 +1374,17 @@ mod tests {
         assert_eq!(serde_json::from_str::<Command>(r#"{"action":"start"}"#).unwrap(), Command::Start);
         assert_eq!(serde_json::from_str::<Command>(r#"{"action":"signIn"}"#).unwrap(), Command::SignIn);
         assert_eq!(serde_json::from_str::<Command>(r#"{"action":"signOut"}"#).unwrap(), Command::SignOut);
-        assert_eq!(serde_json::from_str::<Command>(r#"{"action":"play"}"#).unwrap(), Command::Play { value: None });
+        assert_eq!(
+            serde_json::from_str::<Command>(r#"{"action":"play"}"#).unwrap(),
+            Command::Play { value: None, list: None }
+        );
         assert_eq!(
             serde_json::from_str::<Command>(r#"{"action":"play","value":"3778678"}"#).unwrap(),
-            Command::Play { value: Some("3778678".into()) }
+            Command::Play { value: Some("3778678".into()), list: None }
+        );
+        assert_eq!(
+            serde_json::from_str::<Command>(r#"{"action":"play","value":"3778678","list":"19723756"}"#).unwrap(),
+            Command::Play { value: Some("3778678".into()), list: Some("19723756".into()) }
         );
         assert_eq!(serde_json::from_str::<Command>(r#"{"action":"pause"}"#).unwrap(), Command::Pause);
         assert_eq!(serde_json::from_str::<Command>(r#"{"action":"next"}"#).unwrap(), Command::Next);
@@ -1132,6 +1398,10 @@ mod tests {
         assert_eq!(
             serde_json::from_str::<Command>(r#"{"action":"openPlaylist","value":"456"}"#).unwrap(),
             Command::OpenPlaylist { value: "456".into() }
+        );
+        assert_eq!(
+            serde_json::from_str::<Command>(r#"{"action":"openRanking","value":"19723756"}"#).unwrap(),
+            Command::OpenRanking { value: "19723756".into() }
         );
         assert_eq!(
             serde_json::from_str::<Command>(r#"{"action":"openArtist","value":"5770"}"#).unwrap(),
@@ -1153,17 +1423,28 @@ mod tests {
     #[test]
     fn passes_the_page_its_commands_as_the_app_sent_them() {
         assert_eq!(
-            serde_json::to_string(&Command::Play { value: Some("3778678".into()) }).unwrap(),
+            serde_json::to_string(&Command::Play { value: Some("3778678".into()), list: None }).unwrap(),
             r#"{"action":"play","value":"3778678"}"#
         );
-        assert_eq!(serde_json::to_string(&Command::Play { value: None }).unwrap(), r#"{"action":"play"}"#);
+        assert_eq!(
+            serde_json::to_string(&Command::Play { value: Some("3778678".into()), list: Some("daily".into()) }).unwrap(),
+            r#"{"action":"play","value":"3778678","list":"daily"}"#
+        );
+        assert_eq!(serde_json::to_string(&Command::Play { value: None, list: None }).unwrap(), r#"{"action":"play"}"#);
         assert_eq!(serde_json::to_string(&Command::Prev).unwrap(), r#"{"action":"prev"}"#);
         assert_eq!(serde_json::to_string(&Command::Seek { value: 12.5 }).unwrap(), r#"{"action":"seek","value":12.5}"#);
         assert_eq!(
             serde_json::to_string(&Command::OpenPlaylist { value: "456".into() }).unwrap(),
             r#"{"action":"openPlaylist","value":"456"}"#
         );
-        assert!(Command::Refresh.for_page() && Command::Play { value: None }.for_page());
+        assert_eq!(
+            serde_json::to_string(&Command::OpenRanking { value: "19723756".into() }).unwrap(),
+            r#"{"action":"openRanking","value":"19723756"}"#
+        );
+        assert_eq!(serde_json::to_string(&Command::Rankings).unwrap(), r#"{"action":"rankings"}"#);
+        assert_eq!(serde_json::to_string(&Command::Profile).unwrap(), r#"{"action":"profile"}"#);
+        assert!(Command::Refresh.for_page() && Command::Play { value: None, list: None }.for_page());
+        assert!(Command::Rankings.for_page() && Command::Profile.for_page());
         assert!(!Command::Start.for_page() && !Command::SignIn.for_page() && !Command::SignOut.for_page());
         // Only NetEase's own ids are passed into the page's own addresses and lists.
         assert!(is_id("3778678"));
@@ -1205,8 +1486,10 @@ mod tests {
     #[test]
     fn reads_a_playlists_answer_cleaned() {
         let Some(Message::Playlist(songs)) = read_message(
-            r##"{"playlist":{"id":"3778678","name":"热歌榜","songs":[
-                {"id":"1","title":"冬天又来临","artist":"歌手","duration":240.5,"playable":true},
+            r##"{"playlist":{"id":"3778678","name":"热歌榜","cover":"https://p1.music.126.net/0.jpg",
+                "playCount":14253657088,"trackCount":200,"updateFrequency":"每天更新","creator":"",
+                "description":"","songs":[
+                {"id":"1","title":"冬天又来临","artist":"歌手","album":"冬天又来临","duration":240.5,"playable":true},
                 {"id":"1","title":"repeat","artist":"","duration":100,"playable":true},
                 {"id":"","title":"no id","duration":1,"playable":false},
                 {"id":"2","title":"","duration":1,"playable":false},
@@ -1217,10 +1500,21 @@ mod tests {
         let songs = songs.checked();
         assert_eq!(songs.id, "3778678");
         assert_eq!(songs.name, "热歌榜");
+        assert_eq!(songs.cover.as_deref(), Some("https://p1.music.126.net/0.jpg"));
+        assert_eq!((songs.play_count, songs.track_count), (14_253_657_088, 200));
+        assert_eq!(songs.update_frequency, "每天更新");
         assert_eq!(songs.songs.len(), 2, "{songs:?}");
         assert_eq!(songs.songs[0].title, "冬天又来临");
+        assert_eq!(songs.songs[0].album, "冬天又来临");
         assert_eq!(songs.songs[1].duration, 0.0);
         assert!(read_message(r#"{"playlist":"no"}"#).is_none());
+        // A v2 answer (no head at all) is read the same: no cover, no counts, the same songs.
+        let Some(Message::Playlist(songs)) = read_message(r#"{"playlist":{"id":"456","name":"歌单名"}}"#) else {
+            panic!("not a playlist")
+        };
+        let songs = songs.checked();
+        assert_eq!((songs.cover, songs.play_count, songs.track_count), (None, 0, 0));
+        assert!(songs.songs.is_empty());
     }
 
     /// Only the fields the app shows pass, and only what it can use: a cover on NetEase's own hosts, real times.
@@ -1315,12 +1609,20 @@ mod tests {
         let songs = Songs {
             id: "456".into(),
             name: "歌单名".into(),
+            cover: Some("https://p1.music.126.net/a.jpg?param=300y300".into()),
+            play_count: 0,
+            track_count: 0,
+            update_frequency: String::new(),
+            creator: String::new(),
+            description: String::new(),
             songs: vec![Song {
                 id: "1".into(),
                 title: "冬天又来临".into(),
                 artist: "歌手".into(),
+                album: String::new(),
                 duration: 240.5,
                 playable: true,
+                play_count: 0,
             }],
         };
         let message = playlist_message(&songs);
@@ -1329,8 +1631,11 @@ mod tests {
         assert_eq!(value["kind"], "playlist");
         assert_eq!(value["id"], "456");
         assert_eq!(value["name"], "歌单名");
+        assert_eq!(value["cover"], "https://p1.music.126.net/a.jpg?param=300y300");
         assert_eq!(value["songs"][0]["playable"], true);
         assert_eq!(value["songs"][0]["duration"], 240.5);
+        assert!(value["songs"][0].get("album").is_none(), "no album to show: {message}");
+        assert!(value["playCount"].is_null() && value["trackCount"].is_null(), "no counts to show: {message}");
     }
 
     /// The v2 commands (Home, My Music's own playlists, a search, the recent songs): read from the app, passed to
@@ -1340,6 +1645,8 @@ mod tests {
         assert_eq!(serde_json::from_str::<Command>(r#"{"action":"home"}"#).unwrap(), Command::Home);
         assert_eq!(serde_json::from_str::<Command>(r#"{"action":"library"}"#).unwrap(), Command::Library);
         assert_eq!(serde_json::from_str::<Command>(r#"{"action":"recent"}"#).unwrap(), Command::Recent);
+        assert_eq!(serde_json::from_str::<Command>(r#"{"action":"rankings"}"#).unwrap(), Command::Rankings);
+        assert_eq!(serde_json::from_str::<Command>(r#"{"action":"profile"}"#).unwrap(), Command::Profile);
         assert_eq!(
             serde_json::from_str::<Command>(r#"{"action":"search","value":"周杰伦"}"#).unwrap(),
             Command::Search { value: "周杰伦".into() }
@@ -1351,12 +1658,25 @@ mod tests {
             serde_json::to_string(&Command::Search { value: "泰勒".into() }).unwrap(),
             r#"{"action":"search","value":"泰勒"}"#
         );
-        for command in [Command::Home, Command::Library, Command::Recent, Command::Search { value: "x".into() }] {
+        for command in [
+            Command::Home,
+            Command::Library,
+            Command::Recent,
+            Command::Rankings,
+            Command::Profile,
+            Command::Search { value: "x".into() },
+            Command::OpenRanking { value: "19723756".into() },
+        ] {
             assert!(command.for_page(), "{command:?} is the page's");
         }
         // A list the app opens by its id: NetEase's own (digits), or the day's page's own name.
         assert!(is_list_id("3778678") && is_list_id("daily"));
         assert!(!is_list_id("") && !is_list_id("Daily") && !is_list_id("daily/../x") && !is_list_id("12a"));
+        // The lists a song is played from, as the page names them: its own ids and the day's/recent/search/artist.
+        assert!(is_context("daily") && is_context("recent") && is_context("search") && is_context("artist:5770"));
+        assert!(is_context("19723756"));
+        assert!(!is_context("") && !is_context("Artist:5770") && !is_context("artist:") && !is_context("artist:12a"));
+        assert!(!is_context("search:许巍") && !is_context("daily/../x"));
         // The day's own card (no cover, its own id): a playlist the app can show and open.
         let daily = Playlist {
             id: "daily".into(),
@@ -1433,7 +1753,8 @@ mod tests {
         // A search's three kinds, as its page gives them: songs, artists (their picture and name) and playlists
         // (the cards the app opens), each cleaned, their totals the page's own and never under the lists' lengths.
         let Some(Message::Search(search)) = read_message(
-            r##"{"search":{"query":"许巍","songs":[{"id":"168141","title":"故乡","artist":"许巍","duration":313,"playable":true}],
+            r##"{"search":{"query":"许巍","songs":[{"id":"168141","title":"故乡","artist":"许巍","album":"那一年",
+                "duration":313,"playable":true}],
                 "artists":[{"id":"5770","name":"许巍","cover":"https://p1.music.126.net/a.jpg?param=130y130"},
                     {"id":"5770","name":"许巍 again"},{"id":"bad","name":"no id"},{"id":"4721","name":""}],
                 "playlists":[{"id":"8866695219","name":"听·许巍热门精选|蓝莲花",
@@ -1446,6 +1767,7 @@ mod tests {
         let search = search.checked();
         assert_eq!((search.songs_total, search.artists_total, search.playlists_total), (296, 14, 285));
         assert_eq!(search.songs.len(), 1);
+        assert_eq!(search.songs[0].album, "那一年");
         assert_eq!(search.artists.len(), 1, "only the artist the app can open: {search:?}");
         assert_eq!(search.artists[0].name, "许巍");
         assert_eq!(search.playlists.len(), 1, "only the playlist the app can open: {search:?}");
@@ -1454,6 +1776,7 @@ mod tests {
         // An artist's page: their name, alias, picture and songs, as its own page gives them.
         let Some(Message::Artist(artist)) = read_message(
             r##"{"artist":{"id":"5770","name":"许巍","alias":"","cover":"http://p1.music.126.net/c.jpg?param=640y300",
+                "description":"内地摇滚音乐界的重要人物。",
                 "songs":[{"id":"168091","title":"蓝莲花","artist":"许巍","duration":270,"playable":true},
                     {"id":"","title":"no id"}]}}"##,
         ) else {
@@ -1462,23 +1785,92 @@ mod tests {
         let artist = artist.checked();
         assert_eq!(artist.id, "5770");
         assert_eq!(artist.name, "许巍");
+        assert_eq!(artist.description, "内地摇滚音乐界的重要人物。");
         assert_eq!(artist.cover.as_deref(), Some("http://p1.music.126.net/c.jpg?param=640y300"));
         assert_eq!(artist.songs.len(), 1);
-        // The recent songs: cleaned the same way, at most 100.
+        // The recent songs: cleaned the same way, at most 100, each with the week's own count when it says one.
         let Some(Message::Recent(recent)) = read_message(
-            r#"{"recent":{"songs":[{"id":"1","title":"歌","artist":"人","duration":201,"playable":true},
+            r#"{"recent":{"songs":[{"id":"1","title":"歌","artist":"人","duration":201,"playable":true,"playCount":3},
                 {"id":"","title":"no id"}]}}"#,
         ) else {
             panic!("not a recent answer")
         };
-        assert_eq!(recent.checked().songs.len(), 1);
+        let recent = recent.checked();
+        assert_eq!(recent.songs.len(), 1);
+        assert_eq!(recent.songs[0].play_count, 3);
         assert!(read_message(r#"{"library":"no"}"#).is_none() && read_message(r#"{"home":"no"}"#).is_none());
     }
 
-    /// The v2 answers to the cabin page: its protocol's own (`type`/`kind`), each kind with its own fields only.
+    /// The v3 answers: NetEase's own rankings and the account's profile, read and cleaned as the app shows them.
+    #[test]
+    fn reads_the_rankings_and_the_profile() {
+        let Some(Message::Rankings(rankings)) = read_message(
+            r##"{"rankings":{"rankings":[
+                {"id":"19723756","name":"飙升榜","cover":"https://p2.music.126.net/a.jpg","updateFrequency":"刚刚更新",
+                 "trackCount":100,"playCount":6529254400,"official":true},
+                {"id":"19723756","name":"again"},
+                {"id":"71384707","name":"网易云古典榜","cover":"https://evil.example/a.jpg","updateFrequency":"每周更新",
+                 "trackCount":100,"playCount":76434272,"official":false},
+                {"id":"bad","name":"no id"},
+                {"id":"3778678","name":""}]}}"##,
+        ) else {
+            panic!("not a rankings answer")
+        };
+        let rankings = rankings.checked();
+        assert_eq!(rankings.rankings.len(), 2, "{rankings:?}");
+        assert_eq!(rankings.rankings[0].name, "飙升榜");
+        assert!(rankings.rankings[0].official);
+        assert_eq!(rankings.rankings[0].update_frequency, "刚刚更新");
+        assert_eq!(rankings.rankings[1].cover, None, "not NetEase's image host");
+        assert!(!rankings.rankings[1].official);
+        // The profile: the account's own name, picture, level and counts; a picture that isn't NetEase's is dropped,
+        // and one the page had nothing of is no answer at all.
+        let Some(Message::Profile(profile)) = read_message(
+            r##"{"profile":{"uid":"1835963976","name":"dReLuNEstella",
+                "avatar":"https://p1.music.126.net/a.jpg?param=140y140","signature":"皮粥",
+                "level":8,"listenSongs":6682,"follows":46,"fans":7,"playlistCount":5,"createDays":2764,
+                "vipType":11,"background":"https://evil.example/bg.jpg"}}"##,
+        ) else {
+            panic!("not a profile answer")
+        };
+        let profile = profile.expect("a profile").checked().expect("a profile the app shows");
+        assert_eq!(profile.uid, "1835963976");
+        assert_eq!(profile.name, "dReLuNEstella");
+        assert_eq!((profile.level, profile.listen_songs, profile.follows, profile.fans), (8, 6682, 46, 7));
+        assert_eq!((profile.playlist_count, profile.create_days, profile.vip_type), (5, 2764, 11));
+        assert_eq!(profile.background, None, "not NetEase's image host");
+        assert!(Message::Profile(None) == read_message(r#"{"profile":null}"#).unwrap(), "a signed-out page has none");
+        assert!(read_message(r#"{"profile":"no"}"#).is_none());
+        // A profile the page said without an id or a name is no profile.
+        let empty = Profile {
+            uid: "bad".into(),
+            name: "someone".into(),
+            avatar: None,
+            signature: String::new(),
+            level: 0,
+            listen_songs: 0,
+            follows: 0,
+            fans: 0,
+            playlist_count: 0,
+            create_days: 0,
+            vip_type: 0,
+            background: None,
+        };
+        assert!(empty.checked().is_none());
+    }
+
+    /// The v3 answers to the cabin page: its protocol's own (`type`/`kind`), each kind with its own fields only.
     #[test]
     fn says_the_new_answers_the_way_the_app_reads_them() {
-        let song = Song { id: "1".into(), title: "歌".into(), artist: "人".into(), duration: 200.0, playable: true };
+        let song = Song {
+            id: "1".into(),
+            title: "歌".into(),
+            artist: "人".into(),
+            album: String::new(),
+            duration: 200.0,
+            playable: true,
+            play_count: 0,
+        };
         let lists = Library {
             groups: vec![LibraryGroup {
                 title: "创建的歌单".into(),
@@ -1533,13 +1925,15 @@ mod tests {
             name: "周杰伦".into(),
             alias: "Jay Chou".into(),
             cover: Some("https://p1.music.126.net/j.jpg?param=300y300".into()),
-            songs: vec![Song { id: "2".into(), title: "晴天".into(), artist: "周杰伦".into(), duration: 269.0, playable: true }],
+            description: "华语流行歌手。".into(),
+            songs: vec![Song { id: "2".into(), title: "晴天".into(), artist: "周杰伦".into(), album: String::new(), duration: 269.0, playable: true, play_count: 0 }],
         }
         .checked();
         let value: serde_json::Value = serde_json::from_str(&artist_message(&artist)).unwrap();
         assert_eq!((value["type"].as_str(), value["kind"].as_str()), (Some("netease"), Some("artist")));
         assert_eq!(value["name"], "周杰伦");
         assert_eq!(value["alias"], "Jay Chou");
+        assert_eq!(value["description"], "华语流行歌手。");
         assert_eq!(value["songs"][0]["title"], "晴天");
 
         // The heart's answer, and a play's timing, each its own kind and fields.
@@ -1567,10 +1961,54 @@ mod tests {
             }))
         );
 
-        let recent = Recent { songs: vec![song.clone()] }.checked();
+        let recent = Recent { songs: vec![Song { play_count: 3, ..song.clone() }] }.checked();
         let value: serde_json::Value = serde_json::from_str(&recent_message(&recent)).unwrap();
         assert_eq!(value["kind"], "recent");
         assert_eq!(value["songs"][0]["duration"], 200.0);
+        assert_eq!(value["songs"][0]["playCount"], 3);
+
+        // NetEase's rankings, and the account's profile (and its own no-answer).
+        let rankings = Rankings {
+            rankings: vec![Ranking {
+                id: "19723756".into(),
+                name: "飙升榜".into(),
+                cover: Some("https://p2.music.126.net/a.jpg?param=300y300".into()),
+                update_frequency: "刚刚更新".into(),
+                track_count: 100,
+                play_count: 6_529_254_400,
+                official: true,
+            }],
+        }
+        .checked();
+        let value: serde_json::Value = serde_json::from_str(&rankings_message(&rankings)).unwrap();
+        assert_eq!((value["type"].as_str(), value["kind"].as_str()), (Some("netease"), Some("rankings")));
+        assert_eq!(value["rankings"][0]["name"], "飙升榜");
+        assert_eq!(value["rankings"][0]["updateFrequency"], "刚刚更新");
+        assert_eq!(value["rankings"][0]["official"], true);
+
+        let profile = Profile {
+            uid: "1835963976".into(),
+            name: "dReLuNEstella".into(),
+            avatar: Some("https://p1.music.126.net/a.jpg?param=140y140".into()),
+            signature: "皮粥".into(),
+            level: 8,
+            listen_songs: 6682,
+            follows: 46,
+            fans: 7,
+            playlist_count: 5,
+            create_days: 2764,
+            vip_type: 11,
+            background: None,
+        }
+        .checked()
+        .expect("a profile");
+        let value: serde_json::Value = serde_json::from_str(&profile_message(Some(&profile))).unwrap();
+        assert_eq!((value["type"].as_str(), value["kind"].as_str()), (Some("netease"), Some("profile")));
+        assert_eq!(value["profile"]["uid"], "1835963976");
+        assert_eq!(value["profile"]["name"], "dReLuNEstella");
+        assert_eq!((value["profile"]["level"].as_u64(), value["profile"]["fans"].as_u64()), (Some(8), Some(7)));
+        let none: serde_json::Value = serde_json::from_str(&profile_message(None)).unwrap();
+        assert!(none["profile"].is_null(), "a signed-out page has no profile: {none}");
 
         // Home: the day's songs are still null in the answer its cards come in, then a list (empty for a signed-out
         // account, never the cards' own null).
@@ -1621,10 +2059,10 @@ mod tests {
         }
     }
 
-    /// The page as it really is, with this module's script in it: the shell's play bar and account, the content's
-    /// frame (its recommended playlists), a playlist's songs, and a song played, paused, sought and turned down
-    /// (muted: never heard). Run it by hand (`cargo test -p westplay-host probes_neteases_page -- --ignored
-    /// --nocapture`): it asks music.163.com.
+    /// They page as it really is, with this module's script in it: the shell's play bar and account, and the data
+    /// the interface answers with (Home, My Music, the rankings, the profile, a playlist's songs, a search, an
+    /// artist), plus a song played (muted: never heard). Run it by hand (`cargo test -p westplay-host
+    /// probes_neteases_page -- --ignored --nocapture`): it asks music.163.com on this PC's own signed-in profile.
     #[test]
     #[ignore = "asks music.163.com"]
     fn probes_neteases_page() {
@@ -1632,10 +2070,24 @@ mod tests {
         use windows::Win32::System::Com::{COINIT_APARTMENTTHREADED, CoInitializeEx};
         // SAFETY: COM on this test's own thread, once, before anything uses it.
         unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED).ok().unwrap() };
-        let user_data = std::env::temp_dir().join(format!("westplay-netease-probe-{}", std::process::id()));
+        let user_data = match std::env::var_os("WESTPLAY_NETEASE_PROFILE") {
+            Some(profile) => std::path::PathBuf::from(profile),
+            None => std::env::temp_dir().join(format!("westplay-netease-probe-{}", std::process::id())),
+        };
+        let kept_profile = std::env::var_os("WESTPLAY_NETEASE_PROFILE").is_some();
         let stage = Stage::new(1280, 720).unwrap();
         let netease = Netease::start(&stage, 1280, 720, &user_data).unwrap();
-        netease.view.set_muted(true).unwrap();
+        // Muted (never heard): its own mute, retried while the WebView2 is still settling (it says "in use" for a
+        // moment after an existing profile's own page closed); failing that, the player itself turned down.
+        let mut muted = false;
+        for _ in 0..15 {
+            if netease.view.set_muted(true).is_ok() {
+                muted = true;
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(200));
+        }
+        println!("muted: {muted}");
         let mut reports = Vec::new();
         // For `seconds`, as the host goes on: its messages pumped, the page's reports taken.
         let pump = |seconds: f64, reports: &mut Vec<Report>| {
@@ -1646,8 +2098,58 @@ mod tests {
                 reports.extend(netease.take_reports());
             }
         };
+        // The answer of one of the app's own readings: the last report of its kind, or `None`.
+        fn last<T>(reports: &[Report], pick: impl Fn(&Report) -> Option<T>) -> Option<T> {
+            reports.iter().rev().find_map(pick)
+        }
+        // Waits for one of the app's own readings, as the host goes on: its time is up after `seconds`.
+        let ask = |command: Command, seconds: f64, reports: &mut Vec<Report>, pick: &dyn Fn(&Report) -> bool| {
+            netease.command(&command).unwrap();
+            let until = Instant::now() + Duration::from_secs_f64(seconds);
+            while Instant::now() < until {
+                pump(0.25, reports);
+                if last(reports, |report| if pick(report) { Some(()) } else { None }).is_some() {
+                    return true;
+                }
+            }
+            false
+        };
+        // What the page says of itself now, as its own test hook does (`window.westplayNetease`), or `null` while it
+        // loads again.
+        let page_now = |netease: &Netease| -> serde_json::Value {
+            let said = netease.view.evaluate("window.westplayNetease?.() ?? null").unwrap_or_else(|_| "null".into());
+            serde_json::from_str(&said).unwrap_or(serde_json::Value::Null)
+        };
+        // The plays the page said its timing of since `at` (the reports' own index).
+        let timings_after = |reports: &Vec<Report>, at: usize| -> Vec<Timing> {
+            reports
+                .iter()
+                .skip(at)
+                .filter_map(|report| match report {
+                    Report::Timing(timing) => Some((**timing).clone()),
+                    _ => None,
+                })
+                .collect()
+        };
+        // The first play of `action` whose sound came since `at`, `None` inside `seconds`.
+        let wait_timing = |reports: &mut Vec<Report>, at: usize, action: &str, seconds: f64| -> Option<Timing> {
+            let until = Instant::now() + Duration::from_secs_f64(seconds);
+            while Instant::now() < until {
+                pump(0.1, reports);
+                if let Some(timing) = timings_after(reports, at).into_iter().find(|timing| {
+                    timing.action == action && timing.sounding.is_some()
+                }) {
+                    return Some(timing);
+                }
+            }
+            None
+        };
         pump(15.0, &mut reports);
-        // The shell's page, as the raw DOM says it: the player's own bar, the account, the content's frame.
+        // The player turned down while the page's own mute wasn't there: never heard either way.
+        if !muted {
+            let _ = netease.command(&Command::Volume { value: 0.02 });
+        }
+        // The shell's page, as the raw DOM says it: the player's own bar and the account.
         let shell = netease
             .view
             .evaluate(
@@ -1655,152 +2157,234 @@ mod tests {
                     href: location.href,
                     ready: document.readyState,
                     playbar: Boolean(document.querySelector('.m-playbar')),
-                    account: document.querySelector('.m-tophead')?.innerHTML.length ?? -1,
-                    login: Boolean(document.querySelector('.m-tophead a[data-action="login"]')),
-                    playClass: document.querySelector('#g_player .ply')?.className ?? null,
-                    time: document.querySelector('.m-pbar .time')?.textContent ?? null,
+                    signedIn: Boolean(document.querySelector('.m-tophead [data-action="logout"]')),
+                    accountName: document.querySelector('.m-tophead a.name')?.getAttribute('href') ?? null,
                     frame: document.getElementById('g_iframe')?.contentWindow?.location?.href ?? null,
-                    cards: document.getElementById('g_iframe')?.contentDocument?.querySelectorAll('.n-rcmd .m-cvrlst li').length ?? -1,
-                    firstCard: document.getElementById('g_iframe')?.contentDocument?.querySelector('.n-rcmd .m-cvrlst li')?.innerHTML.slice(0, 900) ?? null,
                 })"#,
             )
             .unwrap();
         println!("shell: {shell}");
-        // The recommended cards, as the content's page has them: some are podcasts' (not playlists').
-        let cards = netease
-            .view
-            .evaluate(
-                r#"(() => {
-                    const doc = document.getElementById('g_iframe')?.contentDocument
-                    return [...(doc?.querySelectorAll('.n-rcmd .m-cvrlst li') ?? [])].map((card) => ({
-                        link: card.querySelector('a.msk')?.getAttribute('href') ?? null,
-                        name: card.querySelector('p.dec a.tit')?.getAttribute('title') ?? null,
-                    }))
-                })()"#,
-            )
-            .unwrap();
-        println!("cards: {cards}");
         // This module's own script: what it says of the page.
         let page = netease.view.evaluate("window.westplayNetease?.() ?? null").unwrap();
         println!("page: {page}");
         let page: serde_json::Value = serde_json::from_str(&page).expect("the script's own report");
-        assert!(page["frame"].as_str().is_some_and(|frame| frame.contains("music.163.com")), "no frame: {page}");
-        assert!(page["cards"].as_i64().is_some_and(|cards| cards > 0), "no recommended playlists: {page}");
-        assert_eq!(page["signedIn"], false, "signed out (this profile never signed in): {page}");
-        // The host's own reports: the state as the page said it, with the recommended lists in it.
-        let state = reports
-            .iter()
-            .rev()
-            .find_map(|report| match report {
-                Report::State(state) => Some(state.clone()),
-                _ => None,
-            })
-            .expect("the page said how it is");
-        println!("state: signedIn={} playing={} lists={:?}", state.signed_in, state.playing, state.lists);
-        assert!(!state.lists.is_empty(), "the state has the recommended playlists");
-
-        // A playlist's page: its songs answered with (the first recommended one).
-        let id = state.lists[0].id.clone();
-        netease.command(&Command::OpenPlaylist { value: id.clone() }).unwrap();
-        let started = Instant::now();
-        let mut songs = None;
-        let mut said = 0;
-        while songs.is_none() && started.elapsed() < Duration::from_secs(45) {
-            pump(0.5, &mut reports);
-            songs = reports.iter().rev().find_map(|report| match report {
-                Report::Playlist(songs) if songs.id == id => Some(songs.clone()),
-                _ => None,
-            });
-            // Where the wait is (the frame's address, its page's rows): printed now and then.
-            let seconds = started.elapsed().as_secs();
-            if songs.is_none() && seconds >= said + 4 {
-                said = seconds;
-                let seen = netease.view.evaluate("window.westplayNetease?.() ?? null").unwrap();
-                println!("  waiting for playlist {id} ({seconds} s): {seen}");
-            }
-        }
-        let songs = songs.expect("the playlist's songs");
-        println!("playlist {} ({}): {} songs, first {:?}", songs.name, songs.id, songs.songs.len(), songs.songs.first());
-        assert!(!songs.songs.is_empty(), "no songs in playlist {id}");
-        assert!(!songs.name.is_empty(), "no name for playlist {id}");
-        // The playlist's page, as its own table has it: the row's own play element (its song's id).
-        let rows = netease
-            .view
-            .evaluate(
-                r#"(() => {
-                    const doc = document.getElementById('g_iframe')?.contentDocument
-                    const row = doc?.querySelector('.m-table tbody tr')
-                    return {
-                        frame: document.getElementById('g_iframe')?.contentWindow?.location?.href ?? null,
-                        rows: doc?.querySelectorAll('.m-table tbody tr').length ?? -1,
-                        id: row?.querySelector('.hd .ply')?.getAttribute('data-res-id') ?? null,
-                        first: row?.innerHTML.slice(0, 1200) ?? null,
-                    }
-                })()"#,
-            )
-            .unwrap();
-        println!("rows: {rows}");
-
-        // A song of it, played from its own row (muted: never heard).
-        let Some(song) = songs.songs.iter().find(|song| song.playable) else { return };
+        assert_eq!(page["playAPI"], "function", "the page's own player isn't there: {page}");
+        assert_eq!(page["signedIn"], true, "this profile isn't signed in: {page}");
+        assert!(page["uid"].as_str().is_some_and(|uid| !uid.is_empty()), "no account id: {page}");
+        // Home: the cards first (the day's songs still null), then its day's songs.
+        assert!(ask(Command::Home, 30.0, &mut reports, &|report| matches!(report, Report::Home(_))), "no home answer");
+        pump(10.0, &mut reports);
+        let home = last(&reports, |report| match report {
+            Report::Home(home) if home.daily.as_ref().is_some_and(|daily| !daily.songs.is_empty()) => Some(home.clone()),
+            _ => None,
+        })
+        .expect("the day's own songs came");
+        println!(
+            "home: daily {} songs, radar {:?}, personal {}, recommended {}",
+            home.daily.as_ref().map_or(0, |daily| daily.songs.len()),
+            home.radar.as_ref().map(|radar| radar.name.clone()),
+            home.personal.len(),
+            home.recommended.len()
+        );
+        assert!(home.daily.as_ref().is_some_and(|daily| !daily.songs.is_empty()), "no day's songs: {home:?}");
+        assert!(home.radar.is_some(), "no 私人雷达: {home:?}");
+        // NetEase's rankings, and a ranking's own songs.
+        assert!(ask(Command::Rankings, 20.0, &mut reports, &|report| matches!(report, Report::Rankings(_))), "no rankings answer");
+        let rankings = last(&reports, |report| match report {
+            Report::Rankings(rankings) => Some(rankings.clone()),
+            _ => None,
+        })
+        .expect("the rankings came");
+        println!("rankings: {} (first {:?})", rankings.rankings.len(), rankings.rankings.first());
+        assert!(!rankings.rankings.is_empty(), "no rankings");
+        let ranking = rankings.rankings.iter().find(|ranking| ranking.official).expect("an official ranking");
+        let ranking_id = ranking.id.clone();
+        assert!(ask(Command::OpenRanking { value: ranking_id.clone() }, 30.0, &mut reports, &|report| {
+            matches!(report, Report::Playlist(songs) if songs.id == ranking_id)
+        }), "no ranking songs");
+        let ranked = last(&reports, |report| match report {
+            Report::Playlist(songs) if songs.id == ranking_id => Some(songs.clone()),
+            _ => None,
+        })
+        .expect("the ranking's songs came");
+        println!("ranking {} ({}): {} songs, first {:?}", ranked.name, ranked.id, ranked.songs.len(), ranked.songs.first());
+        assert!(!ranked.songs.is_empty(), "no songs in ranking {ranking_id}");
+        // My Music, the account's profile and its recent songs.
+        assert!(ask(Command::Library, 20.0, &mut reports, &|report| matches!(report, Report::Library(_))), "no library answer");
+        let library = last(&reports, |report| match report {
+            Report::Library(library) => Some(library.clone()),
+            _ => None,
+        })
+        .expect("the library came");
+        println!("library: {} groups, first {:?}", library.groups.len(), library.groups.first());
+        assert!(!library.groups.is_empty(), "no groups of the account's own");
+        assert!(ask(Command::Profile, 20.0, &mut reports, &|report| matches!(report, Report::Profile(_))), "no profile answer");
+        let profile = last(&reports, |report| match report {
+            Report::Profile(profile) => Some(profile.clone()),
+            _ => None,
+        })
+        .expect("the profile came")
+        .expect("this profile is signed in");
+        println!("profile: {} (uid {}, level {}, {} playlists)", profile.name, profile.uid, profile.level, profile.playlist_count);
+        assert_eq!(profile.uid, page["uid"].as_str().unwrap_or_default(), "the page's own uid");
+        assert!(ask(Command::Recent, 20.0, &mut reports, &|report| matches!(report, Report::Recent(_))), "no recent answer");
+        let recent = last(&reports, |report| match report {
+            Report::Recent(recent) => Some(recent.clone()),
+            _ => None,
+        })
+        .expect("the recent songs came");
+        println!("recent: {} songs, first {:?}", recent.songs.len(), recent.songs.first());
+        assert!(!recent.songs.is_empty(), "no recent songs");
+        // A search of the page's own, and an artist's page.
+        assert!(ask(Command::Search { value: "许巍".into() }, 30.0, &mut reports, &|report| {
+            matches!(report, Report::Search(search) if search.query == "许巍" && !search.songs.is_empty())
+        }), "no search answer");
+        let search = last(&reports, |report| match report {
+            Report::Search(search) if search.query == "许巍" => Some(search.clone()),
+            _ => None,
+        })
+        .expect("the search came");
+        println!("search: {} songs / {} artists / {} playlists, totals {:?}", search.songs.len(), search.artists.len(), search.playlists.len(), (search.songs_total, search.artists_total, search.playlists_total));
+        assert!(!search.songs.is_empty(), "no songs for 许巍: {search:?}");
+        let artist_id = search.artists.first().map(|artist| artist.id.clone()).unwrap_or_else(|| "5770".into());
+        assert!(ask(Command::OpenArtist { value: artist_id.clone() }, 20.0, &mut reports, &|report| matches!(report, Report::Artist(_))), "no artist answer");
+        let artist = last(&reports, |report| match report {
+            Report::Artist(artist) => Some(artist.clone()),
+            _ => None,
+        })
+        .expect("the artist's page came");
+        println!("artist {} ({}): {} songs", artist.name, artist.id, artist.songs.len());
+        assert!(!artist.songs.is_empty(), "no songs of the artist {artist_id}");
+        // A song played: through the page's own player (`nm.x.ceo2i`), watched, and the app is told it plays (muted:
+        // never heard).
+        let Some(song) = ranked.songs.iter().find(|song| song.playable) else { return };
         println!("playing {} ({})", song.title, song.id);
-        netease.command(&Command::Play { value: Some(song.id.clone()) }).unwrap();
-        // Played through the page's own player (its `nm.x.ceo2i`, what its own links call). Signed out, NetEase
-        // doesn't play at all (its page's own rule): the play bar stays empty, and the test only says so.
-        pump(6.0, &mut reports);
+        netease.command(&Command::Play { value: Some(song.id.clone()), list: Some(ranking_id.clone()) }).unwrap();
+        pump(5.0, &mut reports);
         let playing = netease.view.evaluate("window.westplayNetease?.() ?? null").unwrap();
         println!("playing: {playing}");
         let playing: serde_json::Value = serde_json::from_str(&playing).unwrap();
-        assert_eq!(playing["playAPI"], "function", "the page's own player isn't there: {playing}");
-        let heard = reports.iter().rev().find_map(|report| match report {
-            Report::State(state) => Some(state.clone()),
+        assert!(playing["playing"].as_bool() == Some(true), "it isn't playing: {playing}");
+        let timing = last(&reports, |report| match report {
+            Report::Timing(timing) => Some(timing.clone()),
             _ => None,
         });
-        println!("state after the play: {heard:?}");
-        // When it plays (an account's profile), the play bar has its own words, its own time and its own element,
-        // and the app is told so: the volume asked for and a seek go into the page's own player.
-        if playing["playing"].as_bool() == Some(true) {
-            let track = &playing["track"];
-            assert!(track["title"].as_str().is_some_and(|title| !title.is_empty()), "no title playing: {playing}");
-            assert!(track["id"].as_str().is_some_and(|id| id.bytes().all(|b| b.is_ascii_digit())), "no id: {playing}");
-            assert!(track["duration"].as_f64().is_some_and(|duration| duration > 0.0), "no length: {playing}");
-            assert_eq!(heard.as_ref().map(|state| state.playing), Some(true), "the app not told it plays");
-            netease.command(&Command::Volume { value: 0.42 }).unwrap();
-            netease.command(&Command::Seek { value: 30.0 }).unwrap();
-            pump(3.0, &mut reports);
-            let after = netease.view.evaluate("window.westplayNetease?.() ?? null").unwrap();
-            println!("after a volume and a seek: {after}");
-            let after: serde_json::Value = serde_json::from_str(&after).unwrap();
-            assert_eq!(after["volume"], 0.42, "the volume the app set");
-            let position = after["track"]["position"].as_f64().unwrap_or(0.0);
-            assert!((position - 30.0).abs() < 5.0, "not sought to 30 s: {after}");
-            netease.command(&Command::Pause).unwrap();
-            pump(2.0, &mut reports);
-            let paused = netease.view.evaluate("window.westplayNetease?.() ?? null").unwrap();
-            println!("after a pause: {paused}");
-        } else {
-            // The play bar's own buttons are the app's controls: they must be there to press.
-            let buttons = netease
+        println!("the play's own timing: {timing:?}");
+        let state = last(&reports, |report| match report {
+            Report::State(state) => Some(state.clone()),
+            _ => None,
+        })
+        .expect("the page said how it is");
+        println!("state: playing={} track={:?}", state.playing, state.track);
+        assert!(state.playing, "the app not told it plays");
+        assert!(state.track.as_ref().is_some_and(|track| !track.title.is_empty()), "no title playing: {state:?}");
+        // Its own controls: the volume the app sets, a seek, and a pause.
+        netease.command(&Command::Volume { value: 0.42 }).unwrap();
+        netease.command(&Command::Seek { value: 30.0 }).unwrap();
+        pump(3.0, &mut reports);
+        let after = netease.view.evaluate("window.westplayNetease?.() ?? null").unwrap();
+        println!("after a volume and a seek: {after}");
+        let after: serde_json::Value = serde_json::from_str(&after).unwrap();
+        assert_eq!(after["volume"], 0.42, "the volume the app set");
+        let position = after["track"]["position"].as_f64().unwrap_or(0.0);
+        assert!((position - 30.0).abs() < 5.0, "not sought to 30 s: {after}");
+        netease.command(&Command::Pause).unwrap();
+        pump(2.0, &mut reports);
+        let paused = netease.view.evaluate("window.westplayNetease?.() ?? null").unwrap();
+        println!("after a pause: {paused}");
+        // A song played, another switched to while it sounds, and its own next pressed: each says how long its sound
+        // took (the page's own timing) and the wall clock from the command (a song switched to must sound without a
+        // wait), and a player that says it plays while its sound stops is taken into the rescue ladder at once.
+        let playable: Vec<&Song> = ranked.songs.iter().filter(|song| song.playable).collect();
+        if playable.len() >= 2 {
+            let (first, second) = (playable[0].id.clone(), playable[1].id.clone());
+            let at = reports.len();
+            netease.command(&Command::Play { value: Some(first.clone()), list: Some(ranking_id.clone()) }).unwrap();
+            let timing = wait_timing(&mut reports, at, "play", 8.0);
+            println!("a play of {first}: {timing:?}");
+            assert!(timing.as_ref().is_some_and(|timing| timing.rescue.is_none()), "the first play needed a rescue: {timing:?}");
+            pump(1.5, &mut reports);
+            let at = reports.len();
+            let sent = Instant::now();
+            netease.command(&Command::Play { value: Some(second.clone()), list: Some(ranking_id.clone()) }).unwrap();
+            let timing = wait_timing(&mut reports, at, "play", 4.0);
+            let took = sent.elapsed();
+            println!("a switch to {second}: {timing:?} (wall {took:?})");
+            assert!(timing.is_some(), "the switch didn't sound: {timing:?}");
+            assert!(timing.as_ref().is_some_and(|timing| timing.rescue.is_none()), "the switch needed a rescue: {timing:?}");
+            assert!(took < Duration::from_secs(3), "a switch took too long: {took:?}");
+            let page = page_now(&netease);
+            assert_eq!(page["track"]["id"].as_str(), Some(second.as_str()), "the wrong song plays: {page}");
+            let at = reports.len();
+            let sent = Instant::now();
+            netease.command(&Command::Next).unwrap();
+            let timing = wait_timing(&mut reports, at, "next", 4.0);
+            let took = sent.elapsed();
+            println!("a next: {timing:?} (wall {took:?})");
+            assert!(timing.is_some(), "the next didn't sound: {timing:?}");
+            assert!(took < Duration::from_secs(3), "a next took too long: {took:?}");
+            // A player that says it plays while its sound's clock stops (the page's own element frozen): healed at once.
+            let frozen = netease
                 .view
-                .evaluate(
-                    r#"({
-                        play: Boolean(document.querySelector('#g_player .ply')),
-                        previous: Boolean(document.querySelector('.m-playbar .prv')),
-                        next: Boolean(document.querySelector('.m-playbar .nxt')),
-                        time: document.querySelector('.m-pbar .time')?.textContent ?? null,
-                        progress: Boolean(document.querySelector('.m-pbar .barbg .cur')),
-                    })"#,
-                )
-                .unwrap();
-            println!("the play bar's own buttons, for the app's controls: {buttons}");
-            let buttons: serde_json::Value = serde_json::from_str(&buttons).unwrap();
-            assert_eq!(
-                (buttons["play"].as_bool(), buttons["previous"].as_bool(), buttons["next"].as_bool()),
-                (Some(true), Some(true), Some(true))
-            );
-            assert_eq!(buttons["progress"].as_bool(), Some(true));
+                .evaluate("window.westplayNeteaseTest?.freeze(0) ?? false")
+                .unwrap_or_else(|_| "false".into());
+            println!("frozen: {frozen}");
+            assert_eq!(frozen, "true", "nothing playing to freeze");
+            let at = reports.len();
+            let started = Instant::now();
+            let mut heal = None;
+            while started.elapsed() < Duration::from_secs(10) {
+                pump(0.25, &mut reports);
+                heal = timings_after(&reports, at).into_iter().find(|timing| timing.action == "heal");
+                if heal.is_some() {
+                    break;
+                }
+            }
+            println!("a frozen player: heal {heal:?} after {:?}", started.elapsed());
+            assert!(heal.is_some(), "a player that says it plays while its sound stops wasn't healed");
+            // Its clock let run again (the ladder's own play may not have reset it): the sound must come back.
+            let _ = netease.view.evaluate("window.westplayNeteaseTest?.freeze(1) ?? false");
+            let back = Instant::now();
+            let mut sounding_again = false;
+            while back.elapsed() < Duration::from_secs(20) {
+                pump(0.4, &mut reports);
+                let page = page_now(&netease);
+                if page["audio"]["playing"].as_bool() == Some(true) {
+                    let at1 = page["audio"]["at"].as_i64().unwrap_or(0);
+                    pump(0.6, &mut reports);
+                    if page_now(&netease)["audio"]["at"].as_i64().unwrap_or(0) > at1 {
+                        sounding_again = true;
+                        break;
+                    }
+                }
+            }
+            println!("the sound back after the freeze: {sounding_again} ({:?})", back.elapsed());
+            assert!(sounding_again, "the sound didn't come back after the freeze");
+        }
+        // The heart: the playing song liked and unliked again (the same song both ways: the account left as it was),
+        // each read back from the page's own 我喜欢的音乐.
+        let id = state.track.as_ref().map(|track| track.id.clone()).unwrap_or_default();
+        if is_id(&id) {
+            netease.command(&Command::SetLike { value: id.clone(), liked: true }).unwrap();
+            pump(4.0, &mut reports);
+            let liked = last(&reports, |report| match report {
+                Report::Like(like) if like.id == id => Some(like.clone()),
+                _ => None,
+            });
+            println!("a like: {liked:?}");
+            assert!(liked.as_ref().is_some_and(|like| like.ok), "the like didn't land: {liked:?}");
+            netease.command(&Command::SetLike { value: id.clone(), liked: false }).unwrap();
+            pump(4.0, &mut reports);
+            let unliked = last(&reports, |report| match report {
+                Report::Like(like) if like.id == id => Some(like.clone()),
+                _ => None,
+            });
+            println!("an unlike: {unliked:?}");
+            assert!(unliked.as_ref().is_some_and(|like| like.ok), "the unlike didn't land: {unliked:?}");
         }
         netease.close(&stage);
-        let _ = std::fs::remove_dir_all(&user_data);
+        if !kept_profile {
+            let _ = std::fs::remove_dir_all(&user_data);
+        }
     }
 }

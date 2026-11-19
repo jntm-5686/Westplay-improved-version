@@ -1,53 +1,69 @@
-import { type ReactNode, useEffect, useState } from 'react'
+import { type ReactNode, useEffect, useMemo, useState } from 'react'
 import { isInHost } from '../../../shared/host'
 import { useKeyboard } from '../../keyboard/store'
-import { BackGlyph, ClockGlyph, PersonGlyph, PlayGlyph, RadioGlyph, RefreshGlyph } from './glyphs'
-import {
-  CardsSkeleton,
-  Cover,
-  EmptyState,
-  Failed,
-  LibraryCard,
-  PageHead,
-  PlaylistCard,
-  RowsSkeleton,
-  SongRow,
-} from './parts'
+import { useNav } from './nav'
 import {
   accountOf,
-  goBack,
-  openArtist,
-  openPlaylist,
-  openRecent,
+  netease,
   playDaily,
   playFound,
   playPlaylist,
   playSong,
   requestHome,
   requestLibrary,
+  requestProfile,
+  requestRankings,
   requestRecent,
   retryArtist,
   retryPlaylist,
-  SEARCH_FIELD,
+  retryRanking,
   searchFor,
   setQuery,
-  setSearchTab,
+  setStyle,
   showToast,
   useNetease,
-  useArtistMeta,
   usePlaylistMeta,
+  useRankingMeta,
   type NeteaseArtist,
+  type NeteaseLibraryGroup,
   type NeteaseList,
-  type NeteaseSearch,
+  type NeteaseRanking,
   type NeteaseSong,
-  type SearchTab,
-  type View,
 } from './netease'
+import { usePrefs, type Motion } from './prefs'
+import { expectSong } from './playback'
+import { hasResults, resultCounts, searchSections } from './sections'
+import type { Page, Tab } from './stack'
+import {
+  ArtistCard,
+  ArtistsSkeleton,
+  CardsSkeleton,
+  Cover,
+  EmptyState,
+  EntryRow,
+  Failed,
+  HeroSkeleton,
+  LibraryCard,
+  PageHead,
+  PlaylistCard,
+  ProfileSkeleton,
+  RankingCard,
+  RankingsSkeleton,
+  RecentEntry,
+  RowsSkeleton,
+  SectionHead,
+  SongRow,
+} from './parts'
+import { DiscGlyph, GearGlyph, LibraryGlyph, PersonGlyph, PlayGlyph, RadioGlyph, RefreshGlyph } from './glyphs'
 import { useNeteaseWords, type NeteaseWords } from './strings'
+import { NowPlayingPage } from './NowPlaying'
 
-/** The NetEase app's pages, under the search bar at the app's top: Home (its day's songs, the radar row, the
- * recommended playlists), a playlist's songs, an artist's page, Search (the page's own categories), My Music (the
- * account's playlists and its recent songs) and the recent songs' page. */
+/**
+ * The NetEase app's pages, under the search bar at the app's top: Home (the day's own card, the radar row and
+ * the recommended shelf), My playlists (the account's own, by group, and the recent songs), the charts, Search
+ * (its artists first, then its songs, then its playlists), the account's own page and its settings, and the
+ * pages a card opens over them (a playlist, a ranking, an artist, the recent songs).
+ */
 
 /** Whether the host has stayed quiet long enough to say so (it may be starting). */
 function useSilent(heard: boolean, wait = 8000): boolean {
@@ -63,28 +79,44 @@ function useSilent(heard: boolean, wait = 8000): boolean {
 
 /** The keyboard's field let go (a result picked: the keyboard is for the search bar, not the results). */
 function stopTyping(): void {
-  useKeyboard.getState().detach(SEARCH_FIELD)
+  useKeyboard.getState().detach('netease-search')
 }
 
-/** The words a group of My Music's own says for its title, as the page names them ("创建的歌单(5)"): its own words
- * for the two it knows, and the page's own title for any other. */
+/** The words a group of My Music's own says for its title, as the page names them ("创建的歌单(5)"). */
 function groupTitle(title: string, words: NeteaseWords): string {
   if (title.includes('创建')) return words.createdPlaylists
   if (title.includes('收藏')) return words.collectedPlaylists
   return title
 }
 
-/** A section's title with its line under it, and what's at its end (Play all, Refresh). */
-function SectionHead({ title, hint, action }: { title: string; hint?: string; action?: ReactNode }) {
-  return (
-    <div className="ne-section-head">
-      <div className="ne-section-title">
-        <h3>{title}</h3>
-        {hint && <span>{hint}</span>}
-      </div>
-      {action}
-    </div>
-  )
+/** Plays a song pressed, and says over the player — if the hints are still on — that NetEase was asked. The song
+ * goes on the player bar and lights its row at once (see playback.ts); the page's own state catches up a moment
+ * later. */
+function usePlay(): (song: NeteaseSong, options?: { inPlaylist?: string }) => void {
+  const words = useNeteaseWords()
+  return (song, options) => {
+    if (!song.playable) {
+      showToast(words.unplayableHint)
+      return
+    }
+    expectSong(song)
+    if (options?.inPlaylist) playSong(options.inPlaylist, song)
+    else playFound(song)
+    if (isInHost() && usePrefs.getState().playHints) showToast(words.queued)
+  }
+}
+
+/** A song pressed on a page whose songs are that page's own list (a playlist's, a chart's, the day's). */
+function usePlayFrom(list: string): (song: NeteaseSong) => void {
+  const play = usePlay()
+  return (song) => play(song, { inPlaylist: list })
+}
+
+/** A button that says so over the player when it asked for something (Play all, Refresh is silent). */
+function useAskNote(): (text: string) => void {
+  return (text) => {
+    if (isInHost() && usePrefs.getState().playHints) showToast(text)
+  }
 }
 
 // --- Home --------------------------------------------------------------------------------------------------
@@ -92,11 +124,65 @@ function SectionHead({ title, hint, action }: { title: string; hint?: string; ac
 /** How many of the day's songs Home shows before its word for the rest (all of them play from Play all). */
 const DAILY_SHOWN = 8
 
-/** The radar's card: its cover, its name and what it is. Pressed, its playlist's page. */
+/** The day's card: a wide one of its own kind — its art at the left, its words and Play all at the right. */
+function DailyCard({
+  songs,
+  onPlayAll,
+  onToggle,
+  all,
+}: {
+  songs: NeteaseSong[] | null
+  onPlayAll(): void
+  onToggle(): void
+  all: boolean
+}) {
+  const words = useNeteaseWords()
+  // The day the card is for: read once as it's drawn (the app is reopened every morning, not kept across days).
+  const [today] = useState(() => new Date())
+  const playable = songs?.some((song) => song.playable) ?? false
+  return (
+    <article className="ne-hero" aria-label={words.daily}>
+      <div className="ne-hero-art" aria-hidden="true">
+        <span className="ne-hero-disc">
+          <DiscGlyph />
+        </span>
+        <span className="ne-hero-day">{today.getDate()}</span>
+        <span className="ne-hero-kicker">{words.brand}</span>
+      </div>
+      <div className="ne-hero-text">
+        <span className="ne-kicker">{words.dailyKicker}</span>
+        <h2 className="ne-hero-name">{words.daily}</h2>
+        <p className="ne-hero-tagline">{words.dailyTagline}</p>
+        <p className="ne-hero-meta">
+          <span>{words.dailyDate(today)}</span>
+          {songs && <span>{words.songs(songs.length)}</span>}
+        </p>
+        <div className="ne-hero-actions">
+          <button type="button" className="ne-play-all" onClick={onPlayAll} disabled={!playable}>
+            <PlayGlyph />
+            {words.playAll}
+          </button>
+          {songs && songs.length > DAILY_SHOWN && (
+            <button type="button" className="ne-pill" onClick={onToggle}>
+              {all ? words.showLess : words.showAll(songs.length)}
+            </button>
+          )}
+        </div>
+      </div>
+    </article>
+  )
+}
+
+/** 私人雷达's card: its cover, its name and what it is. Pressed, its playlist's page. */
 function RadarCard({ list }: { list: NeteaseList }) {
   const words = useNeteaseWords()
+  const open = useNav((state) => state.open)
   return (
-    <button type="button" className="ne-spot" onClick={() => openPlaylist(list.id)}>
+    <button
+      type="button"
+      className="ne-spot"
+      onClick={() => open({ kind: 'playlist', id: list.id, name: list.name, cover: list.cover, plays: list.playCount })}
+    >
       <Cover name={list.name} cover={list.cover} className="ne-spot-cover" />
       <span className="ne-spot-text">
         <span className="ne-spot-kicker">{words.radar}</span>
@@ -128,44 +214,51 @@ function RoamCard() {
   )
 }
 
-/** Home, from its top: the day's own songs (每日歌曲推荐, Play all), the radar's row (私人雷达, and 私人漫游's own
- * card, which the web player has no entry for), then the recommended playlists. */
-export function Home() {
+/** Home, from its top: the day's own wide card (每日推荐, Play all) and its songs, the radar's row (私人雷达 and
+ * 私人漫游's own card, which the web player has no entry for), then the recommended playlists on their shelf. */
+export function HomePage({ active }: { active: boolean }) {
   const words = useNeteaseWords()
   const home = useNetease((state) => state.home)
   const asking = useNetease((state) => state.homeAsking)
   const heard = useNetease((state) => state.heard)
   const signedIn = useNetease((state) => state.signedIn)
   const signingIn = useNetease((state) => state.signingIn)
-  const tab = useNetease((state) => state.tab)
+  const play = usePlay()
+  const note = useAskNote()
   const [allDaily, setAllDaily] = useState(false)
   const silent = useSilent(heard)
-  // The tab pressed again, or opened: Home reads its page once the hidden page has said it runs (`heard`), so the
-  // reading isn't asked of a page still loading. The cards and the day's songs come as they're read; a reading
-  // that didn't come says so, and Refresh asks again.
+  // Home reads its page once the hidden page has said it runs (`heard`), and every time its tab comes back to
+  // it (a read that's already known is not asked again). A reading that didn't come says so, and Refresh asks.
   useEffect(() => {
-    if (tab === 'home' && heard) requestHome()
-  }, [tab, heard])
+    if (active && heard) requestHome()
+  }, [active, heard])
   const daily = home?.daily ?? null
   const playAll = () => {
+    const first = daily?.find((song) => song.playable)
+    if (!first) return
+    expectSong(first)
     playDaily()
-    if (isInHost()) showToast(words.queued)
+    note(words.queued)
   }
   // The recommended playlists: the account's own (个性化歌单) first, then the page's (热门推荐), each once.
-  const playlists: NeteaseList[] = []
-  if (home) {
+  const playlists: NeteaseList[] = useMemo(() => {
+    if (!home) return []
     const seen = new Set<string>()
+    const lists: NeteaseList[] = []
     for (const list of [...home.personal, ...home.recommended]) {
       if (seen.has(list.id)) continue
       seen.add(list.id)
-      playlists.push(list)
+      lists.push(list)
     }
-  }
+    return lists
+  }, [home])
+  const open = useNav((state) => state.open)
   return (
     <div className="ne-scroll ne-home">
       {(signedIn === false || signingIn) && (
-        <p className="ne-signin-note">
-          {signingIn ? words.signingInHint : `${words.signedOut} · ${words.signInHint}`}
+        <p className="ne-banner">
+          <PersonGlyph />
+          <span>{signingIn ? words.signingInHint : `${words.signedOut} · ${words.signInHint}`}</span>
         </p>
       )}
       {!home ? (
@@ -173,27 +266,16 @@ export function Home() {
           <Failed text={asking.failed ? words.homeFailed : words.notConnected} retry={() => requestHome(true)} />
         ) : (
           <>
-            <RowsSkeleton count={6} />
+            <HeroSkeleton />
             <CardsSkeleton count={5} />
           </>
         )
       ) : (
         <>
-          <section className="ne-section ne-daily">
-            <SectionHead
-              title={words.daily}
-              hint={daily ? `${words.dailyHint} · ${words.songs(daily.length)}` : words.dailyHint}
-              action={
-                daily && daily.some((song) => song.playable) ? (
-                  <button type="button" className="ne-play-all small" onClick={playAll}>
-                    <PlayGlyph />
-                    {words.playAll}
-                  </button>
-                ) : undefined
-              }
-            />
+          <section className="ne-daily">
+            <DailyCard songs={daily} onPlayAll={playAll} onToggle={() => setAllDaily(!allDaily)} all={allDaily} />
             {daily === null ? (
-              asking.failed || !asking.waiting ? (
+              asking.failed ? (
                 <Failed text={words.dailyFailed} retry={() => requestHome(true)} />
               ) : (
                 <RowsSkeleton count={6} />
@@ -204,7 +286,7 @@ export function Home() {
               <>
                 <div className="ne-song-grid">
                   {(allDaily ? daily : daily.slice(0, DAILY_SHOWN)).map((song, index) => (
-                    <SongRow key={`${song.id}:${index}`} song={song} index={index} onPlay={playFound} />
+                    <SongRow key={`${song.id}:${index}`} song={song} index={index} onPlay={play} />
                   ))}
                 </div>
                 {daily.length > DAILY_SHOWN && (
@@ -216,8 +298,8 @@ export function Home() {
             )}
           </section>
           <section className="ne-spot-row" aria-label={words.radar}>
-            {home.radar && <RadarCard list={home.radar} />}
-            <RoamCard />
+            {home.radar ? <RadarCard list={home.radar} /> : <RoamCard />}
+            {home.radar && <RoamCard />}
           </section>
           <section className="ne-section">
             <SectionHead
@@ -241,9 +323,21 @@ export function Home() {
                 }
               />
             ) : (
-              <div className="ne-grid">
+              <div className="ne-shelf">
                 {playlists.map((list) => (
-                  <PlaylistCard key={list.id} list={list} onOpen={() => openPlaylist(list.id)} />
+                  <PlaylistCard
+                    key={list.id}
+                    list={list}
+                    onOpen={() =>
+                      open({
+                        kind: 'playlist',
+                        id: list.id,
+                        name: list.name,
+                        cover: list.cover,
+                        plays: list.playCount,
+                      })
+                    }
+                  />
                 ))}
               </div>
             )}
@@ -255,43 +349,32 @@ export function Home() {
   )
 }
 
-// --- My Music ----------------------------------------------------------------------------------------------
+// --- My playlists (歌单) -----------------------------------------------------------------------------------
 
-/** My Music: the account as NetEase's page says it, its recent songs' way in, and every playlist it has, by the
- * group its own page puts it in (创建的歌单, 收藏的歌单). */
-export function Mine() {
+/** My playlists: the account's own, by the group its own page puts them in (创建的歌单, 收藏的歌单), and the way
+ * into the recent songs (听歌排行: the web player has no recent-play page of its own). */
+export function LibraryPage({ active }: { active: boolean }) {
   const words = useNeteaseWords()
+  const heard = useNetease((state) => state.heard)
   const signedIn = useNetease((state) => state.signedIn)
   const signingIn = useNetease((state) => state.signingIn)
   const library = useNetease((state) => state.library)
-  const libraryAsking = useNetease((state) => state.libraryAsking)
+  const asking = useNetease((state) => state.libraryAsking)
   const recent = useNetease((state) => state.recent)
   const recentAsking = useNetease((state) => state.recentAsking)
-  const heard = useNetease((state) => state.heard)
-  const tab = useNetease((state) => state.tab)
+  const open = useNav((state) => state.open)
   const silent = useSilent(heard)
-  // Its own page is read when My Music is first shown (and again by its Refresh): /my/ is where the groups are.
-  // Only once the hidden page has said it runs, so nothing is asked of a page still loading.
+  // Its own page is read when the tab comes back to it (and by its Refresh): /my/ is where the groups are.
   useEffect(() => {
-    if (tab !== 'mine' || !heard) return
+    if (!active || !heard) return
     requestLibrary()
     requestRecent()
-  }, [tab, heard])
-  const account = accountOf({ signedIn, signingIn })
-  const status =
-    account === 'in'
-      ? words.signedIn
-      : account === 'out'
-        ? words.signedOut
-        : account === 'signingIn'
-          ? words.signingIn
-          : words.unknownAccount
-  const hint =
-    account === 'in' ? '' : account === 'signingIn' ? words.signingInHint : words.signInHint
+  }, [active, heard])
+  const groups: NeteaseLibraryGroup[] = library ?? []
   return (
-    <div className="ne-scroll ne-mine">
+    <div className="ne-scroll ne-library">
       <PageHead
-        title={words.mine}
+        title={words.myPlaylists}
         hint={words.myPlaylistsHint}
         action={
           <button
@@ -307,34 +390,24 @@ export function Mine() {
           </button>
         }
       />
-      <section className={account === 'in' ? 'ne-account signed' : 'ne-account'} aria-label={words.account}>
-        <span className="ne-account-avatar">
+      {(signedIn === false || signingIn) && (
+        <p className="ne-banner">
           <PersonGlyph />
-        </span>
-        <span className="ne-account-text">
-          <b>{words.brand}</b>
-          <span className="ne-account-status">{status}</span>
-        </span>
-        {account === 'signingIn' && <span className="ne-spinner" aria-hidden />}
-        {hint && <span className="ne-account-hint">{hint}</span>}
-      </section>
-      <button type="button" className="ne-recent-entry" onClick={openRecent}>
-        <span className="ne-recent-entry-icon">
-          <ClockGlyph />
-        </span>
-        <span className="ne-recent-entry-text">
-          <b>{words.recent}</b>
-          <span>{recent ? words.songs(recent.length) : words.recentSource}</span>
-        </span>
-        {recentAsking.waiting && !recent ? <span className="ne-spinner" aria-hidden /> : <span className="ne-recent-entry-go">›</span>}
-      </button>
+          <span>{signingIn ? words.signingInHint : `${words.signedOut} · ${words.signInHint}`}</span>
+        </p>
+      )}
+      <RecentEntry
+        count={recent?.length ?? null}
+        waiting={recentAsking.waiting}
+        onOpen={() => open({ kind: 'recent' })}
+      />
       {library === null ? (
-        libraryAsking.failed || (silent && !libraryAsking.waiting) ? (
-          <Failed text={libraryAsking.failed ? words.libraryFailed : words.notConnected} retry={() => requestLibrary(true)} />
+        asking.failed || (silent && !asking.waiting) ? (
+          <Failed text={asking.failed ? words.libraryFailed : words.notConnected} retry={() => requestLibrary(true)} />
         ) : (
           <CardsSkeleton count={5} />
         )
-      ) : library.length === 0 ? (
+      ) : groups.length === 0 ? (
         <EmptyState
           title={words.libraryEmpty}
           text={words.libraryEmptyHint}
@@ -345,18 +418,520 @@ export function Mine() {
           }
         />
       ) : (
-        library.map((group) => (
+        groups.map((group) => (
           <section className="ne-section" key={group.title}>
-            <SectionHead title={groupTitle(group.title, words)} hint={words.songs(group.count)} />
+            <SectionHead title={groupTitle(group.title, words)} hint={words.myPlaylistsCount(group.count)} />
             <div className="ne-grid">
               {group.playlists.map((list) => (
-                <LibraryCard key={list.id} list={list} onOpen={() => openPlaylist(list.id)} />
+                <LibraryCard
+                  key={list.id}
+                  list={list}
+                  onOpen={() =>
+                    open({
+                      kind: 'playlist',
+                      id: list.id,
+                      name: list.name,
+                      cover: list.cover,
+                      plays: list.playCount,
+                    })
+                  }
+                />
               ))}
             </div>
           </section>
         ))
       )}
-      {libraryAsking.failed && library !== null && <p className="ne-note">{words.libraryFailed}</p>}
+      {asking.failed && library !== null && <p className="ne-note">{words.libraryFailed}</p>}
+    </div>
+  )
+}
+
+// --- The charts (榜单) -------------------------------------------------------------------------------------
+
+/** NetEase's own charts, each a playlist: its cover, its name, how often it updates and how long it is. */
+export function RankingsPage({ active }: { active: boolean }) {
+  const words = useNeteaseWords()
+  const heard = useNetease((state) => state.heard)
+  const rankings = useNetease((state) => state.rankings)
+  const asking = useNetease((state) => state.rankingsAsking)
+  const open = useNav((state) => state.open)
+  const silent = useSilent(heard)
+  useEffect(() => {
+    if (active && heard) requestRankings()
+  }, [active, heard])
+  const openRanking = (ranking: NeteaseRanking) =>
+    open({
+      kind: 'ranking',
+      id: ranking.id,
+      name: ranking.name,
+      cover: ranking.cover,
+      plays: ranking.playCount,
+      update: ranking.updateFrequency,
+      official: ranking.official,
+    })
+  return (
+    <div className="ne-scroll ne-rankings">
+      <PageHead
+        title={words.rankings}
+        hint={words.rankingsHint}
+        action={
+          <button type="button" className="ne-pill" onClick={() => requestRankings(true)}>
+            <RefreshGlyph />
+            {words.refresh}
+          </button>
+        }
+      />
+      {rankings === null ? (
+        asking.failed || (silent && !asking.waiting) ? (
+          <Failed
+            text={asking.failed ? words.rankingsFailed : words.notConnected}
+            retry={() => requestRankings(true)}
+          />
+        ) : (
+          <RankingsSkeleton count={6} />
+        )
+      ) : rankings.length === 0 ? (
+        <EmptyState
+          title={words.rankingsEmpty}
+          text={words.rankingsEmptyHint}
+          action={
+            <button type="button" className="ne-pill" onClick={() => requestRankings(true)}>
+              {words.retry}
+            </button>
+          }
+        />
+      ) : (
+        <div className="ne-rank-grid">
+          {rankings.map((ranking) => (
+            <RankingCard key={ranking.id} ranking={ranking} onOpen={openRanking} />
+          ))}
+        </div>
+      )}
+      {asking.failed && rankings !== null && <p className="ne-note">{words.rankingsFailed}</p>}
+    </div>
+  )
+}
+
+// --- Search ------------------------------------------------------------------------------------------------
+
+/** How many of a search's songs its page shows before its word for the rest (the whole answer is a page long). */
+const SEARCH_SONGS_SHOWN = 8
+
+/**
+ * Search, under the app's own search bar: the words typed there, then NetEase's results as one page in its own
+ * order — the artists it found first (a search for a singer is about the singer), then the songs, then the
+ * playlists. A song plays, an artist opens their page, a playlist its own page.
+ */
+export function SearchPage() {
+  const words = useNeteaseWords()
+  const query = useNetease((state) => state.query)
+  const search = useNetease((state) => state.search)
+  const asking = useNetease((state) => state.searchAsking)
+  const lists = useNetease((state) => state.lists)
+  const open = useNav((state) => state.open)
+  const play = usePlay()
+  const [allSongs, setAllSongs] = useState(false)
+  const wanted = query.trim()
+  const shown = search && search.query === wanted ? search : null
+  const sections = searchSections(shown)
+  const counts = shown ? resultCounts(shown) : null
+  const openList = (list: NeteaseList) => {
+    stopTyping()
+    open({ kind: 'playlist', id: list.id, name: list.name, cover: list.cover, plays: list.playCount })
+  }
+  const openArtist = (artist: NeteaseArtist) => {
+    stopTyping()
+    open({ kind: 'artist', id: artist.id, name: artist.name, cover: artist.cover })
+  }
+  const playOne = (song: NeteaseSong) => {
+    stopTyping()
+    play(song)
+  }
+  return (
+    <div className="ne-scroll ne-search">
+      {!wanted ? (
+        <div className="ne-search-idle">
+          <h2>{words.searchIdle}</h2>
+          <p>{words.searchIdleHint}</p>
+          {lists.length > 0 && (
+            <section className="ne-section">
+              <SectionHead title={words.searchHot} hint={words.searchHotHint} />
+              <div className="ne-chips">
+                {lists.slice(0, 8).map((list) => (
+                  <button key={list.id} type="button" className="ne-chip" onClick={() => setQuery(list.name)}>
+                    {list.name}
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
+        </div>
+      ) : asking.waiting && !shown ? (
+        <>
+          <p className="ne-search-summary searching">{words.searching}</p>
+          <ArtistsSkeleton count={5} />
+          <RowsSkeleton count={6} />
+        </>
+      ) : asking.failed && !shown ? (
+        <Failed text={words.searchFailed} retry={() => searchFor(query)} />
+      ) : shown && !hasResults(shown) ? (
+        <EmptyState title={words.searchEmpty} text={words.searchEmptyHint} />
+      ) : shown && counts ? (
+        <>
+          <header className="ne-search-summary">
+            <h2>{words.searchFor(wanted)}</h2>
+            <p>{words.searchFound(counts.songs, counts.artists, counts.playlists)}</p>
+          </header>
+          {sections.map((section) => {
+            if (section.kind === 'artists') {
+              return (
+                <section className="ne-section" key="artists">
+                  <SectionHead title={words.searchArtists} hint={words.searchArtistFirst} />
+                  <div className="ne-artist-row">
+                    {shown.artists.map((artist) => (
+                      <ArtistCard key={artist.id} artist={artist} onOpen={openArtist} />
+                    ))}
+                  </div>
+                </section>
+              )
+            }
+            if (section.kind === 'songs') {
+              const songs = allSongs ? shown.songs : shown.songs.slice(0, SEARCH_SONGS_SHOWN)
+              return (
+                <section className="ne-section" key="songs">
+                  <SectionHead title={words.searchSongs} hint={words.songs(section.total)} />
+                  <div className="ne-songs">
+                    {songs.map((song, index) => (
+                      <SongRow key={`${song.id}:${index}`} song={song} index={index} onPlay={playOne} />
+                    ))}
+                  </div>
+                  {shown.songs.length > SEARCH_SONGS_SHOWN && (
+                    <button type="button" className="ne-more" onClick={() => setAllSongs(!allSongs)}>
+                      {allSongs ? words.showLess : words.showAll(shown.songs.length)}
+                    </button>
+                  )}
+                </section>
+              )
+            }
+            return (
+              <section className="ne-section" key="playlists">
+                <SectionHead title={words.searchPlaylists} hint={words.myPlaylistsCount(section.total)} />
+                <div className="ne-grid">
+                  {shown.playlists.map((list) => (
+                    <PlaylistCard key={list.id} list={list} onOpen={openList} />
+                  ))}
+                </div>
+              </section>
+            )
+          })}
+        </>
+      ) : null}
+    </div>
+  )
+}
+
+// --- The account's own page (我的) -------------------------------------------------------------------------
+
+/** One of the account's numbers, in its page's row. */
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <span className="ne-stat">
+      <b>{value}</b>
+      <span>{label}</span>
+    </span>
+  )
+}
+
+/** The account's own page (the rail's 我的): its picture, name, signature, level and numbers, then the ways into
+ * the recent songs, My playlists and the settings. */
+export function ProfilePage({ active }: { active: boolean }) {
+  const words = useNeteaseWords()
+  const heard = useNetease((state) => state.heard)
+  const signedIn = useNetease((state) => state.signedIn)
+  const signingIn = useNetease((state) => state.signingIn)
+  const me = useNetease((state) => state.account)
+  const profile = useNetease((state) => state.profile)
+  const asking = useNetease((state) => state.profileAsking)
+  const recent = useNetease((state) => state.recent)
+  const recentAsking = useNetease((state) => state.recentAsking)
+  const open = useNav((state) => state.open)
+  const openTab = useNav((state) => state.openTab)
+  const silent = useSilent(heard)
+  const account = accountOf({ signedIn, signingIn })
+  useEffect(() => {
+    if (active && heard) {
+      requestProfile()
+      requestRecent()
+    }
+  }, [active, heard])
+  const name = profile?.name || me?.name || words.mine
+  const avatar = profile?.avatar ?? me?.avatar ?? null
+  const signIn = () => {
+    netease({ action: 'signIn' })
+    showToast(words.signingInHint)
+  }
+  return (
+    <div className="ne-scroll ne-profile-page">
+      <PageHead
+        title={words.profile}
+        hint={words.profileHint}
+        action={
+          <button
+            type="button"
+            className="ne-pill"
+            onClick={() => {
+              requestProfile(true)
+              requestRecent(true)
+            }}
+          >
+            <RefreshGlyph />
+            {words.refresh}
+          </button>
+        }
+      />
+      {account === 'out' ? (
+        <EmptyState
+          title={words.profileUnread}
+          text={words.profileUnreadHint}
+          action={
+            <button type="button" className="ne-pill on-accent" onClick={signIn}>
+              {words.signIn}
+            </button>
+          }
+        />
+      ) : account === 'unknown' && !profile ? (
+        <ProfileSkeleton />
+      ) : (
+        <section className={`ne-profile ${account === 'in' ? 'signed' : ''}`}>
+          {profile?.background && <img className="ne-profile-bg" src={profile.background} alt="" draggable={false} />}
+          <div className="ne-profile-hero">
+            <span className="ne-avatar">
+              {avatar ? <img src={avatar} alt="" draggable={false} /> : <PersonGlyph />}
+              {profile && profile.level > 0 && <em className="ne-avatar-level">{words.levelValue(profile.level)}</em>}
+            </span>
+            <div className="ne-profile-text">
+              <h2 className="ne-profile-name">{name}</h2>
+              <p className="ne-profile-sign">
+                {profile?.signature || (account === 'in' ? words.signatureEmpty : words.unknownAccount)}
+              </p>
+              <p className="ne-profile-tags">
+                {profile && profile.vipType > 0 && <span className="ne-tag accent">{words.vip}</span>}
+                {profile && profile.uid && (
+                  <span className="ne-tag">
+                    {words.uid} {profile.uid}
+                  </span>
+                )}
+                {profile && profile.createDays > 0 && (
+                  <span className="ne-tag">{words.createDaysValue(profile.createDays)}</span>
+                )}
+                {signingIn && <span className="ne-tag accent">{words.signingIn}</span>}
+              </p>
+            </div>
+          </div>
+          {profile ? (
+            <div className="ne-profile-stats">
+              <Stat label={words.follows} value={String(profile.follows)} />
+              <Stat label={words.fans} value={String(profile.fans)} />
+              <Stat label={words.listenSongs} value={words.listenSongsCount(profile.listenSongs)} />
+              <Stat label={words.playlists} value={words.playlistCount(profile.playlistCount)} />
+            </div>
+          ) : asking.failed || (silent && !asking.waiting) ? (
+            <p className="ne-note">{asking.failed ? words.profileFailed : words.notConnected}</p>
+          ) : (
+            <div className="ne-profile-stats ne-skeleton" role="progressbar" aria-label="…">
+              {Array.from({ length: 4 }, (_, index) => (
+                <span className="ne-stat" key={index}>
+                  <span className="ne-skel-line" />
+                  <span className="ne-skel-line short" />
+                </span>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
+      {signingIn && (
+        <p className="ne-banner">
+          <PersonGlyph />
+          <span>{words.signingInHint}</span>
+        </p>
+      )}
+      <div className="ne-entries">
+        {account !== 'out' && (
+          <RecentEntry
+            count={recent?.length ?? null}
+            waiting={recentAsking.waiting}
+            onOpen={() => open({ kind: 'recent' })}
+          />
+        )}
+        <EntryRow
+          glyph={<LibraryGlyph />}
+          title={words.myPlaylists}
+          hint={words.myPlaylistsHint}
+          onClick={() => openTab('playlists')}
+        />
+        <EntryRow
+          glyph={<GearGlyph />}
+          title={words.settings}
+          hint={words.settingsHint}
+          onClick={() => open({ kind: 'settings' })}
+        />
+      </div>
+    </div>
+  )
+}
+
+// --- Settings ----------------------------------------------------------------------------------------------
+
+/** A settings row: its name and one line, with its control at the end. */
+function SettingRow({ title, hint, control }: { title: string; hint?: string; control: ReactNode }) {
+  return (
+    <div className="ne-set-row">
+      <span className="ne-set-text">
+        <b>{title}</b>
+        {hint && <span>{hint}</span>}
+      </span>
+      {control}
+    </div>
+  )
+}
+
+/** A settings choice of two: the chosen one filled in the accent. */
+function SettingChoice<T extends string>({
+  value,
+  options,
+  label,
+  onChange,
+}: {
+  value: T
+  options: { value: T; label: string }[]
+  label: string
+  onChange(value: T): void
+}) {
+  return (
+    <div className="ne-seg" role="group" aria-label={label}>
+      {options.map((option) => (
+        <button
+          key={option.value}
+          type="button"
+          className={option.value === value ? 'on' : undefined}
+          aria-pressed={option.value === value}
+          onClick={() => onChange(option.value)}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+/** The settings (from 我的): the look and the motion, what the player may say, the account, and about the app. */
+export function SettingsPage() {
+  const words = useNeteaseWords()
+  const style = useNetease((state) => state.style)
+  const signedIn = useNetease((state) => state.signedIn)
+  const signingIn = useNetease((state) => state.signingIn)
+  const me = useNetease((state) => state.account)
+  const profile = useNetease((state) => state.profile)
+  const motion = usePrefs((state) => state.motion)
+  const playHints = usePrefs((state) => state.playHints)
+  const setMotion = usePrefs((state) => state.setMotion)
+  const setPlayHints = usePrefs((state) => state.setPlayHints)
+  const account = accountOf({ signedIn, signingIn })
+  const signIn = () => netease({ action: 'signIn' })
+  const signOut = () => netease({ action: 'signOut' })
+  return (
+    <div className="ne-scroll ne-settings">
+      <PageHead title={words.settings} hint={words.settingsHint} />
+      <section className="ne-set-group" aria-label={words.appearance}>
+        <SectionHead title={words.appearance} hint={words.appearanceHint} />
+        <SettingRow
+          title={words.style}
+          hint={words.styleHint}
+          control={
+            <SettingChoice
+              value={style}
+              options={[
+                { value: 'follow', label: words.styleFollow },
+                { value: 'red', label: words.styleRed },
+              ]}
+              label={words.style}
+              onChange={(value) => setStyle(value)}
+            />
+          }
+        />
+        <SettingRow
+          title={words.motion}
+          hint={words.motionHint}
+          control={
+            <SettingChoice<Motion>
+              value={motion}
+              options={[
+                { value: 'full', label: words.motionFull },
+                { value: 'calm', label: words.motionCalm },
+              ]}
+              label={words.motion}
+              onChange={(value) => setMotion(value)}
+            />
+          }
+        />
+      </section>
+      <section className="ne-set-group" aria-label={words.sound}>
+        <SectionHead title={words.sound} hint={words.soundHint} />
+        <SettingRow title={words.quality} control={<span className="ne-set-value">{words.qualityAccount}</span>} />
+        <SettingRow
+          title={words.playHints}
+          hint={words.playHintsHint}
+          control={
+            <SettingChoice
+              value={playHints ? 'on' : 'off'}
+              options={[
+                { value: 'on', label: words.toggleOn },
+                { value: 'off', label: words.toggleOff },
+              ]}
+              label={words.playHints}
+              onChange={(value) => setPlayHints(value === 'on')}
+            />
+          }
+        />
+      </section>
+      <section className="ne-set-group" aria-label={words.loginInfo}>
+        <SectionHead title={words.loginInfo} hint={words.loginInfoHint} />
+        <SettingRow
+          title={profile?.name || me?.name || words.brand}
+          hint={
+            account === 'in'
+              ? `${words.signedIn}${profile?.uid ? ` · ${words.uid} ${profile.uid}` : ''}`
+              : account === 'signingIn'
+                ? words.signingIn
+                : account === 'out'
+                  ? words.signedOut
+                  : words.unknownAccount
+          }
+          control={
+            account === 'in' ? (
+              <button type="button" className="ne-pill danger" onClick={signOut}>
+                {words.signOut}
+              </button>
+            ) : (
+              <button type="button" className="ne-pill on-accent" onClick={signIn} disabled={signingIn}>
+                {signingIn ? words.signingIn : words.signIn}
+              </button>
+            )
+          }
+        />
+        {account === 'in' && <p className="ne-note">{words.signOutHint}</p>}
+      </section>
+      <section className="ne-set-group" aria-label={words.about}>
+        <SectionHead title={words.about} />
+        <SettingRow
+          title={words.aboutApp}
+          control={!isInHost() ? <span className="ne-tag accent">{words.preview}</span> : null}
+        />
+        <p className="ne-note">{words.aboutData}</p>
+        <p className="ne-note">{words.aboutPlayer}</p>
+        <p className="ne-note">{words.aboutNote}</p>
+        {!isInHost() && <p className="ne-note">{words.aboutPreview}</p>}
+      </section>
     </div>
   )
 }
@@ -369,40 +944,39 @@ export function RecentPage() {
   const words = useNeteaseWords()
   const songs = useNetease((state) => state.recent)
   const asking = useNetease((state) => state.recentAsking)
+  const play = usePlay()
+  const note = useAskNote()
   useEffect(() => {
     requestRecent()
   }, [])
   const playAll = () => {
     const first = songs?.find((song) => song.playable)
     if (!first) return
+    expectSong(first)
     playFound(first)
-    if (isInHost()) showToast(words.queued)
+    note(words.queued)
   }
   return (
-    <div className="ne-scroll ne-playlist">
-      <header className="ne-page-head ne-recent-head">
-        <div className="ne-recent-title">
-          <button type="button" className="ne-round" aria-label={words.back} onClick={goBack}>
-            <BackGlyph />
-          </button>
-          <div className="ne-page-head-text">
-            <h2>{words.recent}</h2>
-            <p>{words.recentSource}</p>
-          </div>
-        </div>
-        <div className="ne-recent-actions">
-          {songs && songs.some((song) => song.playable) && (
-            <button type="button" className="ne-play-all" onClick={playAll}>
-              <PlayGlyph />
-              {words.playAll}
+    <div className="ne-scroll ne-detail-page">
+      <PageHead
+        title={words.recent}
+        hint={words.recentSource}
+        action={
+          <div className="ne-head-actions">
+            {songs && songs.some((song) => song.playable) && (
+              <button type="button" className="ne-play-all" onClick={playAll}>
+                <PlayGlyph />
+                {words.playAll}
+              </button>
+            )}
+            <button type="button" className="ne-pill" onClick={() => requestRecent(true)}>
+              <RefreshGlyph />
+              {words.refresh}
             </button>
-          )}
-          <button type="button" className="ne-pill" onClick={() => requestRecent(true)}>
-            <RefreshGlyph />
-            {words.refresh}
-          </button>
-        </div>
-      </header>
+          </div>
+        }
+      />
+      <p className="ne-note">{words.recentHost}</p>
       {songs === null ? (
         asking.failed ? (
           <Failed text={words.recentFailed} retry={() => requestRecent(true)} />
@@ -414,152 +988,9 @@ export function RecentPage() {
       ) : (
         <div className="ne-songs">
           {songs.map((song, index) => (
-            <SongRow key={`${song.id}:${index}`} song={song} index={index} onPlay={playFound} />
+            <SongRow key={`${song.id}:${index}`} song={song} index={index} onPlay={play} />
           ))}
         </div>
-      )}
-    </div>
-  )
-}
-
-// --- Search ------------------------------------------------------------------------------------------------
-
-/** Search's own categories, in its page's order (its tabs: 单曲, 歌手, 歌单). */
-const SEARCH_TABS: readonly SearchTab[] = ['songs', 'artists', 'playlists']
-
-/** An artist's card (a search's artist): their picture, their name. Pressed, their page. */
-function ArtistCard({ artist, onOpen }: { artist: NeteaseArtist; onOpen(artist: NeteaseArtist): void }) {
-  const words = useNeteaseWords()
-  return (
-    <button type="button" className="ne-card artist" onClick={() => onOpen(artist)}>
-      <Cover name={artist.name} cover={artist.cover} className="ne-card-cover" />
-      <span className="ne-card-name">{artist.name}</span>
-      <span className="ne-card-plays">{words.artist}</span>
-    </button>
-  )
-}
-
-/** Search, under the app's own search bar: the words typed there, the page's own categories as its tabs, and what
- * its page found of each (a song plays, an artist opens their page, a playlist its own page). */
-export function Search() {
-  const words = useNeteaseWords()
-  const query = useNetease((state) => state.query)
-  const search = useNetease((state) => state.search)
-  const asking = useNetease((state) => state.searchAsking)
-  const lists = useNetease((state) => state.lists)
-  const tab = useNetease((state) => state.searchTab)
-  const wanted = query.trim()
-  const shown = search && search.query === wanted ? search : null
-  const counts: Record<SearchTab, number> = shown
-    ? { songs: shown.songsTotal, artists: shown.artistsTotal, playlists: shown.playlistsTotal }
-    : { songs: 0, artists: 0, playlists: 0 }
-  const labels: Record<SearchTab, string> = {
-    songs: words.searchSongs,
-    artists: words.searchArtists,
-    playlists: words.searchPlaylists,
-  }
-  const pickTab = (kind: SearchTab) => {
-    setSearchTab(kind)
-    stopTyping()
-  }
-  const playOne = (song: NeteaseSong) => {
-    stopTyping()
-    if (!song.playable) {
-      showToast(words.unplayableHint)
-      return
-    }
-    playFound(song)
-    if (isInHost()) showToast(words.queued)
-  }
-  const openList = (list: NeteaseList) => {
-    stopTyping()
-    openPlaylist(list.id)
-  }
-  const openArtistPage = (artist: NeteaseArtist) => {
-    stopTyping()
-    openArtist(artist.id)
-  }
-  const results = (found: NeteaseSearch) => {
-    if (tab === 'songs') {
-      return found.songs.length === 0 ? (
-        <EmptyState title={words.searchEmpty} text={words.searchEmptyHint} />
-      ) : (
-        <div className="ne-song-grid">
-          {found.songs.map((song, index) => (
-            <SongRow key={`${song.id}:${index}`} song={song} index={index} onPlay={playOne} />
-          ))}
-        </div>
-      )
-    }
-    if (tab === 'artists') {
-      return found.artists.length === 0 ? (
-        <EmptyState title={words.searchEmpty} text={words.searchEmptyHint} />
-      ) : (
-        <div className="ne-grid">
-          {found.artists.map((artist) => (
-            <ArtistCard key={artist.id} artist={artist} onOpen={openArtistPage} />
-          ))}
-        </div>
-      )
-    }
-    return found.playlists.length === 0 ? (
-      <EmptyState title={words.searchEmpty} text={words.searchEmptyHint} />
-    ) : (
-      <div className="ne-grid">
-        {found.playlists.map((list) => (
-          <PlaylistCard key={list.id} list={list} onOpen={openList} />
-        ))}
-      </div>
-    )
-  }
-  return (
-    <div className="ne-scroll ne-search">
-      {!wanted ? (
-        <div className="ne-search-idle">
-          <h2>{words.searchIdle}</h2>
-          <p>{words.searchIdleHint}</p>
-          {lists.length > 0 && (
-            <section className="ne-section">
-              <SectionHead title={words.searchHot} hint={words.searchHotHint} />
-              <div className="ne-chips">
-                {lists.slice(0, 6).map((list) => (
-                  <button key={list.id} type="button" className="ne-chip" onClick={() => setQuery(list.name)}>
-                    {list.name}
-                  </button>
-                ))}
-              </div>
-            </section>
-          )}
-        </div>
-      ) : (
-        <>
-          <div className="ne-filters" role="tablist" aria-label={words.search}>
-            {SEARCH_TABS.map((kind) => (
-              <button
-                key={kind}
-                type="button"
-                role="tab"
-                aria-selected={kind === tab}
-                className={kind === tab ? 'ne-filter on' : 'ne-filter'}
-                onClick={() => pickTab(kind)}
-              >
-                {labels[kind]}
-                {shown && <em>{counts[kind]}</em>}
-              </button>
-            ))}
-            {asking.waiting && <span className="ne-spinner" aria-hidden />}
-          </div>
-          {asking.waiting && !shown ? (
-            <>
-              <p className="ne-note">{words.searching}</p>
-              {tab === 'songs' ? <RowsSkeleton count={8} /> : <CardsSkeleton count={5} />}
-            </>
-          ) : asking.failed && !shown ? (
-            <Failed text={words.searchFailed} retry={() => searchFor(query)} />
-          ) : shown ? (
-            results(shown)
-          ) : null}
-        </>
       )}
     </div>
   )
@@ -567,36 +998,40 @@ export function Search() {
 
 // --- An artist's page ---------------------------------------------------------------------------------------
 
-/** An artist's page: their picture, name and alias, Play all, then their most played songs (a page the host's
- * hidden page answers with an `artist` message). Their card from the search that opened the page draws its head
- * before the page's own answer comes. */
-export function ArtistPage({ view }: { view: View }) {
+/** An artist's page: their picture, name, alias and introduction, Play all, then their most played songs (a page
+ * the host's hidden page answers with an `artist` message). */
+export function ArtistPage({ page }: { page: Page }) {
   const words = useNeteaseWords()
-  const artistId = view.kind === 'artist' ? view.artistId : ''
-  const page = useNetease((state) => state.artists[artistId])
-  const card = useArtistMeta(artistId)
-  const name = page?.name || card?.name || words.artist
-  const cover = page?.cover ?? card?.cover ?? null
-  const songs = page?.songs ?? null
+  const card = page.kind === 'artist' ? page : null
+  const artistId = card?.id ?? ''
+  const found = useNetease((state) => state.artists[artistId])
+  const play = usePlay()
+  const note = useAskNote()
+  const name = found?.name || card?.name || words.artist
+  const cover = found?.cover ?? card?.cover ?? null
+  const songs = found?.songs ?? null
+  useEffect(() => {
+    if (artistId) retryArtist(artistId)
+  }, [artistId])
   const playAll = () => {
     const first = songs?.find((song) => song.playable)
     if (!first) return
+    expectSong(first)
     playFound(first)
-    if (isInHost()) showToast(words.queued)
+    note(words.queued)
   }
   return (
-    <div className="ne-scroll ne-playlist ne-artist">
-      <header className="ne-pl-head">
-        <button type="button" className="ne-round ne-pl-back" aria-label={words.back} onClick={goBack}>
-          <BackGlyph />
-        </button>
-        <Cover name={name} cover={cover} className="ne-pl-cover ne-ar-cover" />
-        <div className="ne-pl-text">
-          <span className="ne-pl-kind">{words.artist}</span>
-          <h2 className="ne-pl-name">{name}</h2>
-          <p className="ne-pl-meta">
-            {page?.alias && <span>{page.alias}</span>}
+    <div className="ne-scroll ne-detail-page ne-artist-page">
+      <header className="ne-detail-head">
+        <Cover name={name} cover={cover} className="ne-detail-cover round" />
+        <div className="ne-detail-text">
+          <span className="ne-kicker">{words.artist}</span>
+          <h2 className="ne-detail-name">{name}</h2>
+          {found?.alias && <p className="ne-detail-sub">{found.alias}</p>}
+          {found?.description && <p className="ne-detail-desc">{found.description}</p>}
+          <p className="ne-detail-meta">
             {songs && <span>{words.songs(songs.length)}</span>}
+            {found?.waiting && !songs && <span>{words.loading}</span>}
           </p>
         </div>
         {songs && songs.length > 0 && (
@@ -607,11 +1042,11 @@ export function ArtistPage({ view }: { view: View }) {
         )}
       </header>
       <SectionHead title={words.artistHint} hint={songs ? words.songs(songs.length) : undefined} />
-      {!page || (page.waiting && !songs) ? (
+      {!found || (found.waiting && !songs) ? (
         <RowsSkeleton count={8} />
-      ) : page.failed ? (
+      ) : found.failed && !songs ? (
         <Failed text={words.artistFailed} retry={() => retryArtist(artistId)} />
-      ) : songs && songs.length === 0 ? (
+      ) : !songs || songs.length === 0 ? (
         <EmptyState
           title={words.artistEmpty}
           text={words.artistEmptyHint}
@@ -622,11 +1057,14 @@ export function ArtistPage({ view }: { view: View }) {
           }
         />
       ) : (
-        <div className="ne-songs">
-          {(songs ?? []).map((song, index) => (
-            <SongRow key={`${song.id}:${index}`} song={song} index={index} onPlay={playFound} />
-          ))}
-        </div>
+        <>
+          {found.failed && <p className="ne-note">{words.artistFailed}</p>}
+          <div className="ne-songs">
+            {songs.map((song, index) => (
+              <SongRow key={`${song.id}:${index}`} song={song} index={index} onPlay={play} />
+            ))}
+          </div>
+        </>
       )}
     </div>
   )
@@ -634,55 +1072,64 @@ export function ArtistPage({ view }: { view: View }) {
 
 // --- A playlist's page -------------------------------------------------------------------------------------
 
-/** A playlist's page: its cover, its name and numbers, Play all, then its songs (a page the host's hidden page
- * answers with a `playlist` message). Its name and cover come from whichever reading already knows it (Home's
- * shelves, My Music's groups, a search's result), so its head draws before its songs come. */
-export function PlaylistPage({ view }: { view: View }) {
+/** A playlist's page: its cover, its name and numbers, Play all, then its songs. Its head comes from whichever
+ * reading already knows it (the card that opened it, Home, My playlists, a search), so it draws before the
+ * hidden page's own answer. */
+export function PlaylistPage({ page }: { page: Page }) {
   const words = useNeteaseWords()
-  const playlistId = view.kind === 'playlist' ? view.playlistId : ''
-  const page = useNetease((state) => state.playlists[playlistId])
-  const list = usePlaylistMeta(playlistId)
-  const name = list?.name ?? words.playlist
-  const songs = page?.songs ?? null
+  const card = page.kind === 'playlist' ? page : null
+  const playlistId = card?.id ?? ''
+  const found = useNetease((state) => state.playlists[playlistId])
+  const known = usePlaylistMeta(playlistId)
+  const play = usePlayFrom(playlistId)
+  const note = useAskNote()
+  const head = found?.meta ?? null
+  const name = head?.name || known?.name || card?.name || words.playlist
+  const cover = head?.cover ?? known?.cover ?? card?.cover ?? null
+  const plays = head?.playCount || known?.playCount || card?.plays || 0
+  const songs = found?.songs ?? null
+  useEffect(() => {
+    if (playlistId) retryPlaylist(playlistId)
+  }, [playlistId])
   const playAll = () => {
+    const first = songs?.find((song) => song.playable)
+    if (!first) return
+    expectSong(first)
     playPlaylist(playlistId)
-    if (isInHost()) showToast(words.queued)
-  }
-  const playOne = (song: NeteaseSong) => {
-    if (!song.playable) {
-      showToast(words.unplayableHint)
-      return
-    }
-    playSong(playlistId, song)
-    if (isInHost()) showToast(words.queued)
+    note(words.queued)
   }
   return (
-    <div className="ne-scroll ne-playlist">
-      <header className="ne-pl-head">
-        <button type="button" className="ne-round ne-pl-back" aria-label={words.back} onClick={goBack}>
-          <BackGlyph />
-        </button>
-        <Cover name={name} cover={list?.cover ?? null} className="ne-pl-cover" />
-        <div className="ne-pl-text">
-          <span className="ne-pl-kind">{words.playlist}</span>
-          <h2 className="ne-pl-name">{name}</h2>
-          <p className="ne-pl-meta">
-            {list && <span>{words.plays(list.playCount)}</span>}
+    <div className="ne-scroll ne-detail-page">
+      <header className="ne-detail-head">
+        <Cover name={name} cover={cover} className="ne-detail-cover" />
+        <div className="ne-detail-text">
+          <span className="ne-kicker">{words.playlist}</span>
+          <h2 className="ne-detail-name">{name}</h2>
+          <p className="ne-detail-meta">
+            {plays > 0 && <span>{words.plays(plays)}</span>}
             {songs && <span>{words.songs(songs.length)}</span>}
+            {head?.creator && <span>{words.by(head.creator)}</span>}
           </p>
+          {head?.description && <p className="ne-detail-desc">{head.description}</p>}
         </div>
-        {songs && songs.length > 0 && (
-          <button type="button" className="ne-play-all" onClick={playAll}>
-            <PlayGlyph />
-            {words.playAll}
+        <div className="ne-detail-actions">
+          {songs && songs.length > 0 && (
+            <button type="button" className="ne-play-all" onClick={playAll}>
+              <PlayGlyph />
+              {words.playAll}
+            </button>
+          )}
+          <button type="button" className="ne-pill" onClick={() => retryPlaylist(playlistId)}>
+            <RefreshGlyph />
+            {words.refresh}
           </button>
-        )}
+        </div>
       </header>
-      {!page || (page.waiting && !songs) ? (
+      {!found || (found.waiting && !songs) ? (
         <RowsSkeleton count={8} />
-      ) : page.failed ? (
+      ) : found.failed && !songs ? (
         <Failed text={words.failed} retry={() => retryPlaylist(playlistId)} />
-      ) : songs && songs.length === 0 ? (
+      ) : !songs || songs.length === 0 ? (
         <EmptyState
           title={words.emptyPlaylist}
           text={words.emptyPlaylistHint}
@@ -693,24 +1140,137 @@ export function PlaylistPage({ view }: { view: View }) {
           }
         />
       ) : (
-        <div className="ne-songs">
-          {(songs ?? []).map((song, index) => (
-            <SongRow key={`${song.id}:${index}`} song={song} index={index} onPlay={playOne} />
-          ))}
-        </div>
+        <>
+          {found.failed && <p className="ne-note">{words.failed}</p>}
+          <div className="ne-songs">
+            {songs.map((song, index) => (
+              <SongRow key={`${song.id}:${index}`} song={song} index={index} onPlay={play} />
+            ))}
+          </div>
+        </>
       )}
     </div>
   )
 }
 
-/** A page over a tab's own. */
-export function Page({ view }: { view: View }) {
-  switch (view.kind) {
+// --- A ranking's page --------------------------------------------------------------------------------------
+
+/** One of NetEase's charts, opened: its cover, its name, how often it updates, Play all, then its songs (the
+ * charts are playlists in NetEase's own right, so their songs come as a `playlist` answer under the chart's id). */
+export function RankingPage({ page }: { page: Page }) {
+  const words = useNeteaseWords()
+  const card = page.kind === 'ranking' ? page : null
+  const rankingId = card?.id ?? ''
+  const found = useNetease((state) => state.playlists[rankingId])
+  const known = useRankingMeta(rankingId)
+  const play = usePlayFrom(rankingId)
+  const note = useAskNote()
+  const head = found?.meta ?? null
+  const name = head?.name || known?.name || card?.name || words.ranking
+  const cover = head?.cover ?? known?.cover ?? card?.cover ?? null
+  const update = head?.updateFrequency || known?.updateFrequency || card?.update || ''
+  const plays = head?.playCount || known?.playCount || card?.plays || 0
+  const songs = found?.songs ?? null
+  useEffect(() => {
+    if (rankingId) retryRanking(rankingId)
+  }, [rankingId])
+  const playAll = () => {
+    const first = songs?.find((song) => song.playable)
+    if (!first) return
+    expectSong(first)
+    playPlaylist(rankingId)
+    note(words.queued)
+  }
+  return (
+    <div className="ne-scroll ne-detail-page">
+      <header className="ne-detail-head">
+        <Cover name={name} cover={cover} className="ne-detail-cover" />
+        <div className="ne-detail-text">
+          <span className="ne-kicker">
+            {words.ranking}
+            {card?.official && ` · ${words.official}`}
+          </span>
+          <h2 className="ne-detail-name">{name}</h2>
+          <p className="ne-detail-meta">
+            {update && <span>{update}</span>}
+            {songs && <span>{words.songs(songs.length)}</span>}
+            {plays > 0 && <span>{words.plays(plays)}</span>}
+          </p>
+          {head?.description && <p className="ne-detail-desc">{head.description}</p>}
+        </div>
+        <div className="ne-detail-actions">
+          {songs && songs.length > 0 && (
+            <button type="button" className="ne-play-all" onClick={playAll}>
+              <PlayGlyph />
+              {words.playAll}
+            </button>
+          )}
+          <button type="button" className="ne-pill" onClick={() => retryRanking(rankingId)}>
+            <RefreshGlyph />
+            {words.refresh}
+          </button>
+        </div>
+      </header>
+      {!found || (found.waiting && !songs) ? (
+        <RowsSkeleton count={10} />
+      ) : found.failed && !songs ? (
+        <Failed text={words.rankingsFailed} retry={() => retryRanking(rankingId)} />
+      ) : !songs || songs.length === 0 ? (
+        <EmptyState
+          title={words.emptyPlaylist}
+          text={words.emptyPlaylistHint}
+          action={
+            <button type="button" className="ne-pill" onClick={() => retryRanking(rankingId)}>
+              {words.retry}
+            </button>
+          }
+        />
+      ) : (
+        <>
+          {found.failed && <p className="ne-note">{words.rankingsFailed}</p>}
+          <div className="ne-songs">
+            {songs.map((song, index) => (
+              <SongRow key={`${song.id}:${index}`} song={song} index={index} onPlay={play} />
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+// --- The pages ---------------------------------------------------------------------------------------------
+
+/** A page over a tab's own (its own head and its own way back, in the bar at the top). */
+export function PageBody({ page }: { page: Page }) {
+  switch (page.kind) {
+    case 'playlist':
+      return <PlaylistPage page={page} />
+    case 'artist':
+      return <ArtistPage page={page} />
+    case 'ranking':
+      return <RankingPage page={page} />
     case 'recent':
       return <RecentPage />
-    case 'artist':
-      return <ArtistPage view={view} />
-    case 'playlist':
-      return <PlaylistPage view={view} />
+    case 'settings':
+      return <SettingsPage />
+  }
+}
+
+/** A tab's own page (each stays where it was left, so it's drawn whether it shows or not). */
+export function TabPage({ tab, active }: { tab: Tab; active: boolean }) {
+  switch (tab) {
+    case 'home':
+      return <HomePage active={active} />
+    case 'playlists':
+      return <LibraryPage active={active} />
+    case 'rankings':
+      return <RankingsPage active={active} />
+    case 'mine':
+      return <ProfilePage active={active} />
+    case 'now':
+      return <NowPlayingPage />
+    case 'search':
+      return <SearchPage />
   }
 }

@@ -42,7 +42,8 @@ describe('the host’s hidden page', () => {
     expect(host.commands()).toContainEqual({ action: 'openPlaylist', value: 'list-7' })
     receivePlaylist('list-7', [SONG])
     playSong('list-7', SONG)
-    expect(host.commands()).toContainEqual({ action: 'play', value: 'song-1' })
+    // The list it's from goes with it: the page plays it in its own queue (its own next/preload).
+    expect(host.commands()).toContainEqual({ action: 'play', value: 'song-1', list: 'list-7' })
   })
 
   it('plays a playlist from its first playable song when Play all is pressed', async () => {
@@ -53,7 +54,7 @@ describe('the host’s hidden page', () => {
     playPlaylist('list-1')
     expect(host.commands()).toEqual([{ action: 'openPlaylist', value: 'list-1' }])
     receivePlaylist('list-1', [unplayable, SONG])
-    expect(host.commands()).toContainEqual({ action: 'play', value: 'song-1' })
+    expect(host.commands()).toContainEqual({ action: 'play', value: 'song-1', list: 'list-1' })
   })
 
   it('never asks for a song NetEase’s rights don’t allow', async () => {
@@ -286,7 +287,7 @@ describe('the app asks the host’s page', () => {
       recommended: [],
     })
     playDaily()
-    expect(host.commands()).toContainEqual({ action: 'play', value: 'b' })
+    expect(host.commands()).toContainEqual({ action: 'play', value: 'b', list: 'daily' })
   })
 
   it('knows a playlist’s card from Home’s shelves or My Music’s groups, for its page’s head', async () => {

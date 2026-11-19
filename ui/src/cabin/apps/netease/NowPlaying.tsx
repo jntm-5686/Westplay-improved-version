@@ -1,7 +1,9 @@
 import { useEffect, useRef } from 'react'
 import { Cover, Slider, clock } from './parts'
 import { HeartGlyph, NextGlyph, PauseGlyph, PlayGlyph, PreviousGlyph, UnplayableGlyph, VolumeGlyph } from './glyphs'
-import { openTab, playPause, positionOf, seek, setLiked, setVolume, showToast, skip, useNetease, useNow } from './netease'
+import { openTab } from './nav'
+import { expectChange, usePlayback } from './playback'
+import { playPause, positionOf, seek, setLiked, setVolume, showToast, skip, useNetease, useNow } from './netease'
 import { useNeteaseWords } from './strings'
 
 /** The NetEase app's player: the bar at the screen's foot (always there), and its Now Playing page. */
@@ -87,9 +89,14 @@ function Progress({ position, duration }: { position: number; duration: number }
   )
 }
 
-/** The controls: Previous, Play or Pause (big, in the accent), Next. */
+/** The controls: Previous, Play or Pause (big, in the accent), Next. Next and Previous say at once that a song
+ * is on its way (the page names it a moment later); the buttons never wait for it. */
 function Controls({ playing, disabled = false }: { playing: boolean; disabled?: boolean }) {
   const words = useNeteaseWords()
+  const step = (direction: 1 | -1) => {
+    expectChange()
+    skip(direction)
+  }
   return (
     <div className="ne-controls">
       <button
@@ -97,7 +104,7 @@ function Controls({ playing, disabled = false }: { playing: boolean; disabled?: 
         className="ne-control"
         aria-label={words.previous}
         disabled={disabled}
-        onClick={() => skip(-1)}
+        onClick={() => step(-1)}
       >
         <PreviousGlyph />
       </button>
@@ -110,7 +117,7 @@ function Controls({ playing, disabled = false }: { playing: boolean; disabled?: 
       >
         {playing ? <PauseGlyph /> : <PlayGlyph />}
       </button>
-      <button type="button" className="ne-control" aria-label={words.next} disabled={disabled} onClick={() => skip(1)}>
+      <button type="button" className="ne-control" aria-label={words.next} disabled={disabled} onClick={() => step(1)}>
         <NextGlyph />
       </button>
     </div>
@@ -128,16 +135,18 @@ export function PlayerBar() {
   const playing = useNetease((state) => state.playing)
   const volume = useNetease((state) => state.volume)
   const trackAt = useNetease((state) => state.trackAt)
+  const hoping = usePlayback((state) => state.hoping)
   const now = useNow(playing)
   const position = positionOf(track, playing, trackAt, now)
   return (
-    <footer className="ne-player" aria-label={words.nowPlaying}>
+    <footer className="ne-player" aria-label={words.nowPlaying} aria-busy={hoping ? true : undefined}>
       <button type="button" className="ne-player-song" onClick={() => openTab('now')} aria-label={words.nowPlaying}>
         <Cover name={track?.album || track?.title || '♪'} cover={track?.cover ?? null} className="ne-player-cover" />
         <span className="ne-player-text">
           <span className="ne-player-name">{track?.title ?? words.nothingPlaying}</span>
           <span className="ne-player-artist">{track?.artist ?? words.nothingPlayingHint}</span>
         </span>
+        {hoping && <span className="ne-hop" role="status" aria-label={words.hoping} title={words.hoping} />}
       </button>
       <Controls playing={playing} disabled={!track} />
       <LikeButton />
@@ -171,8 +180,11 @@ export function NowPlayingPage() {
   }
   return (
     <div className="ne-scroll ne-now-page">
+      <div className="ne-now-wash" aria-hidden="true">
+        <Cover name={track.album || track.title} cover={track.cover} className="ne-now-wash-cover" />
+      </div>
       <header className="ne-now-head">
-        <span className="ne-now-kicker">{words.brand}</span>
+        <span className="ne-kicker">{words.brand}</span>
         <h2>{words.nowPlaying}</h2>
       </header>
       <div className="ne-now-body">

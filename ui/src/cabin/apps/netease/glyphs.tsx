@@ -240,6 +240,60 @@ export function PersonGlyph() {
   )
 }
 
+/** 榜单: the bars of a chart, rising. Filled while its tab shows. */
+export function ChartsGlyph({ on = false }: { on?: boolean }) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <rect x="3.2" y="13.4" width="4.4" height="7.4" rx="1.2" fill="currentColor" opacity={on ? 1 : 0.55} />
+      <rect x="9.8" y="8.4" width="4.4" height="12.4" rx="1.2" fill="currentColor" opacity={on ? 1 : 0.75} />
+      <rect x="16.4" y="3.2" width="4.4" height="17.6" rx="1.2" fill="currentColor" />
+      {!on && <path d="M2 21.2h20" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" opacity="0.6" />}
+    </svg>
+  )
+}
+
+/** The settings' gear: a cog with its hole (filled, as the rail's and the page's entries draw it). */
+export function GearGlyph() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        fillRule="evenodd"
+        clipRule="evenodd"
+        d="M10.6 2h2.8l.4 2.2c.7.2 1.4.5 2 .9l1.9-1.2 2 2-1.2 1.9c.4.6.7 1.3.9 2l2.2.4v2.8l-2.2.4c-.2.7-.5 1.4-.9 2l1.2 1.9-2 2-1.9-1.2c-.6.4-1.3.7-2 .9l-.4 2.2h-2.8l-.4-2.2c-.7-.2-1.4-.5-2-.9l-1.9 1.2-2-2 1.2-1.9c-.4-.6-.7-1.3-.9-2l-2.2-.4v-2.8l2.2-.4c.2-.7.5-1.4.9-2L4.3 5.5l2-2 1.9 1.2c.6-.4 1.3-.7 2-.9zM12 8.6a3.4 3.4 0 1 0 0 6.8 3.4 3.4 0 0 0 0-6.8z"
+        fill="currentColor"
+      />
+    </svg>
+  )
+}
+
+/** A way in to another page: the chevron at the page's end. */
+export function ChevronGlyph() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        d="m9 4.6 7.4 7.4L9 19.4"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
+/** The day's card: a record, its grooves and its label (drawn where there's no picture of it). */
+export function DiscGlyph() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="12" cy="12" r="10.2" fill="none" stroke="currentColor" strokeWidth="1.5" opacity="0.85" />
+      <circle cx="12" cy="12" r="7.4" fill="none" stroke="currentColor" strokeWidth="1.2" opacity="0.5" />
+      <circle cx="12" cy="12" r="5" fill="none" stroke="currentColor" strokeWidth="1.1" opacity="0.35" />
+      <circle cx="12" cy="12" r="2.4" fill="currentColor" />
+    </svg>
+  )
+}
+
 /** A song with no cover drawn: a note. */
 export function NoteGlyph() {
   return (
