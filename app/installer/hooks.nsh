@@ -167,10 +167,3 @@ FunctionEnd
     Abort "WebView2 Runtime: missing or damaged"
   ${EndIf}
 !macroend
-
-; No desktop shortcut: the owner keeps the Start menu's (and the tray's), and doesn't want an icon on the
-; desktop (owner 2026-11-19: "别把快捷方式放我桌面了"). Tauri's installer makes one by default and has no
-; option to leave it out, so it's taken away once the files are in.
-!macro NSIS_HOOK_POSTINSTALL
-  Delete "$DESKTOP\${PRODUCTNAME}.lnk"
-!macroend
