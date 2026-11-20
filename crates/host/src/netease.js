@@ -175,8 +175,10 @@
       cover: song.cover || before?.cover || null,
       duration: song.duration || before?.duration || 0,
       playable: song.playable ?? before?.playable ?? true,
-      // The first artist's NetEase id, for the app to open their page from the playing song.
+      // The first artist's NetEase id, and all of them with their own: the app opens any of their pages from the
+      // full-screen player.
       artistId: song.artistId || before?.artistId || null,
+      artists: song.artists?.length ? song.artists : (before?.artists ?? null),
     })
     if (knownSongs.size > 3000) knownSongs.delete(knownSongs.keys().next().value)
   }
@@ -467,7 +469,7 @@
       // Its artists (each with their own NetEase id), once the song's own detail is known: the full-screen player
       // opens their pages.
       artists: known?.artists,
-      artistId: known?.artists?.[0]?.id,
+      artistId: known?.artists?.[0]?.id ?? known?.artistId,
       album: known?.album ?? '',
       cover: known?.cover ?? wide(document.querySelector(S.cover)?.getAttribute('src')),
       duration,
