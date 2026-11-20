@@ -2,7 +2,7 @@ import { type CSSProperties, Fragment, useEffect, useLayoutEffect, useRef, useSt
 import { useCoverPalette } from './coverColors'
 import { Cover, Slider, clock } from './parts'
 import {
-  BackGlyph,
+  ChevronDownGlyph,
   HeartGlyph,
   NextGlyph,
   PauseGlyph,
@@ -321,8 +321,14 @@ export function NowPlayingPage() {
       <div ref={root} className="ne-now-page" data-phase={phase}>
         <div className="ne-now-stage">
           <header className="ne-now-head">
-            <button type="button" className="ne-now-back" aria-label={words.back} title={words.back} onClick={leave}>
-              <BackGlyph />
+            <button
+              type="button"
+              className="ne-now-back"
+              aria-label={words.collapse}
+              title={words.collapse}
+              onClick={leave}
+            >
+              <ChevronDownGlyph />
             </button>
             <span className="ne-kicker">{words.brand}</span>
             <h2>{words.nowPlaying}</h2>
@@ -379,8 +385,14 @@ export function NowPlayingPage() {
       <div className="ne-now-veil" aria-hidden="true" />
       <div className="ne-now-stage">
         <header className="ne-now-head">
-          <button type="button" className="ne-now-back" aria-label={words.back} title={words.back} onClick={leave}>
-            <BackGlyph />
+          <button
+            type="button"
+            className="ne-now-back"
+            aria-label={words.collapse}
+            title={words.collapse}
+            onClick={leave}
+          >
+            <ChevronDownGlyph />
           </button>
           <span className="ne-kicker">{words.brand}</span>
           <h2>{words.nowPlaying}</h2>

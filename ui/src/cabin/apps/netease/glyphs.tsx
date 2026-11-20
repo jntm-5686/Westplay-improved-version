@@ -350,3 +350,13 @@ export function ModeGlyph({ mode }: { mode: 'list' | 'shuffle' | 'one' }) {
     </svg>
   )
 }
+
+/** A chevron pointing down: the full-screen player's own way back down into the player bar (its button at the page's
+ * top left shows it; the page slides down as it is pressed). */
+export function ChevronDownGlyph() {
+  return (
+    <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M5 9.5 12 16.5 19 9.5" />
+    </svg>
+  )
+}

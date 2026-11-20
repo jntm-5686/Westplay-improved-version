@@ -44,8 +44,8 @@
   /* 正在播放's way in and out (NowPlaying.tsx's Phase): the iOS sheet's own curve, and its two times. The 7" screen,
      the short screens and the calm setting have shorter ones (below). */
   --ne-now-ios: cubic-bezier(0.32, 0.72, 0, 1);
-  --ne-now-in: 440ms;
-  --ne-now-out: 520ms;
+  --ne-now-in: 620ms;
+  --ne-now-out: 660ms;
 
   display: flex;
   flex-direction: column;
@@ -1993,9 +1993,12 @@
 
 /* The page itself (its first painted frame is `enter`: the bar's place, a hair small, clear of it). Only transform
    and opacity move: nothing of the app's layout is laid out again while it comes or goes. */
+/* The page as a sheet of iOS: it comes up from the player bar's place at the foot (a third of the height below,
+   a hair small and clear of the screen) and settles whole; pressed down again, it goes back that way — plainly
+   enough to be seen. */
 .netease-app .ne-now-page[data-phase='enter'] {
   opacity: 0;
-  transform: scale(0.92) translateY(48px);
+  transform: translateY(34%) scale(0.94);
   transition: none;
 }
 
@@ -2004,7 +2007,7 @@
   transform: none;
   transition:
     transform var(--ne-now-in) var(--ne-now-ios),
-    opacity calc(var(--ne-now-in) * 0.62) ease-out;
+    opacity calc(var(--ne-now-in) * 0.45) ease-out;
 }
 
 /* Its way out: an animation rather than a transition, so it always plays from the page as it shows (visible, whole)
@@ -2013,6 +2016,9 @@
 /* Its way out, backwards from the way in: a breath up (the iOS sheet's own anticipation), then the words and the
    controls going down and away first, the cover after them, the page shrinking into the player bar and the colours
    leaving last — long enough to be seen, and as smooth as the way in. */
+/* Down again: a breath up (the iOS sheet's own anticipation), then the whole page sliding down and shrinking into
+   the player bar — the words and the controls already on their way, the cover after them, the colours last. Long
+   and plain enough to be seen as an animation, not a cut (owner 2026-11-20). */
 @keyframes ne-now-page-out {
   0% {
     opacity: 1;
@@ -2020,15 +2026,19 @@
   }
   12% {
     opacity: 1;
-    transform: scale(1.014) translateY(-10px);
+    transform: translateY(-14px) scale(1.01);
   }
   55% {
-    opacity: 0.86;
-    transform: scale(0.985) translateY(10px);
+    opacity: 1;
+    transform: translateY(64px) scale(0.93);
+  }
+  85% {
+    opacity: 0.55;
+    transform: translateY(150px) scale(0.86);
   }
   100% {
     opacity: 0;
-    transform: scale(0.86) translateY(112px);
+    transform: translateY(200px) scale(0.8);
   }
 }
 
@@ -2042,28 +2052,31 @@
    colours (the backdrop and the tints) last of all. */
 .netease-app .ne-now-page[data-phase='leave'] .ne-now-head {
   opacity: 0;
-  transition: opacity 200ms ease-out;
+  transform: translateY(-10px);
+  transition:
+    opacity 260ms ease-out,
+    transform 420ms var(--ne-now-ios);
 }
 
 .netease-app .ne-now-page[data-phase='leave'] .ne-now-side {
   opacity: 0;
-  transform: translateY(22px);
+  transform: translateY(46px);
   transition:
-    opacity 240ms ease-out,
-    transform 420ms var(--ne-now-ios);
+    opacity 320ms ease-out,
+    transform 560ms var(--ne-now-ios);
 }
 
 .netease-app .ne-now-page[data-phase='leave'] .ne-now-foot {
   opacity: 0;
-  transform: translateY(34px);
+  transform: translateY(72px);
   transition:
-    opacity 280ms ease-out 40ms,
-    transform 440ms var(--ne-now-ios) 40ms;
+    opacity 360ms ease-out 60ms,
+    transform 600ms var(--ne-now-ios) 60ms;
 }
 
 .netease-app .ne-now-page[data-phase='leave'] .ne-now-cover {
-  transform: scale(0.9) translateY(16px);
-  transition: transform 480ms var(--ne-now-ios) 60ms;
+  transform: scale(0.84) translateY(70px);
+  transition: transform 620ms var(--ne-now-ios) 80ms;
 }
 
 .netease-app .ne-now-page[data-phase='leave'] .ne-now-backdrop,
@@ -3262,8 +3275,8 @@
     gap: 10px;
     padding: 12px 12px 10px;
     /* The 7" screen's own way in and out: a fifth shorter, so it stays with the hand. */
-    --ne-now-in: 340ms;
-    --ne-now-out: 272ms;
+    --ne-now-in: 500ms;
+    --ne-now-out: 540ms;
   }
 
   .netease-app .ne-layout {
@@ -3788,8 +3801,8 @@
     padding: 10px 12px 8px;
     gap: 8px;
     /* The short screens too (the coaches' 446 tall): a fifth shorter. */
-    --ne-now-in: 340ms;
-    --ne-now-out: 272ms;
+    --ne-now-in: 500ms;
+    --ne-now-out: 540ms;
   }
 
   .netease-app .ne-layout {

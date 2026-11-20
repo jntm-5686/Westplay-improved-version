@@ -27,6 +27,8 @@ export interface NeteaseWords {
   /** A song or Next/Previous asked of the page and not answered yet: the small mark on the player bar. */
   hoping: string
   /** The play mode's names, as its player bar's button says them (its own words for them). */
+  /** The full-screen player's own way down (its chevron button): 收起. */
+  collapse: string
   mode: string
   modeList: string
   modeShuffle: string
@@ -252,6 +254,7 @@ export function neteaseWords(locale: string): NeteaseWords {
       preview: '预览数据',
       queued: '已请网易云播放这首歌',
       hoping: '正在切歌…',
+  collapse: '收起',
   mode: '播放模式',
   modeList: '列表循环',
   modeShuffle: '随机播放',
@@ -428,6 +431,7 @@ export function neteaseWords(locale: string): NeteaseWords {
     preview: 'Preview data',
     queued: 'Asked NetEase to play this song',
     hoping: 'Switching…',
+  collapse: 'Collapse',
   mode: 'Play mode',
   modeList: 'Repeat list',
   modeShuffle: 'Shuffle',
