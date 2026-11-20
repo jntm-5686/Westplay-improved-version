@@ -41,6 +41,11 @@
   --ne-ease: var(--motion-ease);
   --ne-quick: 170ms;
   --ne-move: 360ms;
+  /* 正在播放's way in and out (NowPlaying.tsx's Phase): the iOS sheet's own curve, and its two times. The 7" screen,
+     the short screens and the calm setting have shorter ones (below). */
+  --ne-now-ios: cubic-bezier(0.32, 0.72, 0, 1);
+  --ne-now-in: 420ms;
+  --ne-now-out: 340ms;
 
   display: flex;
   flex-direction: column;
@@ -1981,12 +1986,135 @@
   background: var(--ne-now-c);
   color: var(--ne-now-text);
   box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.07);
+  /* It grows out of the player bar at the foot, and goes back down into it. */
+  transform-origin: 50% 100%;
+  will-change: transform, opacity;
 }
 
-/* Each time it's opened (NowPlaying.tsx takes the class off and puts it back before the frame it shows in): up
-   out of the dark, a hair smaller, then settling. */
-.netease-app .ne-now-page.entering {
-  animation: ne-now-page-in 420ms cubic-bezier(0.22, 0.9, 0.24, 1) both;
+/* The page itself (its first painted frame is `enter`: the bar's place, a hair small, clear of it). Only transform
+   and opacity move: nothing of the app's layout is laid out again while it comes or goes. */
+.netease-app .ne-now-page[data-phase='enter'] {
+  opacity: 0;
+  transform: scale(0.92) translateY(48px);
+  transition: none;
+}
+
+.netease-app .ne-now-page[data-phase='open'] {
+  opacity: 1;
+  transform: none;
+  transition:
+    transform var(--ne-now-in) var(--ne-now-ios),
+    opacity calc(var(--ne-now-in) * 0.62) ease-out;
+}
+
+.netease-app .ne-now-page[data-phase='leave'] {
+  opacity: 0;
+  transform: scale(0.94) translateY(56px);
+  transition:
+    transform var(--ne-now-out) cubic-bezier(0.4, 0, 0.2, 1),
+    opacity var(--ne-now-out) linear;
+}
+
+/* The colours come first (the page's own first 40%): the blurred cover and the gradient, before the cover itself. */
+.netease-app .ne-now-backdrop,
+.netease-app .ne-now-tints {
+  opacity: 0;
+  transition: opacity 180ms ease-out;
+}
+
+.netease-app .ne-now-page[data-phase='open'] .ne-now-backdrop,
+.netease-app .ne-now-page[data-phase='open'] .ne-now-tints,
+.netease-app .ne-now-page[data-phase='leave'] .ne-now-backdrop,
+.netease-app .ne-now-page[data-phase='leave'] .ne-now-tints {
+  opacity: 1;
+}
+
+/* The cover after them, growing from 0.72 (the iOS sheet's own cover); the words and the controls after that, each a
+   little after the one before, up from a few pixels low. */
+.netease-app .ne-now-art {
+  opacity: 1;
+  transition:
+    opacity 260ms ease-out,
+    transform 360ms var(--ne-now-ios);
+}
+
+.netease-app .ne-now-page[data-phase='enter'] .ne-now-art {
+  opacity: 0;
+  transform: scale(0.72);
+  transition: none;
+}
+
+.netease-app .ne-now-page[data-phase='open'] .ne-now-art {
+  opacity: 1;
+  transform: none;
+  transition-delay: 60ms;
+}
+
+.netease-app .ne-now-page[data-phase='leave'] .ne-now-art {
+  opacity: 0.6;
+  transform: scale(0.9) translateY(10px);
+  transition-delay: 0ms;
+}
+
+.netease-app .ne-now-title,
+.netease-app .ne-now-artist,
+.netease-app .ne-now-album,
+.netease-app .ne-now-foot,
+.netease-app .ne-now-head {
+  transition:
+    opacity 240ms ease-out,
+    transform 300ms var(--ne-now-ios);
+}
+
+.netease-app .ne-now-page[data-phase='enter'] .ne-now-title,
+.netease-app .ne-now-page[data-phase='enter'] .ne-now-artist,
+.netease-app .ne-now-page[data-phase='enter'] .ne-now-album,
+.netease-app .ne-now-page[data-phase='enter'] .ne-now-foot,
+.netease-app .ne-now-page[data-phase='enter'] .ne-now-head {
+  opacity: 0;
+  transform: translateY(14px);
+  transition: none;
+}
+
+.netease-app .ne-now-page[data-phase='open'] .ne-now-title {
+  opacity: 1;
+  transform: none;
+  transition-delay: 80ms;
+}
+
+.netease-app .ne-now-page[data-phase='open'] .ne-now-artist {
+  opacity: 1;
+  transform: none;
+  transition-delay: 120ms;
+}
+
+.netease-app .ne-now-page[data-phase='open'] .ne-now-album {
+  opacity: 1;
+  transform: none;
+  transition-delay: 150ms;
+}
+
+.netease-app .ne-now-page[data-phase='open'] .ne-now-foot {
+  opacity: 1;
+  transform: none;
+  transition-delay: 170ms;
+}
+
+.netease-app .ne-now-page[data-phase='open'] .ne-now-head {
+  opacity: 1;
+  transform: none;
+  transition-delay: 40ms;
+}
+
+.netease-app .ne-now-page[data-phase='leave'] .ne-now-title,
+.netease-app .ne-now-page[data-phase='leave'] .ne-now-artist,
+.netease-app .ne-now-page[data-phase='leave'] .ne-now-album,
+.netease-app .ne-now-page[data-phase='leave'] .ne-now-foot,
+.netease-app .ne-now-page[data-phase='leave'] .ne-now-head {
+  opacity: 0;
+  transform: translateY(12px);
+  transition-delay: 0ms;
+  transition-duration: 180ms;
 }
 
 /* NetEase's red, when its skin was chosen: the page's own ground is warm, and its accent red until a cover's
@@ -2040,6 +2168,61 @@
 .netease-app[data-immersive] .ne-now-page {
   border-radius: 0;
   box-shadow: none;
+}
+
+/* The app's own ground under the page as it comes up: dark, so the page's first frames never show the cabin's light
+   panel through them. It goes as the page comes down. */
+.netease-app[data-immersive]::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  background: #0c0a10;
+  pointer-events: none;
+  animation: ne-immersive-under-in 240ms ease-out both;
+}
+
+.netease-app[data-immersive][data-leaving]::before {
+  animation: ne-immersive-under-out var(--ne-now-out) ease-in both;
+}
+
+/* On its way out, the app's own rail, top bar and player bar come back under the page, fading in as it shrinks down
+   to the player bar: what the page came from is already there when it is shown again (and the page covers most of it
+   while it does). */
+.netease-app[data-immersive][data-leaving] .ne-rail,
+.netease-app[data-immersive][data-leaving] .ne-topbar,
+.netease-app[data-immersive][data-leaving] .ne-player {
+  visibility: visible;
+  pointer-events: none;
+  animation: ne-immersive-bars-in var(--ne-now-out) ease-out both;
+}
+
+@keyframes ne-immersive-under-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes ne-immersive-under-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes ne-immersive-bars-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 /* The cover as the page's top: large, blurred, its colours washing down. */
@@ -2286,8 +2469,12 @@
   justify-self: center;
 }
 
-.netease-app .ne-now-tools .ne-like {
+/* The mode and the heart, at the right of the controls: the same pair the player bar has, a little larger. */
+.netease-app .ne-now-tools .ne-now-actions {
   justify-self: end;
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
 /* White on the dark, its filled parts in the cover's accent (which changes as the cover does). */
@@ -2361,17 +2548,6 @@
   color: #ffd8c9;
 }
 
-@keyframes ne-now-page-in {
-  from {
-    opacity: 0;
-    scale: 0.972;
-  }
-  to {
-    opacity: 1;
-    scale: 1;
-  }
-}
-
 @keyframes ne-now-tint-in {
   from {
     opacity: 0;
@@ -2379,6 +2555,14 @@
   to {
     opacity: 0.94;
   }
+}
+
+/* Now Playing with nothing playing: its own page still has the way back, and the words in the middle. */
+.netease-app .ne-now-empty {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  place-items: center;
 }
 
 /* A breath, not a spin: the cover leans a hair either way while the song plays (off for a calmer screen). */
@@ -2631,25 +2815,49 @@
 
 /* --- The player bar ------------------------------------------------------------------------------------ */
 
+/* Two rows: the song's time across the whole top (the bar, and a time at each side), and under it the song, the
+   controls, and the play mode, the heart and the volume. The time has its own row, so the song is never squeezed
+   by it, and the controls stay in the middle of the bar on every width. */
 .netease-app .ne-player {
   flex: none;
-  display: flex;
+  display: grid;
+  grid-template-rows: auto auto;
   align-items: center;
-  gap: 18px;
-  height: 92px;
-  padding: 10px 20px 10px 12px;
+  gap: 2px 18px;
+  min-height: 96px;
+  padding: 8px 20px 12px;
   border-radius: 18px;
   background: var(--ne-player-bg);
   box-shadow: var(--ne-shadow);
 }
 
-.netease-app .ne-player-song {
-  flex: 0 1 300px;
+/* The time's row: the clock, the bar across the whole width, the song's length. */
+.netease-app .ne-player > .ne-progress {
+  width: 100%;
+  gap: 12px;
+}
+
+.netease-app .ne-player > .ne-progress .ne-bar {
+  height: 22px;
+}
+
+.netease-app .ne-player-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 16px;
   min-width: 0;
+}
+
+.netease-app .ne-player-song {
+  justify-self: start;
+  width: 100%;
+  min-width: 0;
+  max-width: 460px;
   display: flex;
   align-items: center;
   gap: 14px;
-  padding: 6px;
+  padding: 4px 6px;
   border-radius: 14px;
   text-align: left;
   transition: background-color var(--ne-quick);
@@ -2660,7 +2868,8 @@
 }
 
 .netease-app .ne-player-cover {
-  width: 62px;
+  flex: none;
+  width: 58px;
   border-radius: 12px;
 }
 
@@ -2714,43 +2923,57 @@
   height: 24px;
 }
 
-.netease-app .ne-player .ne-progress {
-  flex: 1;
-  min-width: 0;
-}
-
 .netease-app .ne-player .ne-time {
   font-size: var(--ne-type-caption);
 }
 
-.netease-app .ne-player .ne-like {
+/* The mode, the heart and the volume, at the bar's right end: the mode and the heart round and close, the volume's
+   bar taking what its column has left (so the group never grows over the controls in the middle, however narrow the
+   panel is). */
+.netease-app .ne-player-actions {
+  justify-self: stretch;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  min-width: 0;
+}
+
+.netease-app .ne-player-actions .ne-like {
   width: 48px;
   height: 48px;
   background: transparent;
 }
 
-.netease-app .ne-player .ne-like svg {
+.netease-app .ne-player-actions .ne-like svg {
   width: 26px;
   height: 26px;
 }
 
-.netease-app .ne-player .ne-like.liked {
+.netease-app .ne-player-actions .ne-like.liked {
   background: color-mix(in srgb, var(--ne-heart) 12%, transparent);
 }
 
-.netease-app .ne-player .ne-volume {
-  flex: none;
-  width: 190px;
+.netease-app .ne-player-actions .ne-volume {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
+  max-width: 190px;
+  gap: 8px;
 }
 
-.netease-app .ne-player .ne-volume .ne-icon-button {
+.netease-app .ne-player-actions .ne-volume .ne-icon-button {
   width: 42px;
   height: 42px;
 }
 
-.netease-app .ne-player .ne-volume .ne-icon-button svg {
+.netease-app .ne-player-actions .ne-volume .ne-icon-button svg {
   width: 24px;
   height: 24px;
+}
+
+.netease-app .ne-player-actions .ne-volume .ne-bar {
+  min-width: 0;
 }
 
 .netease-app .ne-player .ne-bar {
@@ -2787,7 +3010,7 @@
   position: absolute;
   z-index: 8;
   left: 50%;
-  bottom: 118px;
+  bottom: 136px;
   translate: -50% 0;
   margin: 0;
   padding: 12px 26px;
@@ -2908,11 +3131,11 @@
   }
 
   .netease-app .ne-player-song {
-    flex-basis: 240px;
+    max-width: 360px;
   }
 
-  .netease-app .ne-player .ne-volume {
-    width: 150px;
+  .netease-app .ne-player-actions .ne-volume {
+    max-width: 150px;
   }
 
   .netease-app .ne-hero {
@@ -2946,18 +3169,12 @@
     width: min(100%, 160px);
   }
 
-  .netease-app .ne-player .ne-progress {
-    display: none;
-  }
-
-  .netease-app .ne-player .ne-volume {
-    flex: 1;
-    width: auto;
-    max-width: 210px;
-  }
-
   .netease-app .ne-player-song {
-    flex-basis: 210px;
+    max-width: 300px;
+  }
+
+  .netease-app .ne-player-actions .ne-volume {
+    max-width: 120px;
   }
 
   .netease-app .ne-detail-head {
@@ -2988,6 +3205,9 @@
   .netease-app {
     gap: 10px;
     padding: 12px 12px 10px;
+    /* The 7" screen's own way in and out: a fifth shorter, so it stays with the hand. */
+    --ne-now-in: 340ms;
+    --ne-now-out: 272ms;
   }
 
   .netease-app .ne-layout {
@@ -3339,19 +3559,32 @@
   }
 
   .netease-app .ne-player {
-    height: 80px;
-    gap: 10px;
-    padding: 8px 12px 8px 8px;
+    min-height: 86px;
+    gap: 0 10px;
+    padding: 6px 12px 8px;
     border-radius: 14px;
   }
 
+  .netease-app .ne-player > .ne-progress {
+    gap: 8px;
+  }
+
+  .netease-app .ne-player > .ne-progress .ne-bar {
+    height: 18px;
+  }
+
+  .netease-app .ne-player-row {
+    gap: 10px;
+  }
+
   .netease-app .ne-player-song {
-    flex-basis: 166px;
+    max-width: 240px;
     gap: 9px;
   }
 
   .netease-app .ne-player-cover {
-    width: 50px;
+    width: 46px;
+    border-radius: 10px;
   }
 
   .netease-app .ne-player-name {
@@ -3366,28 +3599,55 @@
     gap: 2px;
   }
 
-  .netease-app .ne-player .ne-control {
+  /* The bar's own control sizes (the page's full-screen controls have theirs below): four classes, so the player
+     bar's stay smaller than the immersive page's. */
+  .netease-app .ne-player .ne-controls .ne-control {
     width: 40px;
     height: 40px;
   }
 
-  .netease-app .ne-player .ne-control svg {
+  .netease-app .ne-player .ne-controls .ne-control svg {
     width: 24px;
     height: 24px;
   }
 
-  .netease-app .ne-player .ne-play-button {
+  .netease-app .ne-player .ne-controls .ne-play-button {
     width: 48px;
     height: 48px;
   }
 
-  .netease-app .ne-player .ne-like {
+  .netease-app .ne-player .ne-controls .ne-play-button svg {
+    width: 22px;
+    height: 22px;
+  }
+
+  .netease-app .ne-player-actions {
+    gap: 0;
+  }
+
+  .netease-app .ne-player-actions .ne-like {
     width: 40px;
     height: 40px;
   }
 
-  .netease-app .ne-player .ne-volume {
-    max-width: 120px;
+  .netease-app .ne-player-actions .ne-like svg {
+    width: 22px;
+    height: 22px;
+  }
+
+  .netease-app .ne-player-actions .ne-volume {
+    max-width: 108px;
+    gap: 6px;
+  }
+
+  .netease-app .ne-player-actions .ne-volume .ne-icon-button {
+    width: 36px;
+    height: 36px;
+  }
+
+  .netease-app .ne-player-actions .ne-volume .ne-icon-button svg {
+    width: 21px;
+    height: 21px;
   }
 
   .netease-app .ne-now-stage {
@@ -3459,7 +3719,7 @@
   }
 
   .netease-app .ne-toast {
-    bottom: 100px;
+    bottom: 112px;
     font-size: var(--ne-type-small);
     padding: 10px 18px;
   }
@@ -3471,6 +3731,9 @@
   .netease-app {
     padding: 10px 12px 8px;
     gap: 8px;
+    /* The short screens too (the coaches' 446 tall): a fifth shorter. */
+    --ne-now-in: 340ms;
+    --ne-now-out: 272ms;
   }
 
   .netease-app .ne-layout {
@@ -3844,11 +4107,16 @@
   }
 
   .netease-app .ne-player {
-    height: 72px;
+    min-height: 76px;
+    padding: 4px 12px 6px;
+  }
+
+  .netease-app .ne-player > .ne-progress .ne-bar {
+    height: 16px;
   }
 
   .netease-app .ne-player-cover {
-    width: 46px;
+    width: 42px;
   }
 
   .netease-app .ne-now-stage {
@@ -3976,7 +4244,7 @@
   }
 
   .netease-app .ne-toast {
-    bottom: 88px;
+    bottom: 96px;
   }
 }
 
@@ -4020,6 +4288,13 @@
 
 /* --- A calmer screen (the settings' 界面动效: 精简), and the cab's own reduced motion ------------------------ */
 
+/* Both keep the full-screen player's way in and out, as a plain 120 ms cross-fade: no scaling, no sliding down, no
+   part after another. (The page's own transition is the one left running; everything inside it goes at once.) */
+.netease-app[data-motion='calm'] {
+  --ne-now-in: 120ms;
+  --ne-now-out: 120ms;
+}
+
 .netease-app[data-motion='calm'] .ne-layer,
 .netease-app[data-motion='calm'] .ne-layer.fresh,
 .netease-app[data-motion='calm'] .ne-skeleton,
@@ -4028,7 +4303,6 @@
 .netease-app[data-motion='calm'] .ne-spinner,
 .netease-app[data-motion='calm'] .ne-toast,
 .netease-app[data-motion='calm'] .ne-now-page,
-.netease-app[data-motion='calm'] .ne-now-page.entering,
 .netease-app[data-motion='calm'] .ne-now-page.playing .ne-now-cover,
 .netease-app[data-motion='calm'] .ne-now-tint.live {
   animation: none;
@@ -4036,6 +4310,39 @@
 
 .netease-app[data-motion='calm'] * {
   transition-duration: 0ms;
+}
+
+.netease-app[data-motion='calm'] .ne-now-page[data-phase],
+.netease-app[data-motion='calm'] .ne-now-page[data-phase] .ne-now-art,
+.netease-app[data-motion='calm'] .ne-now-page[data-phase] .ne-now-title,
+.netease-app[data-motion='calm'] .ne-now-page[data-phase] .ne-now-artist,
+.netease-app[data-motion='calm'] .ne-now-page[data-phase] .ne-now-album,
+.netease-app[data-motion='calm'] .ne-now-page[data-phase] .ne-now-foot,
+.netease-app[data-motion='calm'] .ne-now-page[data-phase] .ne-now-head {
+  transition-property: opacity;
+  transition-duration: 120ms;
+  transform: none;
+}
+
+.netease-app[data-motion='calm'] .ne-now-backdrop,
+.netease-app[data-motion='calm'] .ne-now-tints {
+  transition-duration: 0ms;
+}
+
+.netease-app[data-motion='calm'][data-immersive]::before {
+  animation: none;
+  opacity: 1;
+}
+
+.netease-app[data-motion='calm'][data-immersive][data-leaving]::before {
+  opacity: 0;
+}
+
+.netease-app[data-motion='calm'][data-immersive][data-leaving] .ne-rail,
+.netease-app[data-motion='calm'][data-immersive][data-leaving] .ne-topbar,
+.netease-app[data-motion='calm'][data-immersive][data-leaving] .ne-player {
+  animation: none;
+  opacity: 1;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -4047,7 +4354,6 @@
   .netease-app .ne-spinner,
   .netease-app .ne-toast,
   .netease-app .ne-now-page,
-  .netease-app .ne-now-page.entering,
   .netease-app .ne-now-page.playing .ne-now-cover,
   .netease-app .ne-now-tint.live {
     animation: none;
@@ -4055,6 +4361,44 @@
 
   .netease-app * {
     transition-duration: 0ms;
+  }
+
+  .netease-app {
+    --ne-now-in: 120ms;
+    --ne-now-out: 120ms;
+  }
+
+  .netease-app .ne-now-page[data-phase],
+  .netease-app .ne-now-page[data-phase] .ne-now-art,
+  .netease-app .ne-now-page[data-phase] .ne-now-title,
+  .netease-app .ne-now-page[data-phase] .ne-now-artist,
+  .netease-app .ne-now-page[data-phase] .ne-now-album,
+  .netease-app .ne-now-page[data-phase] .ne-now-foot,
+  .netease-app .ne-now-page[data-phase] .ne-now-head {
+    transition-property: opacity;
+    transition-duration: 120ms;
+    transform: none;
+  }
+
+  .netease-app .ne-now-backdrop,
+  .netease-app .ne-now-tints {
+    transition-duration: 0ms;
+  }
+
+  .netease-app[data-immersive]::before {
+    animation: none;
+    opacity: 1;
+  }
+
+  .netease-app[data-immersive][data-leaving]::before {
+    opacity: 0;
+  }
+
+  .netease-app[data-immersive][data-leaving] .ne-rail,
+  .netease-app[data-immersive][data-leaving] .ne-topbar,
+  .netease-app[data-immersive][data-leaving] .ne-player {
+    animation: none;
+    opacity: 1;
   }
 }
 
@@ -4093,7 +4437,8 @@
   white-space: pre;
 }
 
-/* The player bar's play mode: its own mark, pressed for the next mode (列表循环 / 随机 / 单曲循环). */
+/* The player's play mode (the bar's, and the full-screen player's): its own mark, pressed for the next mode
+   (列表循环 -> 随机 -> 单曲循环 -> 列表循环), the mode it is said over the player as it goes. */
 .netease-app .ne-player-mode {
   flex: none;
   display: grid;
@@ -4106,9 +4451,16 @@
   background: none;
   color: var(--ne-dim);
   cursor: pointer;
+  touch-action: manipulation;
   transition:
     background-color var(--ne-quick),
-    color var(--ne-quick);
+    color var(--ne-quick),
+    scale var(--ne-quick) var(--ne-ease);
+}
+
+.netease-app .ne-player-mode svg {
+  width: 26px;
+  height: 26px;
 }
 
 .netease-app .ne-player-mode:hover,
@@ -4117,7 +4469,93 @@
   color: var(--ne-text);
 }
 
+.netease-app .ne-player-mode:active {
+  scale: 0.92;
+}
+
 .netease-app .ne-player-mode[data-mode='one'],
 .netease-app .ne-player-mode[data-mode='shuffle'] {
   color: var(--ne-accent);
+}
+
+/* The full-screen player's: a little larger, white on its dark page until it's a mode with a mark of its own. */
+.netease-app .ne-player-mode.large {
+  width: 58px;
+  height: 58px;
+  background: rgb(255 255 255 / 0.12);
+  color: var(--ne-now-dim, rgb(255 255 255 / 0.72));
+}
+
+.netease-app .ne-player-mode.large svg {
+  width: 30px;
+  height: 30px;
+}
+
+.netease-app .ne-player-mode.large:hover,
+.netease-app .ne-player-mode.large:focus-visible {
+  background: rgb(255 255 255 / 0.2);
+  color: var(--ne-now-text, #fff);
+}
+
+.netease-app .ne-player-mode.large[data-mode='one'],
+.netease-app .ne-player-mode.large[data-mode='shuffle'] {
+  color: var(--ne-now-accent, #fff);
+}
+
+/* A short screen (the 7" Scania's, the coaches'): the bar's two rows closer still, so the pages keep their room. */
+@container (max-width: 780px) {
+  .netease-app .ne-player-mode {
+    width: 40px;
+    height: 40px;
+  }
+
+  .netease-app .ne-player-mode svg {
+    width: 23px;
+    height: 23px;
+  }
+}
+
+@container (max-height: 540px) {
+  .netease-app .ne-player {
+    gap: 0 12px;
+    padding: 4px 12px 6px;
+  }
+
+  .netease-app .ne-player > .ne-progress .ne-bar {
+    height: 14px;
+  }
+
+  .netease-app .ne-player-cover {
+    width: 40px;
+  }
+
+  .netease-app .ne-player-song {
+    gap: 8px;
+    padding: 2px 4px;
+  }
+
+  .netease-app .ne-player .ne-controls .ne-control {
+    width: 38px;
+    height: 38px;
+  }
+
+  .netease-app .ne-player .ne-controls .ne-control svg {
+    width: 22px;
+    height: 22px;
+  }
+
+  .netease-app .ne-player .ne-controls .ne-play-button {
+    width: 44px;
+    height: 44px;
+  }
+
+  .netease-app .ne-player-mode {
+    width: 38px;
+    height: 38px;
+  }
+
+  .netease-app .ne-player-mode svg {
+    width: 22px;
+    height: 22px;
+  }
 }

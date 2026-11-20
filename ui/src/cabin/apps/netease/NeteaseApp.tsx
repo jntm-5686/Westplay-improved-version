@@ -45,6 +45,9 @@ export function NeteaseApp() {
   const tab = useNav((state) => state.tab)
   const opened = useNav((state) => state.stacks[state.tab].length)
   const immersive = useNav(fullScreen)
+  // The full-screen player on its way out: the app's own bars come back under it as it shrinks into the player bar
+  // (NowPlaying.tsx), so the page it came from is there before it is shown again.
+  const leaving = useNav((state) => state.leaving)
   const motion = usePrefs((state) => state.motion)
   useNeteaseBridge()
   // Leaving the page puts the keyboard away (the search bar stays where it is: only a result picked, or another
@@ -59,6 +62,7 @@ export function NeteaseApp() {
       data-style={style}
       data-motion={motion}
       data-immersive={immersive ? '' : undefined}
+      data-leaving={leaving ? '' : undefined}
       aria-label={words.brand}
     >
       <div className="ne-layout">

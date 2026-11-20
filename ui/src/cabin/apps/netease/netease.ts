@@ -5,6 +5,7 @@ import type { MediaSource } from '../../../shared/media'
 import { type MusicPlayer, pauseMusicWithGame } from '../musicWithGame'
 import { sourceOf } from './source'
 import { createPreview, type Preview } from './preview'
+import { neteaseWords } from './words'
 
 /**
  * The NetEase Cloud Music app's state. WestPlay draws the app itself, in the manner of NetEase's own desktop
@@ -194,10 +195,21 @@ export interface Asking {
 /** No answer looked for, or the last one came. */
 export const IDLE_ASKING: Asking = { waiting: false, failed: false }
 
-/** The whole state the host's page sends (`netease` `state`). */
 /** Its play mode, as its own play bar names it: the list round and round, at random, one song over and over. */
 export type PlayMode = 'list' | 'shuffle' | 'one'
 
+/** The mode its own play bar's button goes to next (its own order: 列表循环 -> 随机 -> 单曲循环 -> 列表循环). */
+export function nextPlayMode(mode: PlayMode): PlayMode {
+  return mode === 'list' ? 'shuffle' : mode === 'shuffle' ? 'one' : 'list'
+}
+
+/** A mode as the page's state says it, or `undefined` for one it doesn't know (a page of an older build: the app
+ * then keeps the mode it shows rather than putting it back to 列表循环 on every state). */
+function readMode(value: unknown): PlayMode | undefined {
+  return value === 'list' || value === 'shuffle' || value === 'one' ? value : undefined
+}
+
+/** The whole state the host's page sends (`netease` `state`). */
 export interface NeteasePlayerState {
   signedIn: boolean | null
   /** Its play mode (`mode` in the page's state). */
@@ -271,6 +283,16 @@ export type Style = 'follow' | 'red'
  * (each page's own, and the rail's, detach it). */
 export const SEARCH_FIELD = 'netease-search'
 
+/** Where what plays was played from (the app's own reading of its queue): a playlist's or a chart's list, the day's
+ * songs, the recent chart, a search, an artist's page. The page's own lists are named as its queue names them. */
+export type NeteaseFromKind = 'playlist' | 'ranking' | 'daily' | 'recent' | 'search' | 'artist'
+
+export interface NeteaseFrom {
+  kind: NeteaseFromKind
+  /** Its name as the app knows it (the list's own, or the app's word for a list without one). */
+  name: string
+}
+
 /** What's known of a playlist page: its songs, asked of the hidden page. */
 export interface PlaylistPage {
   songs: NeteaseSong[] | null
@@ -305,6 +327,8 @@ interface NeteaseAppState {
   volume: number
   /** Its play mode: 列表循环, 随机, 单曲循环. */
   mode: PlayMode
+  /** Where the playing song was played from, when the app knows (`null`: no list of its own, or nothing played). */
+  from: NeteaseFrom | null
   track: NeteaseTrack | null
   /** Whether the playing song is liked (in 我喜欢的音乐): `null` until the page has read it. */
   liked: boolean | null
@@ -375,24 +399,13 @@ function fromPlayer(
   state: NeteasePlayerState,
 ): Pick<
   NeteaseAppState,
-  | 'signedIn'
-  | 'signingIn'
-  | 'playing'
-  | 'volume'
-  | 'mode'
-  | 'track'
-  | 'liked'
-  | 'trackAt'
-  | 'lists'
-  | 'heard'
-  | 'account'
+  'signedIn' | 'signingIn' | 'playing' | 'volume' | 'track' | 'liked' | 'trackAt' | 'lists' | 'heard' | 'account'
 > {
   return {
     signedIn: state.signedIn,
     signingIn: state.signingIn,
     playing: state.track ? state.playing : false,
     volume: state.volume,
-    mode: state.mode === 'shuffle' ? 'shuffle' : state.mode === 'one' ? 'one' : 'list',
     track: state.track,
     liked: state.liked ?? null,
     trackAt: performance.now(),
@@ -408,7 +421,7 @@ const PREVIEW = isInHost() ? null : createPreview()
 
 export const useNetease = create<NeteaseAppState>()(() => ({
   ...(PREVIEW
-    ? fromPlayer(PREVIEW.read())
+    ? { ...fromPlayer(PREVIEW.read()), mode: 'list' as PlayMode }
     : {
         signedIn: null,
         signingIn: false,
@@ -422,6 +435,7 @@ export const useNetease = create<NeteaseAppState>()(() => ({
         lists: [],
         heard: false,
       }),
+  from: null,
   tab: 'home',
   views: { home: [], mine: [], search: [], now: [] },
   playlists: {},
@@ -460,17 +474,7 @@ export function netease(command: NeteaseCommand): void {
  * playlists, a search, the recent songs, the rankings, the profile). */
 interface NeteaseMessage {
   type: 'netease'
-  kind?:
-    | 'state'
-    | 'playlist'
-    | 'home'
-    | 'library'
-    | 'search'
-    | 'artist'
-    | 'recent'
-    | 'like'
-    | 'rankings'
-    | 'profile'
+  kind?: 'state' | 'playlist' | 'home' | 'library' | 'search' | 'artist' | 'recent' | 'like' | 'rankings' | 'profile'
   state?: unknown
   id?: unknown
   songs?: unknown
@@ -688,7 +692,11 @@ function readLibraryPlaylist(raw: unknown): NeteaseLibraryPlaylist | null {
 
 /** The `library` message: My Music's groups of playlists, in its own order. */
 function readLibrary(raw: unknown): NeteaseLibraryGroup[] {
-  const groups = Array.isArray(raw) ? raw : raw && typeof raw === 'object' ? (raw as Record<string, unknown>).groups : raw
+  const groups = Array.isArray(raw)
+    ? raw
+    : raw && typeof raw === 'object'
+      ? (raw as Record<string, unknown>).groups
+      : raw
   if (!Array.isArray(groups)) return []
   const read: NeteaseLibraryGroup[] = []
   for (const entry of groups) {
@@ -720,7 +728,7 @@ function readAccount(raw: unknown): NeteaseAccount | null {
 /** The account's own profile, as its `profile` message says it: an account the app can show, or `null` for one
  * the page didn't say. */
 function readProfile(raw: unknown): NeteaseProfile | null {
-  const profile = raw && typeof raw === 'object' ? (raw as Record<string, unknown>).profile ?? raw : null
+  const profile = raw && typeof raw === 'object' ? ((raw as Record<string, unknown>).profile ?? raw) : null
   if (!profile || typeof profile !== 'object') return null
   const said = profile as Record<string, unknown>
   const uid = text(said.uid)
@@ -762,7 +770,11 @@ function readRanking(raw: unknown): NeteaseRanking | null {
 
 /** The `rankings` message: NetEase's own charts, in its own order, no duplicate. */
 function readRankings(raw: unknown): NeteaseRanking[] {
-  const list = Array.isArray(raw) ? raw : raw && typeof raw === 'object' ? (raw as Record<string, unknown>).rankings : raw
+  const list = Array.isArray(raw)
+    ? raw
+    : raw && typeof raw === 'object'
+      ? (raw as Record<string, unknown>).rankings
+      : raw
   if (!Array.isArray(list)) return []
   const read: NeteaseRanking[] = []
   for (const entry of list) {
@@ -780,6 +792,7 @@ function readPlayer(raw: unknown): NeteasePlayerState | null {
     signedIn: typeof state.signedIn === 'boolean' ? state.signedIn : null,
     signingIn: state.signingIn === true,
     playing: state.playing === true,
+    mode: typeof state.mode === 'string' ? state.mode : undefined,
     volume: clamp(count(state.volume, 0.8), 0, 1),
     track: readTrack(state.track),
     liked: typeof state.liked === 'boolean' ? state.liked : null,
@@ -810,8 +823,21 @@ function rememberPlayed(track: NeteaseTrack): void {
  * here too, so the app is drawn the same whichever answered. */
 export function receiveState(state: NeteasePlayerState): void {
   const before = useNetease.getState().track
-  useNetease.setState(fromPlayer(state))
+  const said = readMode(state.mode)
+  useNetease.setState({ ...fromPlayer(state), ...(said === undefined ? {} : { mode: modeSaid(said) }) })
   if (state.track && (!before || songKey(before) !== songKey(state.track))) rememberPlayed(state.track)
+}
+
+/** A mode the page said, taken as it is — unless it's the one the app just pressed away from and the page hasn't
+ * caught up yet: the app's own press keeps the mode it shows until the page's answer is due (its handler tells it
+ * 350 ms after the press), then the page is believed again. */
+let modePressed = { at: 0, from: 'list' as PlayMode, to: 'list' as PlayMode }
+
+function modeSaid(said: PlayMode): PlayMode {
+  const current = useNetease.getState().mode
+  const fresh = performance.now() - modePressed.at > 1500
+  if (!fresh && said === modePressed.from && said !== modePressed.to) return current
+  return said
 }
 
 /** A playlist's own head, as its `playlist` answer says it (a ranking's answer says its update frequency too). */
@@ -843,7 +869,10 @@ export function receivePlaylist(id: string, songs: NeteaseSong[], meta?: Playlis
   // A Play all pressed before the songs came: the first it can play starts now, its id and its list known.
   if (playAllWhenReady.delete(id) && isInHost()) {
     const first = songs.find((song) => song.playable)
-    if (first) netease({ action: 'play', value: first.id, list: id })
+    if (first) {
+      rememberQueue(id)
+      netease({ action: 'play', value: first.id, list: id })
+    }
   }
 }
 
@@ -890,7 +919,10 @@ export function receiveHome(home: NeteaseHome): void {
     // The page's cards are known; its day's songs are still being read (the wait for them goes on).
     useNetease.setState({ home, homeAsking: { waiting: true, failed: false }, heard: true })
     homeWait = setTimeout(
-      () => useNetease.setState((state) => (state.homeAsking.waiting ? { homeAsking: { waiting: false, failed: true } } : state)),
+      () =>
+        useNetease.setState((state) =>
+          state.homeAsking.waiting ? { homeAsking: { waiting: false, failed: true } } : state,
+        ),
       HOME_WAIT,
     )
     return
@@ -945,7 +977,10 @@ export function requestHome(again = false): void {
   if (isInHost()) {
     netease({ action: 'home' })
     homeWait = setTimeout(
-      () => useNetease.setState((state) => (state.homeAsking.waiting ? { homeAsking: { waiting: false, failed: true } } : state)),
+      () =>
+        useNetease.setState((state) =>
+          state.homeAsking.waiting ? { homeAsking: { waiting: false, failed: true } } : state,
+        ),
       HOME_WAIT,
     )
     return
@@ -986,7 +1021,10 @@ export function requestRecent(again = false): void {
   if (isInHost()) {
     netease({ action: 'recent' })
     recentWait = setTimeout(
-      () => useNetease.setState((state) => (state.recentAsking.waiting ? { recentAsking: { waiting: false, failed: true } } : state)),
+      () =>
+        useNetease.setState((state) =>
+          state.recentAsking.waiting ? { recentAsking: { waiting: false, failed: true } } : state,
+        ),
       RECENT_WAIT,
     )
     return
@@ -1027,7 +1065,10 @@ export function requestProfile(again = false): void {
   if (isInHost()) {
     netease({ action: 'profile' })
     profileWait = setTimeout(
-      () => useNetease.setState((state) => (state.profileAsking.waiting ? { profileAsking: { waiting: false, failed: true } } : state)),
+      () =>
+        useNetease.setState((state) =>
+          state.profileAsking.waiting ? { profileAsking: { waiting: false, failed: true } } : state,
+        ),
       PROFILE_WAIT,
     )
     return
@@ -1067,11 +1108,17 @@ export function searchFor(query: string): void {
     useNetease.setState({ search: null, searchAsking: IDLE_ASKING })
     return
   }
-  useNetease.setState({ searchAsking: { waiting: true, failed: false }, ...(changed ? { searchTab: 'songs' as const } : {}) })
+  useNetease.setState({
+    searchAsking: { waiting: true, failed: false },
+    ...(changed ? { searchTab: 'songs' as const } : {}),
+  })
   if (isInHost()) {
     netease({ action: 'search', value: said })
     searchWait = setTimeout(
-      () => useNetease.setState((state) => (state.searchAsking.waiting ? { searchAsking: { waiting: false, failed: true } } : state)),
+      () =>
+        useNetease.setState((state) =>
+          state.searchAsking.waiting ? { searchAsking: { waiting: false, failed: true } } : state,
+        ),
       SEARCH_WAIT,
     )
     return
@@ -1336,7 +1383,10 @@ export function usePlaylistMeta(id: string): NeteaseList | null {
   const library = useNetease((state) => state.library)
   const search = useNetease((state) => state.search)
   const rankings = useNetease((state) => state.rankings)
-  return useMemo(() => findPlaylistMeta({ lists, home, library, search, rankings }, id), [lists, home, library, search, rankings, id])
+  return useMemo(
+    () => findPlaylistMeta({ lists, home, library, search, rankings }, id),
+    [lists, home, library, search, rankings, id],
+  )
 }
 
 /** One of NetEase's rankings as the app knows it (its card for its page's head), or `null` for one not known
@@ -1448,6 +1498,7 @@ export function playPlaylist(playlistId: string): void {
   const songs = useNetease.getState().playlists[playlistId]?.songs
   const first = songs?.find((song) => song.playable)
   if (first) {
+    rememberQueue(playlistId)
     netease({ action: 'play', value: first.id, list: playlistId })
     return
   }
@@ -1463,6 +1514,7 @@ export function playSong(playlistId: string, song: NeteaseSong): void {
     return
   }
   if (!song.playable) return
+  rememberQueue(playlistId)
   netease({ action: 'play', value: song.id, list: playlistId })
 }
 
@@ -1493,6 +1545,8 @@ export function playFound(song: NeteaseSong): void {
   }
   if (!song.playable) return
   const list = contextOfSong(song.id)
+  if (list) rememberQueue(list)
+  else forgetQueue()
   netease(list ? { action: 'play', value: song.id, list } : { action: 'play', value: song.id })
 }
 
@@ -1505,22 +1559,140 @@ export function playDaily(): void {
     previewRun((preview) => preview.playHistory(first))
     return
   }
+  rememberQueue('daily')
   netease({ action: 'play', value: first.id, list: 'daily' })
 }
 
-/** The next song, or the one before (within the song's first seconds: otherwise its start). */
-/** Its play mode's next one: its own play bar's button, whose mode the page says a moment after. */
-export function cycleMode(): void {
-  if (!isInHost()) return
-  netease({ action: 'cycleMode' })
+/** The songs of a list the app has read, as the page names its lists (`daily`, `recent`, `search`, `artist:<id>`, a
+ * playlist's or a ranking's id). */
+function songsOfList(list: string): NeteaseSong[] {
+  const state = useNetease.getState()
+  if (list === 'daily') return state.home?.daily ?? []
+  if (list === 'recent') return state.recent ?? []
+  if (list === 'search') return state.search?.songs ?? []
+  const artist = 'artist:'
+  if (list.startsWith(artist)) return state.artists[list.slice(artist.length)]?.songs ?? []
+  return state.playlists[list]?.songs ?? []
 }
 
-export function skip(direction: 1 | -1): void {
+/** The cabin's language, for the app's own words: NeteaseApp sets the page's `lang` to it. The lists without a name
+ * of their own (the day's, the recent chart's, a search's) are named with them. */
+function languageNow(): string {
+  try {
+    return typeof document === 'undefined' ? '' : document.documentElement.lang
+  } catch {
+    return ''
+  }
+}
+
+/** What a list is, for the app's own state (`from`): its kind, and its name (its own for a playlist or a chart, the
+ * app's word for one without). */
+function fromOfList(list: string): NeteaseFrom {
+  const state = useNetease.getState()
+  const words = neteaseWords(languageNow())
+  if (list === 'daily') return { kind: 'daily', name: words.daily }
+  if (list === 'recent') return { kind: 'recent', name: words.recent }
+  if (list === 'search') return { kind: 'search', name: state.search?.query || words.search }
+  const artist = 'artist:'
+  if (list.startsWith(artist)) {
+    return { kind: 'artist', name: state.artists[list.slice(artist.length)]?.name || words.artist }
+  }
+  const ranking = state.rankings?.some((one) => one.id === list) ?? false
+  const name = state.playlists[list]?.meta?.name || findPlaylistMeta(state, list)?.name || ''
+  return { kind: ranking ? 'ranking' : 'playlist', name }
+}
+
+/** The list what plays came from, as the app last set it: the page's own order, and the order's ids. `null` while the
+ * app knows no list of what plays. */
+let queue: { list: string; ids: string[] } | null = null
+
+/** A list as the page's own queue: the songs it can play, in its own order (a song the account's rights don't allow
+ * is never a next: the page has no sound for it). */
+function queueOf(list: string): { list: string; ids: string[] } | null {
+  const ids = songsOfList(list)
+    .filter((song) => song.playable)
+    .map((song) => song.id)
+  return ids.length > 0 ? { list, ids } : null
+}
+
+/** The app's queue set to the list a song was played from (its own order, and where it came from). */
+function rememberQueue(list: string): void {
+  queue = queueOf(list)
+  useNetease.setState({ from: fromOfList(list) })
+}
+
+/** Forgets the queue: a song of no list the app has read (the page's own next/previous is all there is for it). */
+function forgetQueue(): void {
+  queue = null
+  useNetease.setState({ from: null })
+}
+
+/** The list what plays belongs to, for a skip: the app's own queue while the song is in it, else the list the app
+ * knows the song from (the page's own player moved on, or a state came from somewhere else). */
+function currentQueue(): { list: string; ids: string[] } | null {
+  const { track } = useNetease.getState()
+  if (!track?.id) return null
+  if (queue && queue.ids.includes(track.id)) return queue
+  const list = contextOfSong(track.id)
+  const known = list ? queueOf(list) : null
+  if (!known) return null
+  queue = known
+  useNetease.setState({ from: fromOfList(known.list) })
+  return known
+}
+
+/** The song a skip goes to, computed from the list's own order and the play mode: `null` when the app knows no list
+ * of what plays (the page's own next/previous is asked then).
+ *
+ * - 列表循环: the list's next (or previous), its start after its end (and its end before its start).
+ * - 单曲循环: the same walk for a manual skip (only the song's own end repeats; its next is still the list's).
+ * - 随机: a random song of this list, never the one playing (a list of one has nowhere else to go). */
+function targetOf(direction: 1 | -1): { list: string; id: string; song: NeteaseSong | null } | null {
+  const state = useNetease.getState()
+  const playing = state.track?.id
+  const known = currentQueue()
+  if (!known || !playing) return null
+  const at = known.ids.indexOf(playing)
+  if (at < 0) return null
+  const songs = songsOfList(known.list)
+  const pick = (id: string) => ({ list: known.list, id, song: songs.find((song) => song.id === id) ?? null })
+  if (state.mode === 'shuffle' && known.ids.length > 1) {
+    const others = known.ids.filter((id) => id !== playing)
+    return pick(others[Math.floor(Math.random() * others.length)])
+  }
+  return pick(known.ids[(at + direction + known.ids.length) % known.ids.length])
+}
+
+/** The next song, or the one before. With a list what plays is from (and the song in it) the song is computed here and
+ * asked by id with its list: the page's own queue is set to that list from that song, so the switch is the page's own
+ * and its order is the list's. With no list known, the page's own next/previous is asked, as before.
+ *
+ * Returns the song it asked for when it knows it (the player bar shows it at once), `null` when the page's own
+ * button answered for the app. */
+export function skip(direction: 1 | -1): NeteaseSong | null {
   if (!isInHost()) {
     previewRun((preview) => preview.skip(direction))
-    return
+    return null
+  }
+  const target = targetOf(direction)
+  if (target) {
+    netease({ action: 'play', value: target.id, list: target.list })
+    return target.song
   }
   netease({ action: direction === 1 ? 'next' : 'prev' })
+  return null
+}
+
+/** Its play mode's next one (列表循环 -> 随机 -> 单曲循环 -> 列表循环), as its own play bar's button presses it. The
+ * app shows the new mode at once and says it over the player; the page's own state confirms it a moment later (its
+ * button's own order is the same). Returns the mode the press went to. */
+export function cycleMode(): PlayMode {
+  const from = useNetease.getState().mode
+  const to = nextPlayMode(from)
+  modePressed = { at: performance.now(), from, to }
+  useNetease.setState({ mode: to })
+  if (isInHost()) netease({ action: 'cycleMode' })
+  return to
 }
 
 /** A song of the session's recent list pressed (preview only: the hidden page plays by id, as `playFound`). */
@@ -1719,7 +1891,9 @@ export const neteasePlayer: MusicPlayer = {
   volume: () => useNetease.getState().volume,
   sendVolume: (share) => fadeVolume(share),
   setVolume: (share) => setVolume(share),
-  skip: (direction) => netease({ action: direction > 0 ? 'next' : 'prev' }),
+  skip: (direction) => {
+    skip(direction)
+  },
   subscribe: (changed) =>
     useNetease.subscribe((now, before) => {
       if (now.playing && !before.playing) changed(true)

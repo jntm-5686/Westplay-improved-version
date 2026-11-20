@@ -16,6 +16,9 @@ import {
  * and Back always goes up exactly one step.
  */
 interface NavStore extends Nav {
+  /** The full-screen player is on its way out (its page shrinking back into the player bar): the app's rail, top bar
+   * and player bar fade back in under it, and it only calls Back when its animation has finished. */
+  leaving: boolean
   /** A rail tab pressed: its own page (and its pages over it put away if it was already showing). */
   openTab(tab: Tab): void
   /** A card pressed: its page, or the one already open (with the pages over it dropped). */
@@ -28,6 +31,7 @@ interface NavStore extends Nav {
 
 export const useNav = create<NavStore>()((set) => ({
   ...initialNav(),
+  leaving: false,
   openTab: (tab) => set((now) => goToTabIn(now, tab)),
   open: (page) => set((now) => openPageIn(now, page)),
   goBack: () =>

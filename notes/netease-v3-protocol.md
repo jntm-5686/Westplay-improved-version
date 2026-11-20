@@ -71,6 +71,7 @@
     "signedIn": true,
     "signingIn": false,
     "playing": true,
+    "mode": "list",
     "volume": 0.8,
     "track": {
       "id": "168091", "title": "蓝莲花", "artist": "许巍", "album": "时光.漫步",
@@ -86,6 +87,9 @@
 ```
 
 - `state` 整体可能为 `null`（网易云没在跑）。`signedIn` 为 `null` 时页面还不知道（不推送）。
+- `mode`：播放条自己的模式，`list`（列表循环）/ `shuffle`（随机）/ `one`（单曲循环）；播放条上没有模式按钮时为
+  `null`（v1/v2 字段只增不改，旧页面不推它）。**r10.3 的 UI 漏读了它**：按钮切了页面、状态却没有回到 UI，看起来
+  "点不动"；r10.4 修（`readPlayer` 读 `mode`，UI 本地先乐观切换、再由页面的状态确认）。
 - `track.id` 永远是字符串（数字 id 也序列化成字符串）。
 - `album` 由同源接口补（播放条本身没有专辑名）：页面从已知歌曲缓存/`/api/v3/song/detail` 取。
 - `liked`：当前曲是否在「我喜欢的音乐」里（`null`：未登录/尚未读到）。
@@ -287,6 +291,8 @@
   - `PlaylistPage` 新增可选 `meta?: PlaylistMeta | null`（`openRanking` 的回答一定带）。
   - `NeteaseCommand` 新增 `{action:'rankings'}`、`{action:'profile'}`、`{action:'openRanking', value:string}`。
 - store 新增字段：`rankings: NeteaseRanking[]|null`、`rankingsAsking: Asking`、`profile: NeteaseProfile|null`、`profileAsking: Asking`。
+- **r10.4 新增**：`PlayMode`（`'list'|'shuffle'|'one'`）、`NeteaseFrom` = `{ kind: 'playlist'|'ranking'|'daily'|'recent'|'search'|'artist', name: string }`；
+  store 新增 `from: NeteaseFrom|null`（当前播放来源，UI 不展示，排查/接入用）。`NeteasePlayerState` 的 `mode?` 现在真的被读了。
 
 ### 4.2 函数（UI 直接用）
 
@@ -307,6 +313,12 @@
 - `playPause()`、`playSong(playlistId, song)`（带 `list` 上下文）、`playFound(song)`（自动找它所属的列表）、
   `playDaily()`（`list: 'daily'`）、`playPlaylist(id)`、`skip(±1)`、`seek(seconds)`、`setVolume(share, done?)`、
   `setLiked(liked)`、`refresh()`
+- `cycleMode(): PlayMode`：切到下一个模式（列表循环→随机→单曲循环→列表循环），本地立即生效并返回新模式（Toast 用），
+  同时下发 `cycleMode` 让页面自己的播放条跟上；页面回推的 `state.mode` 再确认（1.5s 内的旧状态不会把按钮拨回去）。
+- `nextPlayMode(mode)`：导出的纯函数，与页面自己的顺序一致。
+- `skip(direction): NeteaseSong|null`：**确定性上一首/下一首**（见 §4.4）：知道当前列表与当前歌时直接算出目标歌并
+  `play {value, list}`（页面用自己的 `player.addTo` 当队列），把目标歌返回（播放条立即显示它）；没有列表时才退回页面
+  自己的 `next/prev`，返回 `null`。
 - `contextOfSong(songId)`：导出，返回这首歌已知的列表 key（`playlist/ranking id`、`daily`、`recent`、`search`、
   `artist:<id>`），没有则 `null`。UI 一般不用它（`playFound` 已内部使用），排查时可用。
 
@@ -323,6 +335,23 @@
 `preview.ts` 提供 `createPreview()`：`read()/songs()/home()/library()/recent()/search()/artist()/rankings()/ranking(id)/profile()`
 及播放控制。无 host 时 `requestHome/requestLibrary/requestRecent/requestRankings/requestProfile/openRanking` 都从预览答，
 所以整个 UI 在浏览器里可渲染、可点、可播。
+
+### 4.4 队列与上一首/下一首（r10.4）
+
+- **队列**：UI 自己记 `{ list, ids }`（模块内，不进 store），`ids` 是那个列表里**可播**的歌、按列表原序。`playSong` /
+  `playFound` / `playPlaylist` / `playDaily`（以及 Play all 等歌曲还没到时的那次）都会把队列设成来源列表；`playFound`
+  找不到列表时清空队列。`useNetease().from` 同时给出 `{kind, name}`（歌单/榜单用自己的名字，`daily/recent/search/artist`
+  用应用的词）。
+- **上一首/下一首**：`skip(±1)` 先取「当前歌在这个列表里的下标」——队列还在就用它，否则用 `contextOfSong` 现找（页面自己
+  切走了也找得回来）；找不到列表才退回页面的 `next/prev`。找到时：
+  - `list`（列表循环）与 `one`（单曲循环）：`ids[(at+direction+len)%len]`——**末尾回到开头**，开头上一首去末尾；
+    单曲循环只让「一首歌自己放完」重复，手动切歌仍是列表的下一首。
+  - `shuffle`（随机）：在 `ids` 里随机，排除当前歌（列表只有一首时只能它自己）。
+  - 不可播的歌永远不会成为目标（页面没有它的声音）。
+- 目标歌以 `{action:'play', value:<id>, list:<list>}` 下发：页面 `startQueue(context, at)` 用自己的 `player.addTo`
+  把整个列表当队列、从目标歌开始，所以切歌是页面自己的（实测 100–175ms 出声），顺序仍是列表的。
+- 队列与页面自己的队列**不需要一致**：页面按 UI 给的目标歌重设自己的队列即可；页面自己的 `next/prev` 只在没有列表时用。
+- 页面自己的模式（`state.mode`）决定「一首歌自己放完之后」的行为（列表/随机/单曲），UI 的手动切歌只按上面的规则走。
 
 ---
 
@@ -507,6 +536,8 @@
 5. 播放：任意歌曲点击用 `playFound(song)`（不需要知道歌单）或 `playSong(playlistId, song)`；前者会自动带上它所属的
    列表上下文，让页面用队列播放（实测切歌 100–175ms 出声）。播放状态一律读 `state`；`addTo` 后页面状态同步，脚本
    立刻推一条 state（实测 15–21ms），每秒心跳只是兜底。进度条用 `positionOf(track, playing, trackAt, useNow(playing))`。
+   上一首/下一首一律用 `skip(±1)`（§4.4）：它按当前列表的序算目标歌并返回，播放条可立刻 `expectSong(它)`；不要自己
+   再发 `next/prev`（那只是没有列表时的兜底）。播放模式用 `cycleMode()`（返回新模式，Toast 用它），按钮用 `ModeButton`。
 6. 红心：`setLiked(!liked)`，等 `like` 消息（`state.liked` 只在页面确认后变）；失败看 `likeFailure.reason`。
 7. 预览：`preview.ts` 已含榜单/资料/每日推荐假数据，浏览器里整个 UI 应能渲染与点播。
 8. 不要改 `netease.ts` / `preview.ts` / `crates/*`：缺字段/缺函数在 notes 里留需求，由后端分身补。

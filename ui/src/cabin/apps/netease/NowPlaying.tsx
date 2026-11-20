@@ -1,4 +1,4 @@
-import { type CSSProperties, Fragment, useEffect, useLayoutEffect, useRef } from 'react'
+import { type CSSProperties, Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useCoverPalette } from './coverColors'
 import { Cover, Slider, clock } from './parts'
 import {
@@ -13,14 +13,50 @@ import {
   ModeGlyph,
 } from './glyphs'
 import { openTab, useNav } from './nav'
-import { expectChange, usePlayback } from './playback'
-import { cycleMode, playPause, positionOf, seek, setLiked, setVolume, showToast, skip, useNetease, useNow } from './netease'
+import { expectChange, expectSong, usePlayback } from './playback'
+import {
+  cycleMode,
+  playPause,
+  positionOf,
+  seek,
+  setLiked,
+  setVolume,
+  showToast,
+  skip,
+  useNetease,
+  useNow,
+} from './netease'
 import { fullScreen, leftFullScreen } from './stack'
 import { useNeteaseWords } from './strings'
 
 /** The name its own play mode goes by in the bar's words. */
 function modeName(words: ReturnType<typeof useNeteaseWords>, mode: 'list' | 'shuffle' | 'one'): string {
   return mode === 'shuffle' ? words.modeShuffle : mode === 'one' ? words.modeOne : words.modeList
+}
+
+/** Its play mode's button (the player bar's, and the full-screen player's): pressed, the next mode, said over the
+ * player at once ("随机播放"), while the page's own bar takes it a moment later. The mark is the mode it is: the list
+ * round and round, its arrows crossed, the one song's own mark. */
+export function ModeButton({ large = false }: { large?: boolean }) {
+  const words = useNeteaseWords()
+  const mode = useNetease((state) => state.mode)
+  const name = modeName(words, mode)
+  const press = () => {
+    // The toast names the mode the press went to (the page's own state confirms it a moment later).
+    showToast(modeName(words, cycleMode()))
+  }
+  return (
+    <button
+      type="button"
+      className={`ne-player-mode${large ? ' large' : ''}`}
+      onClick={press}
+      aria-label={`${words.mode} · ${name}`}
+      title={`${words.mode} · ${name}`}
+      data-mode={mode}
+    >
+      <ModeGlyph mode={mode} />
+    </button>
+  )
 }
 
 /** The NetEase app's player: the bar at the screen's foot (always there), and its Now Playing page. */
@@ -107,12 +143,14 @@ function Progress({ position, duration }: { position: number; duration: number }
 }
 
 /** The controls: Previous, Play or Pause (big, in the accent), Next. Next and Previous say at once that a song
- * is on its way (the page names it a moment later); the buttons never wait for it. */
+ * is on its way: with the list known, the song they go to is already known and goes on the bar by its own name; a
+ * page's own next (no list known) names it a moment later. */
 function Controls({ playing, disabled = false }: { playing: boolean; disabled?: boolean }) {
   const words = useNeteaseWords()
   const step = (direction: 1 | -1) => {
-    expectChange()
-    skip(direction)
+    const next = skip(direction)
+    if (next) expectSong(next)
+    else expectChange()
   }
   return (
     <div className="ne-controls">
@@ -142,13 +180,13 @@ function Controls({ playing, disabled = false }: { playing: boolean; disabled?: 
 }
 
 /**
- * The player at the screen's foot, as the desktop player's: the song's cover and names at the left (pressed,
- * its Now Playing page), the controls, the time, and the volume. It never steps aside: the app's own pages
- * make room for it.
+ * The player at the screen's foot, as the desktop player's: the song's time across the whole top (its bar, and the
+ * two times at its sides), and under it the song's cover and names at the left (pressed, its Now Playing page), the
+ * controls in the middle, and the play mode, the heart and the volume at the right. It never steps aside: the app's
+ * own pages make room for it.
  */
 export function PlayerBar() {
   const words = useNeteaseWords()
-  const mode = useNetease((state) => state.mode)
   const track = useNetease((state) => state.track)
   const playing = useNetease((state) => state.playing)
   const volume = useNetease((state) => state.volume)
@@ -158,30 +196,38 @@ export function PlayerBar() {
   const position = positionOf(track, playing, trackAt, now)
   return (
     <footer className="ne-player" aria-label={words.nowPlaying} aria-busy={hoping ? true : undefined}>
-      <button type="button" className="ne-player-song" onClick={() => openTab('now')} aria-label={words.nowPlaying}>
-        <Cover name={track?.album || track?.title || '♪'} cover={track?.cover ?? null} className="ne-player-cover" />
-        <span className="ne-player-text">
-          <span className="ne-player-name">{track?.title ?? words.nothingPlaying}</span>
-          <span className="ne-player-artist">{track?.artist ?? words.nothingPlayingHint}</span>
-        </span>
-        {hoping && <span className="ne-hop" role="status" aria-label={words.hoping} title={words.hoping} />}
-      </button>
-      <Controls playing={playing} disabled={!track} />
-      <button
-        type="button"
-        className="ne-player-mode"
-        onClick={cycleMode}
-        aria-label={`${words.mode} · ${modeName(words, mode)}`}
-        title={`${words.mode} · ${modeName(words, mode)}`}
-        data-mode={mode}
-      >
-        <ModeGlyph mode={mode} />
-      </button>
-      <LikeButton />
       <Progress position={position} duration={track?.duration ?? 0} />
-      <VolumeControl volume={volume} />
+      <div className="ne-player-row">
+        <button type="button" className="ne-player-song" onClick={() => openTab('now')} aria-label={words.nowPlaying}>
+          <Cover name={track?.album || track?.title || '♪'} cover={track?.cover ?? null} className="ne-player-cover" />
+          <span className="ne-player-text">
+            <span className="ne-player-name">{track?.title ?? words.nothingPlaying}</span>
+            <span className="ne-player-artist">{track?.artist ?? words.nothingPlayingHint}</span>
+          </span>
+          {hoping && <span className="ne-hop" role="status" aria-label={words.hoping} title={words.hoping} />}
+        </button>
+        <Controls playing={playing} disabled={!track} />
+        <div className="ne-player-actions">
+          <ModeButton />
+          <LikeButton />
+          <VolumeControl volume={volume} />
+        </div>
+      </div>
     </footer>
   )
+}
+
+/** Where the full-screen page is in its way in or out: `enter` is its first painted frame (at the player bar's
+ * place), `open` the page itself, `leave` its way back down into that bar. */
+type Phase = 'enter' | 'open' | 'leave'
+
+/** How long the page's way out takes, as the stylesheet has it for this screen and this setting (`--ne-now-out`:
+ * 340 ms, less on the short and 7" screens, 120 ms calm), plus a frame so the transition has certainly finished when
+ * the app's page behind is shown again. */
+function leaveDuration(element: HTMLElement | null): number {
+  if (!element) return 360
+  const said = Number.parseFloat(getComputedStyle(element).getPropertyValue('--ne-now-out'))
+  return Number.isFinite(said) ? said + 20 : 360
 }
 
 /** Now Playing: the song large, its time, the controls and the volume, as NetEase's desktop player has it.
@@ -195,7 +241,13 @@ export function PlayerBar() {
  *
  * It's the app's full screen (NeteaseApp.tsx sets the app's `data-immersive` from `stack.ts`'s `fullScreen`): the
  * app's rail, top bar and player bar are out of sight under it, and the page itself carries the way back, a round
- * button at its top left — Back out of the app's history, or Home where there's none behind it. */
+ * button at its top left — Back out of the app's history, or Home where there's none behind it.
+ *
+ * Both ways are one state machine (NowPlaying.tsx's `Phase`): opened, it grows up out of the player bar at the foot
+ * (the iOS sheet's own feel: the backdrop's colours first, the cover after it, the words and the controls after
+ * that); closed, it shrinks back into that bar and fades, and only then does the app show the page behind it. The
+ * stylesheet has the curves and times (netease.css's `--ne-now-*`), so the calm setting, the cab's reduced motion and
+ * the 7" screen each get their own (`leaveDuration` reads the time back). */
 export function NowPlayingPage() {
   const words = useNeteaseWords()
   const track = useNetease((state) => state.track)
@@ -208,29 +260,78 @@ export function NowPlayingPage() {
   // The drawn cover's name: the cover is named by its album, or by the song when it has none.
   const art = track ? track.album || track.title : ''
   const layers = useCoverPalette(track?.cover ?? null, art)
-  // The page fades and scales in each time it's opened (it's kept mounted while another page shows, so the app's
-  // own layer switch can't do it): the class is put back before the frame it shows in.
   const shown = useNav(fullScreen)
   const open = useNav((state) => state.open)
   const root = useRef<HTMLDivElement>(null)
+  const [phase, setPhase] = useState<Phase>('open')
+  const leaving = useRef(false)
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  // Opened: the page starts at the player bar's place, a hair small and clear of the screen's foot, and comes up on
+  // the next frame — the start has to be painted before the transition to the open one can run.
   useLayoutEffect(() => {
-    const element = root.current
-    if (!shown || !element) return
-    element.classList.remove('entering')
-    void element.offsetWidth
-    element.classList.add('entering')
+    if (!shown) return
+    leaving.current = false
+    setPhase('enter')
+    let inside = 0
+    const outside = requestAnimationFrame(() => {
+      inside = requestAnimationFrame(() => setPhase('open'))
+    })
+    return () => {
+      cancelAnimationFrame(outside)
+      cancelAnimationFrame(inside)
+    }
   }, [shown])
-  /** Out of the full screen: the app's own Back, or Home when there's nowhere behind it (never no way out). */
-  const leave = () => useNav.setState((nav) => leftFullScreen(nav))
+  // The page left some other way while its own way out was on its way: the app's bars are its own again.
+  useEffect(() => {
+    if (shown || !leaving.current) return
+    leaving.current = false
+    clearTimeout(timer.current)
+    useNav.setState({ leaving: false })
+    setPhase('open')
+  }, [shown])
+  useEffect(
+    () => () => {
+      clearTimeout(timer.current)
+      leaving.current = false
+      useNav.setState({ leaving: false })
+    },
+    [],
+  )
+  /** Out of the full screen: the page shrinks back into the player bar and fades, and only then does the app go back
+   * to the page behind it (Back out of the app's history, or Home where there's none behind it). A press while it's
+   * on its way out does nothing: the way out is one. */
+  const leave = () => {
+    if (leaving.current || !shown) return
+    leaving.current = true
+    setPhase('leave')
+    // The app's own bars come back under it as it goes down, so what is behind is there before it is shown again.
+    useNav.setState({ leaving: true })
+    clearTimeout(timer.current)
+    timer.current = setTimeout(() => {
+      leaving.current = false
+      useNav.setState((nav) => ({ ...leftFullScreen(nav), leaving: false }))
+    }, leaveDuration(root.current))
+  }
   if (!track) {
     return (
-      <div className="ne-scroll">
-        <div className="ne-empty">
-          <span className="ne-empty-mark">
-            <PlayGlyph />
-          </span>
-          <h3>{words.nothingPlaying}</h3>
-          <p>{words.nothingPlayingHint}</p>
+      <div ref={root} className="ne-now-page" data-phase={phase}>
+        <div className="ne-now-stage">
+          <header className="ne-now-head">
+            <button type="button" className="ne-now-back" aria-label={words.back} title={words.back} onClick={leave}>
+              <BackGlyph />
+            </button>
+            <span className="ne-kicker">{words.brand}</span>
+            <h2>{words.nowPlaying}</h2>
+          </header>
+          <div className="ne-now-empty">
+            <div className="ne-empty">
+              <span className="ne-empty-mark">
+                <PlayGlyph />
+              </span>
+              <h3>{words.nothingPlaying}</h3>
+              <p>{words.nothingPlayingHint}</p>
+            </div>
+          </div>
         </div>
       </div>
     )
@@ -257,7 +358,7 @@ export function NowPlayingPage() {
       '--ne-now-c': colours[2],
     }) as CSSProperties
   return (
-    <div ref={root} className={playing ? 'ne-now-page playing' : 'ne-now-page'} style={accent}>
+    <div ref={root} className={playing ? 'ne-now-page playing' : 'ne-now-page'} data-phase={phase} style={accent}>
       <div className="ne-now-backdrop" aria-hidden="true">
         <Cover name={art} cover={track.cover} className="ne-now-backdrop-cover" />
       </div>
@@ -325,7 +426,10 @@ export function NowPlayingPage() {
           <div className="ne-now-tools">
             <VolumeControl volume={volume} />
             <Controls playing={playing} />
-            <LikeButton large />
+            <div className="ne-now-actions">
+              <ModeButton large />
+              <LikeButton large />
+            </div>
           </div>
         </div>
       </div>
