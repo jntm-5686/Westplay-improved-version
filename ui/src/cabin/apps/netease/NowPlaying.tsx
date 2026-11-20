@@ -10,12 +10,18 @@ import {
   PreviousGlyph,
   UnplayableGlyph,
   VolumeGlyph,
+  ModeGlyph,
 } from './glyphs'
 import { openTab, useNav } from './nav'
 import { expectChange, usePlayback } from './playback'
-import { playPause, positionOf, seek, setLiked, setVolume, showToast, skip, useNetease, useNow } from './netease'
+import { cycleMode, playPause, positionOf, seek, setLiked, setVolume, showToast, skip, useNetease, useNow } from './netease'
 import { fullScreen, leftFullScreen } from './stack'
 import { useNeteaseWords } from './strings'
+
+/** The name its own play mode goes by in the bar's words. */
+function modeName(words: ReturnType<typeof useNeteaseWords>, mode: 'list' | 'shuffle' | 'one'): string {
+  return mode === 'shuffle' ? words.modeShuffle : mode === 'one' ? words.modeOne : words.modeList
+}
 
 /** The NetEase app's player: the bar at the screen's foot (always there), and its Now Playing page. */
 
@@ -142,6 +148,7 @@ function Controls({ playing, disabled = false }: { playing: boolean; disabled?: 
  */
 export function PlayerBar() {
   const words = useNeteaseWords()
+  const mode = useNetease((state) => state.mode)
   const track = useNetease((state) => state.track)
   const playing = useNetease((state) => state.playing)
   const volume = useNetease((state) => state.volume)
@@ -160,6 +167,16 @@ export function PlayerBar() {
         {hoping && <span className="ne-hop" role="status" aria-label={words.hoping} title={words.hoping} />}
       </button>
       <Controls playing={playing} disabled={!track} />
+      <button
+        type="button"
+        className="ne-player-mode"
+        onClick={cycleMode}
+        aria-label={`${words.mode} · ${modeName(words, mode)}`}
+        title={`${words.mode} · ${modeName(words, mode)}`}
+        data-mode={mode}
+      >
+        <ModeGlyph mode={mode} />
+      </button>
       <LikeButton />
       <Progress position={position} duration={track?.duration ?? 0} />
       <VolumeControl volume={volume} />

@@ -26,6 +26,11 @@ export interface NeteaseWords {
   queued: string
   /** A song or Next/Previous asked of the page and not answered yet: the small mark on the player bar. */
   hoping: string
+  /** The play mode's names, as its player bar's button says them (its own words for them). */
+  mode: string
+  modeList: string
+  modeShuffle: string
+  modeOne: string
 
   /** Whose account it is. */
   account: string
@@ -247,6 +252,10 @@ export function neteaseWords(locale: string): NeteaseWords {
       preview: '预览数据',
       queued: '已请网易云播放这首歌',
       hoping: '正在切歌…',
+  mode: '播放模式',
+  modeList: '列表循环',
+  modeShuffle: '随机播放',
+  modeOne: '单曲循环',
       account: '账户',
       signedIn: '已登录',
       signedOut: '未登录',
@@ -350,7 +359,7 @@ export function neteaseWords(locale: string): NeteaseWords {
       loginInfo: '登录信息',
       loginInfoHint: '登录和退出都在电脑上的网易云页面里完成，车里只显示状态。',
       about: '关于',
-      aboutApp: '网易云音乐车机版 V1.1 · WestPlay',
+      aboutApp: '网易云音乐车机版 V1.2 · WestPlay',
       aboutData: '内容来自电脑上隐藏运行的网易云网页版。',
       aboutPlayer: '播放、红心和歌单由网易云网页完成，车机界面只负责展示与控制。',
       aboutPreview: '当前在浏览器里预览：歌单、歌曲和账号都是编出来的，不是真实数据。',
@@ -419,6 +428,10 @@ export function neteaseWords(locale: string): NeteaseWords {
     preview: 'Preview data',
     queued: 'Asked NetEase to play this song',
     hoping: 'Switching…',
+  mode: 'Play mode',
+  modeList: 'Repeat list',
+  modeShuffle: 'Shuffle',
+  modeOne: 'Repeat one',
     account: 'Account',
     signedIn: 'Signed in',
     signedOut: 'Signed out',
@@ -526,7 +539,7 @@ export function neteaseWords(locale: string): NeteaseWords {
     loginInfo: 'Account',
     loginInfoHint: 'Signing in and out happen in NetEase’s page on the PC; the cab only shows it.',
     about: 'About',
-    aboutApp: 'NetEase Music in the cab · V1.1 · WestPlay',
+    aboutApp: 'NetEase Music in the cab · V1.2 · WestPlay',
     aboutData: 'What’s shown is read live from the NetEase web player running hidden on the PC.',
     aboutPlayer: 'Playback, the heart and the playlists are NetEase’s page; this screen draws and steers them.',
     aboutPreview: 'Previewing in a browser: the playlists, songs and account are made up, not real.',

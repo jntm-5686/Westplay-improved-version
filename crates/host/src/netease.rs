@@ -71,6 +71,8 @@ pub enum Command {
     Volume {
         value: f64,
     },
+    /// Its play mode's next one (列表循环 -> 随机 -> 单曲循环 -> 列表循环), as its own button presses it.
+    CycleMode,
     /// Its volume for a fade (musicWithGame.ts, fade.ts): the sound's level alone, never the app's own choice of it.
     /// A fade out that set the player's volume would leave it silent if the player was left mid-fade, the app's
     /// volume as it was (`None` when it was never set).
@@ -789,6 +791,9 @@ pub struct State {
     pub playing: bool,
     #[serde(default, deserialize_with = "some_f64")]
     pub volume: f64,
+    /// Its play mode: `list` (列表循环), `shuffle` (随机) or `one` (单曲循环); `None` while its page shows none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode: Option<String>,
     #[serde(default)]
     pub track: Option<Track>,
     /// The playing song's own liked state, as the page read it (`null`: not known yet, or signed out).
@@ -813,6 +818,8 @@ struct PageState {
     playing: bool,
     #[serde(default, deserialize_with = "some_f64")]
     volume: f64,
+    #[serde(default)]
+    mode: Option<String>,
     #[serde(default)]
     track: Option<Track>,
     #[serde(default)]
@@ -1089,6 +1096,7 @@ impl Netease {
                             signed_in,
                             playing: page.playing,
                             volume: volume_of(page.volume),
+                            mode: page.mode.filter(|mode| matches!(mode.as_str(), "list" | "shuffle" | "one")),
                             track: page.track.map(Track::checked),
                             liked: page.liked,
                             lists: self.lists.borrow().clone(),
@@ -1515,6 +1523,7 @@ mod tests {
                 signed_in: None,
                 playing: false,
                 volume: 0.8,
+                mode: None,
                 track: None,
                 liked: None,
                 lists: None,
@@ -1589,6 +1598,7 @@ mod tests {
             signed_in: page.signed_in.expect("signed in"),
             playing: page.playing,
             volume: volume_of(page.volume),
+            mode: page.mode,
             track: page.track.map(Track::checked),
             liked: page.liked,
             lists: page.lists.expect("lists").into_iter().filter_map(Playlist::checked).collect(),
@@ -1636,6 +1646,7 @@ mod tests {
             signed_in: true,
             playing: true,
             volume: 0.8,
+            mode: Some("list".into()),
             track: Some(Track {
                 id: "123".into(),
                 title: "歌名".into(),

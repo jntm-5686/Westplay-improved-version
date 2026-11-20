@@ -324,3 +324,29 @@ export function Equalizer({ playing }: { playing: boolean }) {
     </span>
   )
 }
+
+/** The play mode's own mark, as the player bar's button shows it: the list round and round (`list`), its arrows
+ * crossed (`shuffle`), the same arrows with the one song's own mark (`one`). */
+export function ModeGlyph({ mode }: { mode: 'list' | 'shuffle' | 'one' }) {
+  if (mode === 'shuffle') {
+    return (
+      <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="M3 6h3.2c1.2 0 2.2.6 2.9 1.6l5 7.2c.7 1 1.7 1.6 2.9 1.6H21" />
+        <path d="M3 17.4h3.2c1.2 0 2.2-.6 2.9-1.6l1.3-1.9" />
+        <path d="M13.6 8.1l1.5-2.1c.7-1 1.7-1.6 2.9-1.6H21" />
+        <path d="M18.6 2.6 21 5l-2.4 2.4" />
+        <path d="M18.6 14.9 21 17.3l-2.4 2.4" />
+      </svg>
+    )
+  }
+  return (
+    <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M6.4 4.5h11.2A3.4 3.4 0 0 1 21 7.9v8.2a3.4 3.4 0 0 1-3.4 3.4H6.4A3.4 3.4 0 0 1 3 16.1V7.9a3.4 3.4 0 0 1 3.4-3.4Z" />
+      <path d="M8.6 10.4 10.6 8.4l2 2-2 2" />
+      <path d="M15.4 13.6l-2 2-2-2 2-2" />
+      {mode === 'one' ? (
+        <text x="12" y="13.2" textAnchor="middle" fontSize="7.5" fontWeight="700" fill="currentColor" stroke="none">1</text>
+      ) : null}
+    </svg>
+  )
+}

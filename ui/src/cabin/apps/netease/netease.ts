@@ -195,8 +195,13 @@ export interface Asking {
 export const IDLE_ASKING: Asking = { waiting: false, failed: false }
 
 /** The whole state the host's page sends (`netease` `state`). */
+/** Its play mode, as its own play bar names it: the list round and round, at random, one song over and over. */
+export type PlayMode = 'list' | 'shuffle' | 'one'
+
 export interface NeteasePlayerState {
   signedIn: boolean | null
+  /** Its play mode (`mode` in the page's state). */
+  mode?: string
   signingIn: boolean
   playing: boolean
   /** 0 to 1. */
@@ -228,6 +233,8 @@ export type NeteaseCommand =
   | { action: 'pause' | 'next' | 'prev' | 'refresh' }
   | { action: 'seek'; value: number }
   | { action: 'volume'; value: number }
+  /** Its play mode's next one (列表循环 -> 随机 -> 单曲循环 -> 列表循环), as its own button presses it. */
+  | { action: 'cycleMode' }
   /** Opens a playlist in the hidden page; its songs come back as a `playlist` message. */
   | { action: 'openPlaylist'; value: string }
   /** Opens one of NetEase's rankings (`value`: its id, the playlist's own); its songs come back as a `playlist`
@@ -296,6 +303,8 @@ interface NeteaseAppState {
   playing: boolean
   /** 0 to 1, the page's own player's. */
   volume: number
+  /** Its play mode: 列表循环, 随机, 单曲循环. */
+  mode: PlayMode
   track: NeteaseTrack | null
   /** Whether the playing song is liked (in 我喜欢的音乐): `null` until the page has read it. */
   liked: boolean | null
@@ -366,13 +375,24 @@ function fromPlayer(
   state: NeteasePlayerState,
 ): Pick<
   NeteaseAppState,
-  'signedIn' | 'signingIn' | 'playing' | 'volume' | 'track' | 'liked' | 'trackAt' | 'lists' | 'heard' | 'account'
+  | 'signedIn'
+  | 'signingIn'
+  | 'playing'
+  | 'volume'
+  | 'mode'
+  | 'track'
+  | 'liked'
+  | 'trackAt'
+  | 'lists'
+  | 'heard'
+  | 'account'
 > {
   return {
     signedIn: state.signedIn,
     signingIn: state.signingIn,
     playing: state.track ? state.playing : false,
     volume: state.volume,
+    mode: state.mode === 'shuffle' ? 'shuffle' : state.mode === 'one' ? 'one' : 'list',
     track: state.track,
     liked: state.liked ?? null,
     trackAt: performance.now(),
@@ -393,6 +413,7 @@ export const useNetease = create<NeteaseAppState>()(() => ({
         signedIn: null,
         signingIn: false,
         playing: false,
+        mode: 'list',
         volume: 0.8,
         track: null,
         liked: null,
@@ -1488,6 +1509,12 @@ export function playDaily(): void {
 }
 
 /** The next song, or the one before (within the song's first seconds: otherwise its start). */
+/** Its play mode's next one: its own play bar's button, whose mode the page says a moment after. */
+export function cycleMode(): void {
+  if (!isInHost()) return
+  netease({ action: 'cycleMode' })
+}
+
 export function skip(direction: 1 | -1): void {
   if (!isInHost()) {
     previewRun((preview) => preview.skip(direction))

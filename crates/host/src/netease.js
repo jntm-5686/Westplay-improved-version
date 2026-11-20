@@ -63,6 +63,8 @@
     play: '#g_player .ply', // `pas` (and data-action="pause") while playing
     previous: '.m-playbar .prv',
     next: '.m-playbar .nxt',
+    // Its own play mode button (列表循环 -> 随机 -> 单曲循环 -> 列表循环): `icn-loop`, `icn-shuffle`, `icn-one`.
+    mode: '#g_player [data-action="mode"]',
     trackName: '.m-playbar .words .name', // <a href="/song?id=…" title="…">
     trackArtist: '.m-playbar .words .by',
     cover: '.m-playbar .head img',
@@ -422,6 +424,15 @@
   // --- What the page says of the player -----------------------------------------------------------------------
 
   // Whether it's playing: its own play/pause button says so (`pas`, and `data-action="pause"`, while playing).
+  // Its play mode as the app names it: the list round and round (`list`), at random (`shuffle`), one song over and
+  // over (`one`); `null` while its play bar shows none.
+  const playMode = () => {
+    const names = String(document.querySelector(S.mode)?.className ?? '')
+    if (names.includes('icn-one')) return 'one'
+    if (names.includes('icn-shuffle')) return 'shuffle'
+    if (names.includes('icn-loop')) return 'list'
+    return null
+  }
   const isPlaying = () => {
     const button = document.querySelector(S.play)
     return Boolean(button && (button.classList.contains('pas') || button.dataset.action === 'pause'))
@@ -784,7 +795,23 @@
     const sounding = Boolean(audioState().playing)
     if (playing && sounding) return false
     timePlay('resume', { id: trackId(), duration: queueDuration(trackId()), immediate: playing && !sounding })
-    if (!playing) click(S.play)
+    if (!playing) {
+      click(S.play)
+      // Its button once more, and then its own player's way: a pause asked for a moment before this (the game's
+      // menu, the map, back and forth) can swallow the first press, and the music stayed paused (owner 2026-11-20).
+      setTimeout(() => {
+        if (isPlaying()) return
+        click(S.play)
+        setTimeout(() => {
+          if (isPlaying()) return
+          const id = trackId()
+          try {
+            const play = window.nm?.x?.ceo2i
+            if (id && typeof play === 'function') play('play', 18, id)
+          } catch {}
+        }, 700)
+      }, 500)
+    }
     return true
   }
   // Paused: its own play button, only when its own state says it plays.
@@ -1235,6 +1262,11 @@
     seek: ({ value }) => seek(value),
     volume: ({ value }) => setVolume(value),
     volumeFade: ({ value }) => applyVolume(value, false),
+    cycleMode: () => {
+      click(S.mode)
+      // Its state says the mode a moment after the press: asked to say it now.
+      setTimeout(() => tell(true), 350)
+    },
     setLike: ({ value, liked }) => setLiked(String(value), Boolean(liked)),
     openPlaylist: ({ value }) => answerPlaylist(String(value), false),
     openRanking: ({ value }) => answerPlaylist(String(value), true),
@@ -1378,6 +1410,7 @@
     const state = {
       signedIn: signed,
       playing: isPlaying(),
+      mode: playMode(),
       volume: volume(),
       track: playing,
       liked: likedNow(playing?.id),
