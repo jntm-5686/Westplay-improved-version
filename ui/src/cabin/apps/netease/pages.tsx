@@ -224,7 +224,9 @@ export function HomePage({ active }: { active: boolean }) {
   const heard = useNetease((state) => state.heard)
   const signedIn = useNetease((state) => state.signedIn)
   const signingIn = useNetease((state) => state.signingIn)
-  const play = usePlay()
+  // The day's own list: its songs' next and previous are the day's, even a song the account also has in a playlist
+  // read earlier (owner 2026-11-20: a song played from 每日推荐 went on into 我喜欢的音乐).
+  const play = usePlayFrom('daily')
   const note = useAskNote()
   const [allDaily, setAllDaily] = useState(false)
   const silent = useSilent(heard)
@@ -531,7 +533,8 @@ export function SearchPage() {
   const lists = useNetease((state) => state.lists)
   const home = useNetease((state) => state.home)
   const open = useNav((state) => state.open)
-  const play = usePlay()
+  // The search's own results: its songs' next and previous are the results', not a playlist's.
+  const play = usePlayFrom('search')
   const [allSongs, setAllSongs] = useState(false)
   const history = useSearchHistory((state) => state.items)
   const rememberSearch = useSearchHistory((state) => state.add)
@@ -982,7 +985,8 @@ export function RecentPage() {
   const words = useNeteaseWords()
   const songs = useNetease((state) => state.recent)
   const asking = useNetease((state) => state.recentAsking)
-  const play = usePlay()
+  // The recent songs' own list.
+  const play = usePlayFrom('recent')
   const note = useAskNote()
   useEffect(() => {
     requestRecent()
@@ -991,7 +995,7 @@ export function RecentPage() {
     const first = songs?.find((song) => song.playable)
     if (!first) return
     expectSong(first)
-    playFound(first)
+    playSong('recent', first)
     note(words.queued)
   }
   return (
@@ -1043,7 +1047,8 @@ export function ArtistPage({ page }: { page: Page }) {
   const card = page.kind === 'artist' ? page : null
   const artistId = card?.id ?? ''
   const found = useNetease((state) => state.artists[artistId])
-  const play = usePlay()
+  // The artist's own list of songs.
+  const play = usePlayFrom(`artist:${artistId}`)
   const note = useAskNote()
   const name = found?.name || card?.name || words.artist
   const cover = found?.cover ?? card?.cover ?? null
@@ -1055,7 +1060,7 @@ export function ArtistPage({ page }: { page: Page }) {
     const first = songs?.find((song) => song.playable)
     if (!first) return
     expectSong(first)
-    playFound(first)
+    playSong(`artist:${artistId}`, first)
     note(words.queued)
   }
   return (

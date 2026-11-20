@@ -276,9 +276,13 @@ export function NowPlayingPage() {
     const outside = requestAnimationFrame(() => {
       inside = requestAnimationFrame(() => setPhase('open'))
     })
+    // A frame that never comes (a page the browser keeps out of sight: the preview's, or one being restored): the
+    // page opens anyway, a moment later, rather than staying in its starting frame (invisible) for good.
+    const fallback = setTimeout(() => setPhase('open'), 90)
     return () => {
       cancelAnimationFrame(outside)
       cancelAnimationFrame(inside)
+      clearTimeout(fallback)
     }
   }, [shown])
   // The page left some other way while its own way out was on its way: the app's bars are its own again.

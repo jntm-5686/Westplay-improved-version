@@ -2007,12 +2007,24 @@
     opacity calc(var(--ne-now-in) * 0.62) ease-out;
 }
 
+/* Its way out: an animation rather than a transition, so it always plays from the page as it shows (visible, whole)
+   down into the player bar — a transition could be jumped over by a page whose own opening was still under way, and
+   the page would simply go (owner 2026-11-20: "关闭沉浸页的时候没有动画"). */
+@keyframes ne-now-page-out {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.9) translateY(64px);
+  }
+}
+
 .netease-app .ne-now-page[data-phase='leave'] {
-  opacity: 0;
-  transform: scale(0.94) translateY(56px);
-  transition:
-    transform var(--ne-now-out) cubic-bezier(0.4, 0, 0.2, 1),
-    opacity var(--ne-now-out) linear;
+  animation: ne-now-page-out var(--ne-now-out) cubic-bezier(0.4, 0, 0.2, 1) both;
+  pointer-events: none;
+  will-change: transform, opacity;
 }
 
 /* The colours come first (the page's own first 40%): the blurred cover and the gradient, before the cover itself. */

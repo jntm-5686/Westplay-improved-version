@@ -1523,14 +1523,17 @@ export function playSong(playlistId: string, song: NeteaseSong): void {
  * which is what makes a switch near instant. `null` for one no reading has. */
 export function contextOfSong(songId: string): string | null {
   const state = useNetease.getState()
-  for (const [id, page] of Object.entries(state.playlists)) {
-    if (page.songs?.some((song) => song.id === songId)) return id
-  }
+  // Where it was pressed first: the day's list, then a search's results, the recent songs, an artist's page — a
+  // playlist page read earlier only after those (owner 2026-11-20: 每日推荐's first song, also in 我喜欢的音乐, went
+  // on into that page instead).
   if (state.home?.daily?.some((song) => song.id === songId)) return 'daily'
-  if (state.recent?.some((song) => song.id === songId)) return 'recent'
   if (state.search?.songs.some((song) => song.id === songId)) return 'search'
+  if (state.recent?.some((song) => song.id === songId)) return 'recent'
   for (const [id, page] of Object.entries(state.artists)) {
     if (page.songs?.some((song) => song.id === songId)) return `artist:${id}`
+  }
+  for (const [id, page] of Object.entries(state.playlists)) {
+    if (page.songs?.some((song) => song.id === songId)) return id
   }
   return null
 }
