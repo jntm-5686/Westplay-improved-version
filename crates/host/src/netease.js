@@ -951,14 +951,14 @@
   // takes over).
   const SEARCH_KINDS = { songs: 1, artists: 100, playlists: 1000 }
   let searchAsked = 0
-  // The page's own search interface (`get/web`, the one its search page calls): the older `/api/search/get` is
-  // refused in bursts ("操作频繁，请稍候再试", code 405, seen on the owner's account after a few searches) and left
-  // the app showing "nothing found" for every search after the first.
+  // The page's own cloud search (`cloudsearch/pc`, what its search box asks): the older `/api/search/get` and
+  // `get/web` are refused in bursts ("操作频繁，请稍候再试", code 405, seen on the owner's account after a few
+  // searches, and after our own repeated asks) and left the app showing "nothing found" for every search.
   const searchKind = async (query, type) => {
     const limit = type === SEARCH_KINDS.songs ? 60 : 30
     const ask = () =>
       api(
-        `/api/search/get/web?csrf_token=${encodeURIComponent(csrf())}&s=${encodeURIComponent(query)}&type=${type}&limit=${limit}&offset=0`,
+        `/api/cloudsearch/pc?csrf_token=${encodeURIComponent(csrf())}&s=${encodeURIComponent(query)}&type=${type}&limit=${limit}&offset=0`,
       )
     // Refused for its rate ("操作频繁，请稍候再试", code 405): asked again, each time a little later — and if it keeps
     // refusing, said so (the app shows "search failed" with Retry, never "nothing found" for a search it never made).
