@@ -71,6 +71,12 @@ pub enum Command {
     Volume {
         value: f64,
     },
+    /// Its volume for a fade (musicWithGame.ts, fade.ts): the sound's level alone, never the app's own choice of it.
+    /// A fade out that set the player's volume would leave it silent if the player was left mid-fade, the app's
+    /// volume as it was (`None` when it was never set).
+    VolumeFade {
+        value: f64,
+    },
     /// A playlist's page (`value`: its NetEase id), whose songs the page answers with (`kind: "playlist"`).
     OpenPlaylist {
         value: String,
@@ -960,7 +966,7 @@ impl Netease {
             Command::SetLike { value, .. } if !is_id(value) => Ok(()),
             Command::Search { value } if value.trim().is_empty() || value.chars().count() > 60 => Ok(()),
             Command::Seek { value } if !value.is_finite() => Ok(()),
-            Command::Volume { value } if !value.is_finite() => Ok(()),
+            Command::Volume { value } | Command::VolumeFade { value } if !value.is_finite() => Ok(()),
             _ if command.for_page() => self.view.post_json(&serde_json::to_string(command).unwrap_or_default()),
             _ => Ok(()),
         }

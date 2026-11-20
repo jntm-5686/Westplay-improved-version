@@ -379,10 +379,16 @@
   for (const name of ['play', 'pause', 'ended', 'volumechange']) addEventListener(name, () => tell(), true)
   // How loud it is through the speakers, each ear (and the limiter's cut), for the live test (netease.rs).
   const volume = () => wantedVolume ?? playingNow()?.volume ?? 0.8
-  const setVolume = (value) => {
-    wantedVolume = Math.min(1, Math.max(0, Number(value) || 0))
-    for (const element of media) element.volume = wantedVolume
+  // Its sound's level: `chosen` when the app set it (its slider's, kept over the page's own changes), never for a
+  // fade — a fade that wrote the chosen volume would leave the player silent when left mid-fade (owner 2026-11-20:
+  // the game's menu paused, the music muted instead, and quick menus left it muted).
+  const applyVolume = (value, chosen) => {
+    const share = Math.min(1, Math.max(0, Number(value) || 0))
+    if (chosen) wantedVolume = share
+    else if (wantedVolume === null) wantedVolume = volume()
+    for (const element of media) element.volume = share
   }
+  const setVolume = (value) => applyVolume(value, true)
   // The sound's own element now: the newest one playing, else the last it made (it may not be in the document).
   const soundingNow = () => {
     const all = [...media]
@@ -774,6 +780,7 @@
   // what the ladder just started).
   const resume = () => {
     const playing = isPlaying()
+    if (wantedVolume !== null) for (const element of media) element.volume = wantedVolume
     const sounding = Boolean(audioState().playing)
     if (playing && sounding) return false
     timePlay('resume', { id: trackId(), duration: queueDuration(trackId()), immediate: playing && !sounding })
@@ -1227,6 +1234,7 @@
     prev: () => skip(-1),
     seek: ({ value }) => seek(value),
     volume: ({ value }) => setVolume(value),
+    volumeFade: ({ value }) => applyVolume(value, false),
     setLike: ({ value, liked }) => setLiked(String(value), Boolean(liked)),
     openPlaylist: ({ value }) => answerPlaylist(String(value), false),
     openRanking: ({ value }) => answerPlaylist(String(value), true),

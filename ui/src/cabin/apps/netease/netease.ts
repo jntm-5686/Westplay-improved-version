@@ -211,6 +211,7 @@ export interface NeteasePlayerState {
 
 /** A command for the host's hidden page (`crates/host netease.rs`). */
 export type NeteaseCommand =
+  | { action: 'volumeFade'; value?: number }
   /** Runs the hidden page, saying whether it's signed in. */
   | { action: 'start' }
   /** Opens NetEase's sign-in: the companion's account page's, not the cab's (the page is hidden). */
@@ -1516,6 +1517,16 @@ export function seek(seconds: number): void {
 let volumeSent = 0
 
 /** The page's player volume (0 to 1): shown at once, sent a few times a second, the last one always. */
+/** Its sound's level for a fade (musicWithGame.ts): the volume the app chose stays as it is (a fade never leaves the
+ * player silent). */
+export function fadeVolume(share: number): void {
+  if (!isInHost()) {
+    previewRun((preview) => preview.setVolume(share))
+    return
+  }
+  netease({ action: 'volumeFade', value: clamp(share, 0, 1) })
+}
+
 export function setVolume(share: number, done = false): void {
   const volume = clamp(share, 0, 1)
   if (!isInHost()) {
@@ -1674,14 +1685,12 @@ export function useNeteaseSource(): { source: MediaSource; artwork: string | nul
 export const neteasePlayer: MusicPlayer = {
   name: 'netease',
   playingHere: () => useNetease.getState().playing,
-  pauseHere: () => {
-    if (useNetease.getState().playing) playPause()
-  },
-  resumeHere: () => {
-    if (!useNetease.getState().playing) playPause()
-  },
+  // As its own buttons say it (the page ignores one that would change nothing): the menu's pause is a pause, and the
+  // way back plays on, whether the state the app still shows is behind or not.
+  pauseHere: () => netease({ action: 'pause' }),
+  resumeHere: () => netease({ action: 'play' }),
   volume: () => useNetease.getState().volume,
-  sendVolume: (share) => setVolume(share),
+  sendVolume: (share) => fadeVolume(share),
   setVolume: (share) => setVolume(share),
   skip: (direction) => netease({ action: direction > 0 ? 'next' : 'prev' }),
   subscribe: (changed) =>
