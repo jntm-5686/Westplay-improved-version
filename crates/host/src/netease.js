@@ -960,25 +960,31 @@
       api(
         `/api/search/get/web?csrf_token=${encodeURIComponent(csrf())}&s=${encodeURIComponent(query)}&type=${type}&limit=${limit}&offset=0`,
       )
-    let answer = await ask()
-    if (!answer || Number(answer.code) === 405) {
-      // Refused for its rate: asked once more, a moment later.
-      await sleep(700)
-      answer = await ask()
+    // Refused for its rate ("操作频繁，请稍候再试", code 405): asked again, each time a little later — and if it keeps
+    // refusing, said so (the app shows "search failed" with Retry, never "nothing found" for a search it never made).
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const answer = await ask()
+      if (answer && Number(answer.code) !== 405) return { result: answer.result ?? null, failed: false }
+      await sleep(600 + attempt * 900)
     }
-    return answer?.result ?? null
+    return { result: null, failed: true }
   }
   const answerSearch = async (query) => {
     const said = String(query ?? '').trim().slice(0, 60)
     const token = ++searchAsked
     const answer = { search: { query: said, songs: [], artists: [], playlists: [], songsTotal: 0, artistsTotal: 0, playlistsTotal: 0 } }
     if (!said) return post(answer)
-    const [songResults, artistResults, playlistResults] = await Promise.all([
+    const [songKind, artistKind, playlistKind] = await Promise.all([
       searchKind(said, SEARCH_KINDS.songs),
       searchKind(said, SEARCH_KINDS.artists),
       searchKind(said, SEARCH_KINDS.playlists),
     ])
     if (token !== searchAsked) return
+    const songResults = songKind.result
+    const artistResults = artistKind.result
+    const playlistResults = playlistKind.result
+    // Its own interface refused all three (a burst's rate): the app is told it failed, not that nothing matched.
+    answer.search.failed = songKind.failed && artistKind.failed && playlistKind.failed
     const raw = Array.isArray(songResults?.songs) ? songResults.songs : []
     // Its search's answer has no rights: its own song detail has each one's `st`.
     const details = await songsByIds(raw.map((song) => song.id))

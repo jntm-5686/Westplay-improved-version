@@ -413,6 +413,7 @@ describe('the search’s own categories', () => {
       songsTotal: 0,
       artistsTotal: 0,
       playlistsTotal: 1,
+      failed: false,
     }
     expect(findPlaylistMeta({ lists: [], home: null, library: null, search }, '8866695219')?.name).toBe(
       '听·许巍热门精选',

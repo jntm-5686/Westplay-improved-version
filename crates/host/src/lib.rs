@@ -1591,6 +1591,15 @@ pub fn run(mut config: Config, stop: Arc<AtomicBool>) -> Result<(), Error> {
                             let _ = webview.post_json(&netease::library_message(&library));
                         }
                         netease::Report::Search(search) => {
+                            // Its counts, for the app's own reason when it shows nothing (never the words only).
+                            log!(
+                                "[netease] search {:?}: {} songs, {} artists, {} playlists{}",
+                                search.query,
+                                search.songs_total,
+                                search.artists_total,
+                                search.playlists_total,
+                                if search.failed { " (its interface refused: asked too often)" } else { "" },
+                            );
                             let _ = webview.post_json(&netease::search_message(&search));
                         }
                         netease::Report::Recent(recent) => {

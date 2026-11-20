@@ -146,6 +146,7 @@ describe('a search’s page', () => {
     artistsTotal: artists.length + 10,
     songsTotal: songs.length + 20,
     playlistsTotal: playlists.length + 30,
+    failed: false,
   })
 
   it('leads with the artists it found, then the songs, then the playlists', () => {

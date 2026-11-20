@@ -614,6 +614,9 @@ pub struct Search {
     pub artists_total: u64,
     #[serde(default)]
     pub playlists_total: u64,
+    /// Its own search interface refused (asked too often: "操作频繁"): an answer of nothing is not a "no matches".
+    #[serde(default)]
+    pub failed: bool,
 }
 
 impl Search {
@@ -1907,6 +1910,7 @@ mod tests {
             songs_total: 1204,
             artists_total: 12,
             playlists_total: 386,
+            failed: false,
         }
         .checked();
         let value: serde_json::Value = serde_json::from_str(&search_message(&search)).unwrap();

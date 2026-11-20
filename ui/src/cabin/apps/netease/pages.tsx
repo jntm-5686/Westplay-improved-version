@@ -574,6 +574,8 @@ export function SearchPage() {
         </>
       ) : asking.failed && !shown ? (
         <Failed text={words.searchFailed} retry={() => searchFor(query)} />
+      ) : shown && shown.failed ? (
+        <Failed text={words.searchFailed} retry={() => searchFor(query)} />
       ) : shown && !hasResults(shown) ? (
         <EmptyState title={words.searchEmpty} text={words.searchEmptyHint} />
       ) : shown && counts ? (

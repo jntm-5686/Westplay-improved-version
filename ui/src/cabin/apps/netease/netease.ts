@@ -151,6 +151,8 @@ export interface NeteaseSearch {
   songsTotal: number
   artistsTotal: number
   playlistsTotal: number
+  /** Its search interface refused (asked too often): not "nothing matched" — a failure, with a Retry. */
+  failed: boolean
 }
 
 /** A search's own categories, in its page's order (单曲, 歌手, 歌单): the app's tabs over one answer. */
@@ -447,6 +449,7 @@ interface NeteaseMessage {
   songsTotal?: unknown
   artistsTotal?: unknown
   playlistsTotal?: unknown
+  failed?: unknown
   name?: unknown
   alias?: unknown
   cover?: unknown
@@ -549,6 +552,7 @@ function readSearch(message: NeteaseMessage): NeteaseSearch {
     songsTotal: total(message.songsTotal, songs),
     artistsTotal: total(message.artistsTotal, artists),
     playlistsTotal: total(message.playlistsTotal, playlists),
+    failed: message.failed === true,
   }
 }
 
@@ -1022,6 +1026,7 @@ export function searchFor(query: string): void {
       songsTotal: found.songs.length,
       artistsTotal: found.artists.length,
       playlistsTotal: found.playlists.length,
+      failed: false,
     })
   }, PREVIEW_ANSWER)
 }
