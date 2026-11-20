@@ -469,16 +469,27 @@ export function NowPlayingPage() {
   const leave = () => {
     if (leaving.current || !shown) return
     leaving.current = true
-    setPhase('leave')
-    // The app's own bars come back under it as it goes down, so what is behind is there before it is shown again.
-    useNav.setState({ leaving: true })
-    clearTimeout(timer.current)
-    timer.current = setTimeout(() => {
-      leaving.current = false
-      useNav.setState((nav) => ({ ...leftFullScreen(nav), leaving: false }))
-      // The page gone: it comes back as it was always seen (its words closed).
-      setLyricsOpen(false)
-    }, leaveDuration(root.current))
+    const settle = () => {
+      setPhase('leave')
+      // The app's own bars come back under it as it goes down, so what is behind is there before it is shown again.
+      useNav.setState({ leaving: true })
+      clearTimeout(timer.current)
+      timer.current = setTimeout(() => {
+        leaving.current = false
+        useNav.setState((nav) => ({ ...leftFullScreen(nav), leaving: false }))
+        // The page gone: it comes back as it was always seen (its words closed).
+        setLyricsOpen(false)
+      }, leaveDuration(root.current))
+    }
+    // A press while the page is still coming up: it is shown whole first, then goes down — a transition from a
+    // page that was never drawn whole has nothing to show, and the page would simply go.
+    if (phase === 'open') {
+      settle()
+      return
+    }
+    setPhase('open')
+    void root.current?.offsetWidth
+    requestAnimationFrame(() => requestAnimationFrame(settle))
   }
   if (!track) {
     return (

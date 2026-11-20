@@ -1595,6 +1595,12 @@ pub fn run(mut config: Config, stop: Arc<AtomicBool>) -> Result<(), Error> {
                         }
                         // What Home shows, the account's own playlists, a search's songs and the account's
                         // recent ones: straight on to the page (never logged).
+                        netease::Report::ArtistSongs(songs) => {
+                            let _ = webview.post_json(&netease::artist_songs_message(&songs));
+                        }
+                        netease::Report::ArtistAlbums(albums) => {
+                            let _ = webview.post_json(&netease::artist_albums_message(&albums));
+                        }
                         netease::Report::Home(home) => {
                             let _ = webview.post_json(&netease::home_message(&home));
                         }

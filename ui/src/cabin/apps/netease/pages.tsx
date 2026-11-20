@@ -14,6 +14,8 @@ import {
   requestProfile,
   requestRankings,
   requestRecent,
+  requestArtistAlbums,
+  requestArtistSongs,
   retryArtist,
   retryPlaylist,
   retryRanking,
@@ -1047,22 +1049,34 @@ export function ArtistPage({ page }: { page: Page }) {
   const card = page.kind === 'artist' ? page : null
   const artistId = card?.id ?? ''
   const found = useNetease((state) => state.artists[artistId])
-  // The artist's own list of songs.
+  const all = useNetease((state) => state.artistSongs[artistId])
+  const albums = useNetease((state) => state.artistAlbums[artistId])
+  // The artist's own list of songs (their 热门 first page, then their 全部歌曲).
   const play = usePlayFrom(`artist:${artistId}`)
   const note = useAskNote()
   const name = found?.name || card?.name || words.artist
   const cover = found?.cover ?? card?.cover ?? null
   const songs = found?.songs ?? null
+  const [tab, setTab] = useState<'hot' | 'all' | 'albums'>('hot')
   useEffect(() => {
     if (artistId) retryArtist(artistId)
   }, [artistId])
-  const playAll = () => {
-    const first = songs?.find((song) => song.playable)
+  useEffect(() => {
+    if (!artistId) return
+    if (tab === 'all') requestArtistSongs(artistId)
+    if (tab === 'albums') requestArtistAlbums(artistId)
+  }, [tab, artistId])
+  const playAll = (list: NeteaseSong[] | null) => {
+    const first = list?.find((song) => song.playable)
     if (!first) return
     expectSong(first)
     playSong(`artist:${artistId}`, first)
     note(words.queued)
   }
+  const allSongs = all?.songs ?? []
+  const albumList = albums?.albums ?? []
+  const moreSongs = tab === 'all' && all?.more
+  const moreAlbums = tab === 'albums' && albums?.more
   return (
     <div className="ne-scroll ne-detail-page ne-artist-page">
       <header className="ne-detail-head">
@@ -1071,44 +1085,126 @@ export function ArtistPage({ page }: { page: Page }) {
           <span className="ne-kicker">{words.artist}</span>
           <h2 className="ne-detail-name">{name}</h2>
           {found?.alias && <p className="ne-detail-sub">{found.alias}</p>}
-          {found?.description && <p className="ne-detail-desc">{found.description}</p>}
           <p className="ne-detail-meta">
-            {songs && <span>{words.songs(songs.length)}</span>}
+            {found?.musicSize ? <span>{words.songs(found.musicSize)}</span> : songs && <span>{words.songs(songs.length)}</span>}
+            {found?.albumSize ? <span>{words.albumCount(found.albumSize)}</span> : null}
+            {found?.fans ? <span>{words.fanCount(found.fans)}</span> : null}
             {found?.waiting && !songs && <span>{words.loading}</span>}
           </p>
+          {found?.description && <p className="ne-detail-desc">{found.description}</p>}
         </div>
-        {songs && songs.length > 0 && (
-          <button type="button" className="ne-play-all" onClick={playAll}>
-            <PlayGlyph />
-            {words.playAll}
-          </button>
-        )}
-      </header>
-      <SectionHead title={words.artistHint} hint={songs ? words.songs(songs.length) : undefined} />
-      {!found || (found.waiting && !songs) ? (
-        <RowsSkeleton count={8} />
-      ) : found.failed && !songs ? (
-        <Failed text={words.artistFailed} retry={() => retryArtist(artistId)} />
-      ) : !songs || songs.length === 0 ? (
-        <EmptyState
-          title={words.artistEmpty}
-          text={words.artistEmptyHint}
-          action={
-            <button type="button" className="ne-pill" onClick={() => retryArtist(artistId)}>
-              {words.retry}
+        <div className="ne-detail-actions">
+          {songs && songs.length > 0 && tab !== 'albums' && (
+            <button type="button" className="ne-play-all" onClick={() => playAll(tab === 'all' ? allSongs : songs)}>
+              <PlayGlyph />
+              {words.playAll}
             </button>
-          }
-        />
-      ) : (
-        <>
-          {found.failed && <p className="ne-note">{words.artistFailed}</p>}
-          <div className="ne-songs">
-            {songs.map((song, index) => (
-              <SongRow key={`${song.id}:${index}`} song={song} index={index} onPlay={play} />
-            ))}
-          </div>
-        </>
-      )}
+          )}
+        </div>
+      </header>
+      <div className="ne-artist-tabs" role="tablist" aria-label={words.artist}>
+        {(['hot', 'all', 'albums'] as const).map((each) => (
+          <button
+            key={each}
+            type="button"
+            role="tab"
+            aria-selected={tab === each}
+            className={tab === each ? 'ne-artist-tab on' : 'ne-artist-tab'}
+            onClick={() => setTab(each)}
+          >
+            {each === 'hot' ? words.artistHint : each === 'all' ? words.artistAll : words.album}
+          </button>
+        ))}
+      </div>
+      {tab === 'hot' &&
+        (!found || (found.waiting && !songs) ? (
+          <RowsSkeleton count={8} />
+        ) : found.failed && !songs ? (
+          <Failed text={words.artistFailed} retry={() => retryArtist(artistId)} />
+        ) : !songs || songs.length === 0 ? (
+          <EmptyState
+            title={words.artistEmpty}
+            text={words.artistEmptyHint}
+            action={
+              <button type="button" className="ne-pill" onClick={() => retryArtist(artistId)}>
+                {words.retry}
+              </button>
+            }
+          />
+        ) : (
+          <>
+            {found.failed && <p className="ne-note">{words.artistFailed}</p>}
+            <div className="ne-songs">
+              {songs.map((song, index) => (
+                <SongRow key={`${song.id}:${index}`} song={song} index={index} onPlay={play} />
+              ))}
+            </div>
+            <div className="ne-more-row">
+              <button type="button" className="ne-pill" onClick={() => setTab('all')}>
+                {words.showAllSongs}
+              </button>
+            </div>
+          </>
+        ))}
+      {tab === 'all' &&
+        (!all || (all.waiting && allSongs.length === 0) ? (
+          <RowsSkeleton count={8} />
+        ) : allSongs.length === 0 ? (
+          <p className="ne-note">{words.artistEmpty}</p>
+        ) : (
+          <>
+            <div className="ne-songs">
+              {allSongs.map((song, index) => (
+                <SongRow key={`${song.id}:${index}`} song={song} index={index} onPlay={play} />
+              ))}
+            </div>
+            <div className="ne-more-row">
+              {moreSongs && (
+                <button
+                  type="button"
+                  className="ne-pill"
+                  disabled={all?.waiting}
+                  onClick={() => requestArtistSongs(artistId, (all?.offset ?? 0) + 200)}
+                >
+                  {all?.waiting ? words.loading : words.loadMore}
+                </button>
+              )}
+            </div>
+          </>
+        ))}
+      {tab === 'albums' &&
+        (!albums || (albums.waiting && albumList.length === 0) ? (
+          <RowsSkeleton count={6} />
+        ) : albumList.length === 0 ? (
+          <p className="ne-note">{words.albumEmpty}</p>
+        ) : (
+          <>
+            <div className="ne-albums">
+              {albumList.map((album) => (
+                <div key={album.id} className="ne-album">
+                  <Cover name={album.name} cover={album.cover} className="ne-album-cover" />
+                  <span className="ne-album-name">{album.name}</span>
+                  <span className="ne-album-meta">
+                    {album.year ? `${album.year} · ` : ''}
+                    {words.albumSongs(album.size)}
+                  </span>
+                </div>
+              ))}
+            </div>
+            <div className="ne-more-row">
+              {moreAlbums && (
+                <button
+                  type="button"
+                  className="ne-pill"
+                  disabled={albums?.waiting}
+                  onClick={() => requestArtistAlbums(artistId, (albums?.offset ?? 0) + 60)}
+                >
+                  {albums?.waiting ? words.loading : words.loadMore}
+                </button>
+              )}
+            </div>
+          </>
+        ))}
     </div>
   )
 }
@@ -1131,7 +1227,10 @@ export function PlaylistPage({ page }: { page: Page }) {
   const cover = head?.cover ?? known?.cover ?? card?.cover ?? null
   const plays = head?.playCount || known?.playCount || card?.plays || 0
   const songs = found?.songs ?? null
+  // A list of a thousand songs is drawn a part at a time (the page stays quick): the rest at a press.
+  const [shown, setShown] = useState(120)
   useEffect(() => {
+    setShown(120)
     if (playlistId) retryPlaylist(playlistId)
   }, [playlistId])
   const playAll = () => {
@@ -1186,10 +1285,17 @@ export function PlaylistPage({ page }: { page: Page }) {
         <>
           {found.failed && <p className="ne-note">{words.failed}</p>}
           <div className="ne-songs">
-            {songs.map((song, index) => (
+            {songs.slice(0, shown).map((song, index) => (
               <SongRow key={`${song.id}:${index}`} song={song} index={index} onPlay={play} />
             ))}
           </div>
+          {songs.length > shown && (
+            <div className="ne-more-row">
+              <button type="button" className="ne-pill" onClick={() => setShown((count) => count + 240)}>
+                {words.showMore}
+              </button>
+            </div>
+          )}
         </>
       )}
     </div>
@@ -1214,7 +1320,10 @@ export function RankingPage({ page }: { page: Page }) {
   const update = head?.updateFrequency || known?.updateFrequency || card?.update || ''
   const plays = head?.playCount || known?.playCount || card?.plays || 0
   const songs = found?.songs ?? null
+  // Its own list of a thousand songs, drawn a part at a time.
+  const [shown, setShown] = useState(120)
   useEffect(() => {
+    setShown(120)
     if (rankingId) retryRanking(rankingId)
   }, [rankingId])
   const playAll = () => {
@@ -1272,10 +1381,17 @@ export function RankingPage({ page }: { page: Page }) {
         <>
           {found.failed && <p className="ne-note">{words.rankingsFailed}</p>}
           <div className="ne-songs">
-            {songs.map((song, index) => (
+            {songs.slice(0, shown).map((song, index) => (
               <SongRow key={`${song.id}:${index}`} song={song} index={index} onPlay={play} />
             ))}
           </div>
+          {songs.length > shown && (
+            <div className="ne-more-row">
+              <button type="button" className="ne-pill" onClick={() => setShown((count) => count + 240)}>
+                {words.showMore}
+              </button>
+            </div>
+          )}
         </>
       )}
     </div>

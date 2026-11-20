@@ -189,6 +189,15 @@ export interface NeteaseWords {
   /** An artist's page (a search's artist pressed). */
   artist: string
   artistHint: string
+  /** An artist's own pages: 全部歌曲, and more of any list. */
+  artistAll: string
+  showAllSongs: string
+  loadMore: string
+  showMore: string
+  albumCount: (count: number) => string
+  fanCount: (count: number) => string
+  albumSongs: (count: number) => string
+  albumEmpty: string
   artistFailed: string
   artistEmpty: string
   artistEmptyHint: string
@@ -398,6 +407,14 @@ export function neteaseWords(locale: string): NeteaseWords {
       searchLikeHint: '按你的口味挑的歌单',
       artist: '艺人',
       artistHint: '热门歌曲',
+  artistAll: '全部歌曲',
+  showAllSongs: '查看全部歌曲',
+  loadMore: '加载更多',
+  showMore: '显示更多',
+  albumCount: (count) => `${count} 张专辑`,
+  fanCount: (count) => `${count} 位粉丝`,
+  albumSongs: (count) => `${count} 首`,
+  albumEmpty: '暂无专辑',
       artistFailed: '这个艺人的页面没有读到',
       artistEmpty: '没有读到这个艺人的歌',
       artistEmptyHint: '网易云的页面没有读到这个艺人的歌曲，稍后点「重试」。',
@@ -584,6 +601,14 @@ export function neteaseWords(locale: string): NeteaseWords {
     searchLikeHint: 'Playlists picked for your taste',
     artist: 'Artist',
     artistHint: 'Popular songs',
+  artistAll: 'All songs',
+  showAllSongs: 'See all songs',
+  loadMore: 'Load more',
+  showMore: 'Show more',
+  albumCount: (count) => `${count} albums`,
+  fanCount: (count) => `${count} fans`,
+  albumSongs: (count) => `${count} songs`,
+  albumEmpty: 'No albums',
     artistFailed: 'This artist’s page didn’t come',
     artistEmpty: 'No songs read for this artist',
     artistEmptyHint: 'NetEase’s page didn’t read this artist’s songs. Try again in a moment.',

@@ -89,9 +89,11 @@
   const LIST_MOST = 12
   const DAILY_MOST = 100
   const ARTIST_MOST = 50
+  const ARTIST_PAGE = 200
+  const ALBUMS_PAGE = 60
   const RECENT_MOST = 100
   const RANKINGS_MOST = 100
-  const SONGS_MOST = 500
+  const SONGS_MOST = 3000
   const API_TIMEOUT = 8000
   const ACCOUNT_WAIT = 20000
 
@@ -1113,7 +1115,49 @@
         cover: wide(artist.picUrl ?? artist.cover ?? artist.img1v1Url),
         description: String(artist.briefDesc ?? '').slice(0, 600),
         songs: songs.map(songOut),
+        // Its own counts, as its page shows them.
+        albumSize: Math.max(0, Number(artist.albumSize) || 0),
+        musicSize: Math.max(0, Number(artist.musicSize) || 0),
+        fans: Math.max(0, Number(artist.followeds ?? artist.fansCount) || 0),
       },
+    })
+  }
+
+  // An artist's songs, page after page (their 热门 first page, then 全部歌曲): the page's own interface, its own
+  // offset (`artist/songs` asks for one; without it: its "参数错误").
+  const answerArtistSongs = async (id, offset) => {
+    const at = Math.max(0, Math.round(Number(offset) || 0))
+    const answer = await api(`/api/v1/artist/songs?id=${encodeURIComponent(id)}&limit=${ARTIST_PAGE}&offset=${at}`)
+    const rows = Array.isArray(answer?.songs) ? answer.songs : []
+    const songs = rows.map(songOf).filter(Boolean).slice(0, ARTIST_PAGE)
+    rememberContext(`artist:${id}`, songs)
+    post({
+      artistSongs: {
+        id,
+        offset: at,
+        songs: songs.map(songOut),
+        more: Boolean(answer?.more) || rows.length >= ARTIST_PAGE,
+      },
+    })
+  }
+
+  // An artist's albums, page after page: its own `artist/album` interface (their own covers, year and size).
+  const answerArtistAlbums = async (id, offset) => {
+    const at = Math.max(0, Math.round(Number(offset) || 0))
+    const answer = await api(`/api/v1/artist/album?id=${encodeURIComponent(id)}&limit=${ALBUMS_PAGE}&offset=${at}`)
+    const rows = Array.isArray(answer?.hotAlbums) ? answer.hotAlbums : []
+    const albums = rows
+      .map((album) => ({
+        id: String(album?.id ?? ''),
+        name: String(album?.name ?? ''),
+        cover: wide(album?.picUrl),
+        year: album?.publishTime ? new Date(Number(album.publishTime)).getFullYear() : null,
+        size: Math.max(0, Number(album?.size) || 0),
+      }))
+      .filter((album) => /^\d{1,20}$/.test(album.id) && album.name)
+      .slice(0, ALBUMS_PAGE)
+    post({
+      artistAlbums: { id, offset: at, albums, more: Boolean(answer?.more) || rows.length >= ALBUMS_PAGE },
     })
   }
 
@@ -1367,6 +1411,8 @@
     openPlaylist: ({ value }) => answerPlaylist(String(value), false),
     openRanking: ({ value }) => answerPlaylist(String(value), true),
     openArtist: ({ value }) => answerArtist(String(value)),
+    artistSongs: ({ value, offset }) => answerArtistSongs(String(value), Number(offset) || 0),
+    artistAlbums: ({ value, offset }) => answerArtistAlbums(String(value), Number(offset) || 0),
     home: () => answerHome(),
     library: () => answerLibrary(),
     search: ({ value }) => answerSearch(value),

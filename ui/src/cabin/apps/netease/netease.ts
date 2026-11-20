@@ -198,7 +198,39 @@ export interface NeteaseArtistPage {
   cover: string | null
   /** Their brief introduction, empty for one the page gives none. */
   description: string
+  /** Their own counts, as their page shows them (0 when unknown). */
+  albumSize: number
+  musicSize: number
+  fans: number
   songs: NeteaseSong[] | null
+  waiting: boolean
+  failed: boolean
+}
+
+/** One of an artist's albums, as their page lists them. */
+export interface NeteaseAlbum {
+  id: string
+  name: string
+  cover: string | null
+  year: number | null
+  /** How many songs it has. */
+  size: number
+}
+
+/** An artist's songs from an offset on: one page of their 全部歌曲. */
+export interface ArtistSongsPage {
+  songs: NeteaseSong[]
+  offset: number
+  more: boolean
+  waiting: boolean
+  failed: boolean
+}
+
+/** An artist's albums from an offset on: one page of their 专辑. */
+export interface ArtistAlbumsPage {
+  albums: NeteaseAlbum[]
+  offset: number
+  more: boolean
   waiting: boolean
   failed: boolean
 }
@@ -256,6 +288,10 @@ export type NeteaseCommand =
   | { action: 'play'; value?: string; list?: string }
   /** Opens an artist's page in the hidden page; their name, picture and songs come back as an `artist` message. */
   | { action: 'openArtist'; value: string }
+  /** An artist's songs from `offset` on (their 全部歌曲): answered with an `artistSongs` message. */
+  | { action: 'artistSongs'; value: string; offset: number }
+  /** An artist's albums from `offset` on (their 专辑): answered with an `artistAlbums` message. */
+  | { action: 'artistAlbums'; value: string; offset: number }
   /** Adds the song (`value`: its id) to the account's 我喜欢的音乐, or takes it out (`liked`): the page's own
    * interface, answered with a `like` message once it says so. */
   | { action: 'setLike'; value: string; liked: boolean }
@@ -389,6 +425,10 @@ interface NeteaseAppState {
   searchTab: SearchTab
   /** Artist pages by id, as asked. */
   artists: Record<string, NeteaseArtistPage>
+  /** An artist's songs, page by page (their 全部歌曲): only what the page has read so far. */
+  artistSongs: Record<string, ArtistSongsPage>
+  /** An artist's albums, page by page (their 专辑). */
+  artistAlbums: Record<string, ArtistAlbumsPage>
 
   tab: Tab
   /** Each tab's pages over its own, the one showing last (each tab stays where it was left). */
@@ -480,6 +520,8 @@ export const useNetease = create<NeteaseAppState>()(() => ({
   query: '',
   searchTab: 'songs',
   artists: {},
+  artistSongs: {},
+  artistAlbums: {},
   liking: false,
   likeFailure: null,
 }))
@@ -504,6 +546,8 @@ interface NeteaseMessage {
     | 'library'
     | 'search'
     | 'artist'
+    | 'artistSongs'
+    | 'artistAlbums'
     | 'recent'
     | 'like'
     | 'rankings'
@@ -534,6 +578,12 @@ interface NeteaseMessage {
   rankings?: unknown
   profile?: unknown
   description?: unknown
+  albumSize?: unknown
+  musicSize?: unknown
+  fans?: unknown
+  offset?: unknown
+  more?: unknown
+  albums?: unknown
   playCount?: unknown
   trackCount?: unknown
   updateFrequency?: unknown
@@ -1282,13 +1332,86 @@ const waitingForArtist = new Map<string, ReturnType<typeof setTimeout>>()
  * songs. */
 export function receiveArtist(
   id: string,
-  artist: Pick<NeteaseArtistPage, 'name' | 'alias' | 'cover' | 'description'> & { songs: NeteaseSong[] },
+  artist: Pick<NeteaseArtistPage, 'name' | 'alias' | 'cover' | 'description'> & {
+    songs: NeteaseSong[]
+    albumSize?: number
+    musicSize?: number
+    fans?: number
+  },
 ): void {
   clearTimeout(waitingForArtist.get(id))
   waitingForArtist.delete(id)
   useNetease.setState((state) => ({
-    artists: { ...state.artists, [id]: { ...artist, waiting: false, failed: false } },
+    artists: {
+      ...state.artists,
+      [id]: {
+        ...artist,
+        albumSize: artist.albumSize ?? 0,
+        musicSize: artist.musicSize ?? 0,
+        fans: artist.fans ?? 0,
+        waiting: false,
+        failed: false,
+      },
+    },
   }))
+}
+
+/** Asks the hidden page for an artist's songs from `offset` on (their 全部歌曲), answered with an `artistSongs`
+ * message; the pages read so far are kept (the list grows under the same head). */
+export function requestArtistSongs(id: string, offset = 0, again = false): void {
+  if (!/^\d{1,20}$/.test(id)) return
+  const known = useNetease.getState().artistSongs[id]
+  if (!again && offset === 0 && known && (known.waiting || known.songs.length > 0)) return
+  useNetease.setState((state) => ({
+    artistSongs: {
+      ...state.artistSongs,
+      [id]: {
+        songs: offset === 0 ? [] : known?.songs ?? [],
+        offset,
+        more: known?.more ?? true,
+        waiting: true,
+        failed: false,
+      },
+    },
+  }))
+  if (!isInHost() && PREVIEW) {
+    const page = PREVIEW.artist(id).songs.slice(offset, offset + 200)
+    useNetease.setState((state) => ({
+      artistSongs: {
+        ...state.artistSongs,
+        [id]: { songs: offset === 0 ? page : [...(state.artistSongs[id]?.songs ?? []), ...page], offset, more: PREVIEW.artist(id).songs.length > offset + 200, waiting: false, failed: false },
+      },
+    }))
+    return
+  }
+  netease({ action: 'artistSongs', value: id, offset })
+}
+
+/** Asks the hidden page for an artist's albums from `offset` on (their 专辑), answered with an `artistAlbums`
+ * message. */
+export function requestArtistAlbums(id: string, offset = 0, again = false): void {
+  if (!/^\d{1,20}$/.test(id)) return
+  const known = useNetease.getState().artistAlbums[id]
+  if (!again && offset === 0 && known && (known.waiting || known.albums.length > 0)) return
+  useNetease.setState((state) => ({
+    artistAlbums: {
+      ...state.artistAlbums,
+      [id]: {
+        albums: offset === 0 ? [] : known?.albums ?? [],
+        offset,
+        more: known?.more ?? true,
+        waiting: true,
+        failed: false,
+      },
+    },
+  }))
+  if (!isInHost() && PREVIEW) {
+    useNetease.setState((state) => ({
+      artistAlbums: { ...state.artistAlbums, [id]: { albums: [], offset, more: false, waiting: false, failed: false } },
+    }))
+    return
+  }
+  netease({ action: 'artistAlbums', value: id, offset })
 }
 
 /** Asks the hidden page for an artist's page, once per page: their name, picture and songs come as an `artist`
@@ -1305,6 +1428,9 @@ function requestArtist(id: string, again = false, meta: NeteaseArtist | null = n
         alias: page?.alias ?? '',
         cover: meta?.cover ?? page?.cover ?? null,
         description: page?.description ?? '',
+        albumSize: page?.albumSize ?? 0,
+        musicSize: page?.musicSize ?? 0,
+        fans: page?.fans ?? 0,
         songs: again ? (page?.songs ?? null) : null,
         waiting: true,
         failed: false,
@@ -1466,6 +1592,21 @@ export function findRankingMeta(rankings: NeteaseRanking[] | null, id: string): 
 export function useRankingMeta(id: string): NeteaseRanking | null {
   const rankings = useNetease((state) => state.rankings)
   return useMemo(() => findRankingMeta(rankings, id), [rankings, id])
+}
+
+function readAlbums(raw: unknown): NeteaseAlbum[] {
+  if (!Array.isArray(raw)) return []
+  const albums: NeteaseAlbum[] = []
+  for (const entry of raw) {
+    if (!entry || typeof entry !== 'object') continue
+    const album = entry as Record<string, unknown>
+    const id = text(album.id)
+    const name = text(album.name)
+    if (!/^\d{1,20}$/.test(id) || !name) continue
+    const year = count(album.year, 0)
+    albums.push({ id, name, cover: image(album.cover), year: year > 0 ? year : null, size: count(album.size, 0) })
+  }
+  return albums
 }
 
 /** An artist's card for its page: from the search that opened it (the page's own answer draws the rest). */
@@ -1896,6 +2037,40 @@ export function receiveMessage(message: unknown): void {
       if (profile) receiveProfile(profile)
       return
     }
+    case 'artistSongs': {
+      const id = text(each.id)
+      const offset = count(each.offset, 0)
+      if (id) {
+        const page = readSongs(each.songs)
+        const more = each.more === true
+        useNetease.setState((state) => {
+          const known = state.artistSongs[id]
+          const fresh = page.filter((song) => !known?.songs.some((kept) => kept.id === song.id))
+          const songs = offset === 0 || !known ? page : [...known.songs, ...fresh]
+          return {
+            artistSongs: { ...state.artistSongs, [id]: { songs, offset, more, waiting: false, failed: false } },
+          }
+        })
+      }
+      return
+    }
+    case 'artistAlbums': {
+      const id = text(each.id)
+      const offset = count(each.offset, 0)
+      if (id) {
+        const page = readAlbums(each.albums)
+        const more = each.more === true
+        useNetease.setState((state) => {
+          const known = state.artistAlbums[id]
+          const fresh = page.filter((album) => !known?.albums.some((kept) => kept.id === album.id))
+          const albums = offset === 0 || !known ? page : [...known.albums, ...fresh]
+          return {
+            artistAlbums: { ...state.artistAlbums, [id]: { albums, offset, more, waiting: false, failed: false } },
+          }
+        })
+      }
+      return
+    }
     case 'artist': {
       const id = text(each.id)
       if (id) {
@@ -1905,6 +2080,9 @@ export function receiveMessage(message: unknown): void {
           cover: image(each.cover),
           description: text(each.description),
           songs: readSongs(each.songs),
+          albumSize: count(each.albumSize, 0),
+          musicSize: count(each.musicSize, 0),
+          fans: count(each.fans, 0),
         })
       }
       return

@@ -89,6 +89,18 @@ pub enum Command {
     OpenRanking {
         value: String,
     },
+    /// An artist's songs from `offset` on (their id; 200 a page), answered with (`kind: "artistSongs"`).
+    ArtistSongs {
+        value: String,
+        #[serde(default)]
+        offset: u32,
+    },
+    /// An artist's albums from `offset` on (their id; 60 a page), answered with (`kind: "artistAlbums"`).
+    ArtistAlbums {
+        value: String,
+        #[serde(default)]
+        offset: u32,
+    },
     /// An artist's page (`value`: their NetEase id), whose name, picture and songs the page answers with
     /// (`kind: "artist"`).
     OpenArtist {
@@ -174,6 +186,90 @@ impl Song {
     }
 }
 
+/// One of an artist's albums, as their page lists them: its id, name, cover, its year and how many songs.
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Album {
+    pub id: String,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub cover: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub year: Option<i64>,
+    #[serde(default)]
+    pub size: u32,
+}
+
+/// An artist's songs from `offset` on (their page of them), the page's answer to the app's `artistSongs`: what the
+/// app's 全部歌曲 list shows, a page at a time.
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ArtistSongs {
+    #[serde(default)]
+    pub id: String,
+    #[serde(default)]
+    pub offset: u32,
+    #[serde(default)]
+    pub songs: Vec<Song>,
+    /// Whether there are more after these (`false`: the list's end).
+    #[serde(default)]
+    pub more: bool,
+}
+
+/// An artist's albums from `offset` on, the page's answer to the app's `artistAlbums`.
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ArtistAlbums {
+    #[serde(default)]
+    pub id: String,
+    #[serde(default)]
+    pub offset: u32,
+    #[serde(default)]
+    pub albums: Vec<Album>,
+    #[serde(default)]
+    pub more: bool,
+}
+
+impl ArtistSongs {
+    /// The answer cleaned: their id, their songs as a playlist's (at most 500 a page), the offset as asked.
+    fn checked(mut self) -> Self {
+        const MOST: usize = 500;
+        self.id = if is_id(&self.id) { self.id } else { String::new() };
+        self.songs = checked_songs(self.songs, MOST);
+        if self.songs.is_empty() {
+            self.more = false;
+        }
+        self
+    }
+}
+
+impl ArtistAlbums {
+    /// The answer cleaned: their id, only albums with an id and a name, a cover on NetEase's own image hosts, their
+    /// year sane, at most 200 of them.
+    fn checked(mut self) -> Self {
+        const MOST: usize = 200;
+        self.id = if is_id(&self.id) { self.id } else { String::new() };
+        self.albums = self
+            .albums
+            .into_iter()
+            .filter(|album| is_id(&album.id) && !album.name.is_empty())
+            .map(|mut album| {
+                album.name = short(album.name, 200);
+                album.cover = album.cover.filter(|cover| is_net_ease_image(cover));
+                album.year = album.year.filter(|year| (1900..=2200).contains(year));
+                album.size = album.size.min(1000);
+                album
+            })
+            .take(MOST)
+            .collect();
+        if self.albums.is_empty() {
+            self.more = false;
+        }
+        self
+    }
+}
+
 /// A playlist's (or a ranking's) songs: the page's answer to the app's `openPlaylist` / `openRanking`. Its own head
 /// (cover, play count, update frequency, who made it, what it says of itself) is v3's, and left out when the page gave
 /// none of it (a v2 answer is a v2 answer still).
@@ -207,7 +303,7 @@ impl Songs {
     /// more than [`Songs::MOST`] of them (a list of thousands would hold up the page), its own head as short as the
     /// app shows it, its cover only on NetEase's own image hosts.
     fn checked(mut self) -> Self {
-        const MOST: usize = 500;
+        const MOST: usize = 3000;
         self.name = short(self.name, 200);
         self.cover = self.cover.filter(|cover| is_net_ease_image(cover));
         self.update_frequency = short(self.update_frequency, 40);
@@ -492,6 +588,13 @@ pub struct Artist {
     /// Their brief introduction, empty for one the page gives none.
     #[serde(default)]
     pub description: String,
+    /// Their own counts, as their page shows them (0 when the page's answer gives none).
+    #[serde(default)]
+    pub album_size: u64,
+    #[serde(default)]
+    pub music_size: u64,
+    #[serde(default)]
+    pub fans: u64,
     #[serde(default)]
     pub songs: Vec<Song>,
 }
@@ -936,6 +1039,10 @@ pub enum Report {
     Playlist(Box<Songs>),
     /// An artist's page, the page's answer to the app's `openArtist`.
     Artist(Box<Artist>),
+    /// An artist's songs from an offset on: the page's answer to the app's `artistSongs`.
+    ArtistSongs(Box<ArtistSongs>),
+    /// An artist's albums from an offset on: the page's answer to the app's `artistAlbums`.
+    ArtistAlbums(Box<ArtistAlbums>),
     /// The account's own playlists, by group: the page's answer to the app's `library`.
     Library(Box<Library>),
     /// A search's songs, artists and playlists: the page's answer to the app's `search`.
@@ -1158,6 +1265,10 @@ impl Netease {
                 }
                 Some(Message::Playlist(songs)) => reports.push(Report::Playlist(Box::new(songs.checked()))),
                 Some(Message::Artist(artist)) => reports.push(Report::Artist(Box::new(artist.checked()))),
+                Some(Message::ArtistSongs(songs)) => reports.push(Report::ArtistSongs(Box::new(songs.checked()))),
+                Some(Message::ArtistAlbums(albums)) => {
+                    reports.push(Report::ArtistAlbums(Box::new(albums.checked())))
+                }
                 Some(Message::Library(library)) => reports.push(Report::Library(Box::new(library.checked()))),
                 Some(Message::Search(search)) => reports.push(Report::Search(Box::new(search.checked()))),
                 Some(Message::Recent(recent)) => reports.push(Report::Recent(Box::new(recent.checked()))),
@@ -1204,6 +1315,10 @@ enum Message {
     Playlist(Songs),
     /// An artist's page, answered.
     Artist(Artist),
+    /// An artist's songs from an offset on, answered.
+    ArtistSongs(ArtistSongs),
+    /// An artist's albums from an offset on, answered.
+    ArtistAlbums(ArtistAlbums),
     /// The account's own playlists, by group, answered.
     Library(Library),
     /// A search's songs, artists and playlists, answered.
@@ -1234,6 +1349,12 @@ fn read_message(message: &str) -> Option<Message> {
     }
     if let Some(artist) = value.get("artist") {
         return serde_json::from_value::<Artist>(artist.clone()).ok().map(Message::Artist);
+    }
+    if let Some(songs) = value.get("artistSongs") {
+        return serde_json::from_value::<ArtistSongs>(songs.clone()).ok().map(Message::ArtistSongs);
+    }
+    if let Some(albums) = value.get("artistAlbums") {
+        return serde_json::from_value::<ArtistAlbums>(albums.clone()).ok().map(Message::ArtistAlbums);
     }
     if let Some(library) = value.get("library") {
         return serde_json::from_value::<Library>(library.clone()).ok().map(Message::Library);
@@ -1327,7 +1448,38 @@ pub fn artist_message(artist: &Artist) -> String {
         "alias": artist.alias,
         "cover": artist.cover,
         "description": artist.description,
+        "albumSize": artist.album_size,
+        "musicSize": artist.music_size,
+        "fans": artist.fans,
         "songs": artist.songs,
+    })
+    .to_string()
+}
+
+/// `{"type":"netease","kind":"artistSongs","id":…,"offset":…,"songs":[…],"more":…}`: an artist's songs from an
+/// offset on, the page's answer to the app's `artistSongs`.
+pub fn artist_songs_message(songs: &ArtistSongs) -> String {
+    serde_json::json!({
+        "type": "netease",
+        "kind": "artistSongs",
+        "id": songs.id,
+        "offset": songs.offset,
+        "songs": songs.songs,
+        "more": songs.more,
+    })
+    .to_string()
+}
+
+/// `{"type":"netease","kind":"artistAlbums","id":…,"offset":…,"albums":[…],"more":…}`: an artist's albums from an
+/// offset on, the page's answer to the app's `artistAlbums`.
+pub fn artist_albums_message(albums: &ArtistAlbums) -> String {
+    serde_json::json!({
+        "type": "netease",
+        "kind": "artistAlbums",
+        "id": albums.id,
+        "offset": albums.offset,
+        "albums": albums.albums,
+        "more": albums.more,
     })
     .to_string()
 }
@@ -2092,6 +2244,9 @@ mod tests {
             alias: "Jay Chou".into(),
             cover: Some("https://p1.music.126.net/j.jpg?param=300y300".into()),
             description: "华语流行歌手。".into(),
+            album_size: 40,
+            music_size: 500,
+            fans: 1000000,
             songs: vec![Song { id: "2".into(), title: "晴天".into(), artist: "周杰伦".into(), artist_id: Some("6452".into()), artists: None, album: String::new(), duration: 269.0, playable: true, play_count: 0 }],
         }
         .checked();

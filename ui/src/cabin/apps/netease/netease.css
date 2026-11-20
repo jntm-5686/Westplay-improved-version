@@ -2042,8 +2042,14 @@
   }
 }
 
+/* Its way out as a transition (not an animation): transitions keep working where animations are turned off (the
+   calm setting, the system's reduced motion), and the page moves down into the player bar either way. */
 .netease-app .ne-now-page[data-phase='leave'] {
-  animation: ne-now-page-out var(--ne-now-out) cubic-bezier(0.32, 0.72, 0, 1) both;
+  opacity: 0;
+  transform: translateY(200px) scale(0.8);
+  transition:
+    transform var(--ne-now-out) cubic-bezier(0.32, 0.72, 0, 1),
+    opacity calc(var(--ne-now-out) * 0.55) ease-in;
   pointer-events: none;
   will-change: transform, opacity;
 }
@@ -5187,4 +5193,131 @@
     width: 22px;
     height: 22px;
   }
+}
+
+/* The way out, for the quieter settings too: the calm setting and the system's reduced motion stop animations and
+   cut transitions, which left the way in showing (a transition) and the way out a cut (an animation) — the owner's
+   own report (2026-11-20). The page keeps a short move and fade of its own, never a cut. */
+.netease-app[data-motion='calm'] .ne-now-page[data-phase] {
+  transition-property: opacity, transform;
+  transition-duration: 300ms;
+  transition-timing-function: ease-out;
+}
+
+.netease-app[data-motion='calm'] .ne-now-page[data-phase='enter'] {
+  opacity: 0;
+  transform: translateY(26%) scale(0.95);
+}
+
+.netease-app[data-motion='calm'] .ne-now-page[data-phase='open'] {
+  opacity: 1;
+  transform: none;
+}
+
+.netease-app[data-motion='calm'] .ne-now-page[data-phase='leave'] {
+  opacity: 0;
+  transform: translateY(180px) scale(0.84);
+}
+
+.netease-app[data-motion='calm'] .ne-now-page[data-phase='leave'] {
+  animation: none;
+}
+
+/* And the system's own, where the calm setting isn't on: the same short move, never a cut. */
+@media (prefers-reduced-motion: reduce) {
+  .netease-app .ne-now-page[data-phase] {
+    transition-property: opacity, transform;
+    transition-duration: 300ms;
+    transition-timing-function: ease-out;
+  }
+
+  .netease-app .ne-now-page[data-phase='enter'] {
+    opacity: 0;
+    transform: translateY(26%) scale(0.95);
+  }
+
+  .netease-app .ne-now-page[data-phase='open'] {
+    opacity: 1;
+    transform: none;
+  }
+
+  .netease-app .ne-now-page[data-phase='leave'] {
+    opacity: 0;
+    transform: translateY(180px) scale(0.84);
+    animation: none;
+  }
+}
+
+/* An artist's own pages: 热门 / 全部歌曲 / 专辑, and the next part of a long list at a press. */
+.netease-app .ne-artist-tabs {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 2px 0 14px;
+}
+
+.netease-app .ne-artist-tab {
+  padding: 9px 20px;
+  border: 1px solid var(--ne-line);
+  border-radius: 999px;
+  background: none;
+  color: var(--ne-dim);
+  font: inherit;
+  font-size: var(--ne-type-label);
+  cursor: pointer;
+  transition:
+    background-color var(--ne-quick),
+    color var(--ne-quick),
+    border-color var(--ne-quick);
+}
+
+.netease-app .ne-artist-tab:hover,
+.netease-app .ne-artist-tab:focus-visible {
+  background: var(--ne-hover);
+  color: var(--ne-text);
+}
+
+.netease-app .ne-artist-tab.on {
+  border-color: var(--ne-accent);
+  background: var(--ne-accent);
+  color: var(--ne-on-accent);
+}
+
+.netease-app .ne-more-row {
+  display: flex;
+  justify-content: center;
+  padding: 14px 0 4px;
+}
+
+/* Their albums: their own covers on a shelf, the year and how many songs under each. */
+.netease-app .ne-albums {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 16px;
+}
+
+.netease-app .ne-album {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.netease-app .ne-album-cover {
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: var(--ne-radius);
+}
+
+.netease-app .ne-album-name {
+  overflow: hidden;
+  color: var(--ne-text);
+  font-size: var(--ne-type-label);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.netease-app .ne-album-meta {
+  color: var(--ne-dim);
+  font-size: var(--ne-type-caption);
 }
