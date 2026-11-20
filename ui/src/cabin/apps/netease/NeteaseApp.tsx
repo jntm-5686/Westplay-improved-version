@@ -18,7 +18,7 @@ import { PageBody, TabPage } from './pages'
 import { usePrefs } from './prefs'
 import { useSearchHistory } from './searchHistory'
 import { TABS, fullScreen, openSearchPage, pageKey, type Tab } from './stack'
-import { accountOf, searchFor, SEARCH_FIELD, setQuery, useNetease, useNeteaseBridge } from './netease'
+import { accountOf, netease, searchFor, SEARCH_FIELD, setQuery, useNetease } from './netease'
 import { useNeteaseWords } from './strings'
 import type { NeteaseWords } from './strings'
 import './netease.css'
@@ -49,7 +49,10 @@ export function NeteaseApp() {
   // (NowPlaying.tsx), so the page it came from is there before it is shown again.
   const leaving = useNav((state) => state.leaving)
   const motion = usePrefs((state) => state.motion)
-  useNeteaseBridge()
+  // The page runs while the app shows (the bridge itself is the cabin shell's, hearing its state everywhere).
+  useEffect(() => {
+    netease({ action: 'start' })
+  }, [])
   // Leaving the page puts the keyboard away (the search bar stays where it is: only a result picked, or another
   // page, lets it go). Typing is what brings the search page up, and the keyboard goes with it: were it put away on
   // that tab change too, the first letter typed would close it under the player's hands (owner 2026-11-20).

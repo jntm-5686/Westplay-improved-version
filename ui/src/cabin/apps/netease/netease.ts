@@ -1852,11 +1852,15 @@ export function receiveMessage(message: unknown): void {
  * The listener is this app's own (state/store.ts's dispatch knows nothing of `netease` messages); WestPlay
  * itself is untouched in a plain browser, where the preview plays instead.
  */
-export function useNeteaseBridge(): void {
+/** The host's messages, heard from wherever the player is: the cabin shell keeps this running so the app's state
+ * (what plays, its mode, the account) stays true while the player is in another app and NetEase's music plays on —
+ * the game's menu then pauses it and plays it back on as it does inside the app (`start`: the page is asked to run
+ * too, which only the app itself does). */
+export function useNeteaseBridge(start = true): void {
   useEffect(() => {
     if (!isInHost()) return
     const stop = subscribeHostMessages(receiveMessage)
-    netease({ action: 'start' })
+    if (start) netease({ action: 'start' })
     return stop
   }, [])
   // The preview's songs end by themselves, the next one starting (in WestPlay, NetEase's page plays on).

@@ -44,8 +44,8 @@
   /* 正在播放's way in and out (NowPlaying.tsx's Phase): the iOS sheet's own curve, and its two times. The 7" screen,
      the short screens and the calm setting have shorter ones (below). */
   --ne-now-ios: cubic-bezier(0.32, 0.72, 0, 1);
-  --ne-now-in: 420ms;
-  --ne-now-out: 340ms;
+  --ne-now-in: 440ms;
+  --ne-now-out: 520ms;
 
   display: flex;
   flex-direction: column;
@@ -2010,21 +2010,65 @@
 /* Its way out: an animation rather than a transition, so it always plays from the page as it shows (visible, whole)
    down into the player bar — a transition could be jumped over by a page whose own opening was still under way, and
    the page would simply go (owner 2026-11-20: "关闭沉浸页的时候没有动画"). */
+/* Its way out, backwards from the way in: a breath up (the iOS sheet's own anticipation), then the words and the
+   controls going down and away first, the cover after them, the page shrinking into the player bar and the colours
+   leaving last — long enough to be seen, and as smooth as the way in. */
 @keyframes ne-now-page-out {
-  from {
+  0% {
     opacity: 1;
     transform: none;
   }
-  to {
+  12% {
+    opacity: 1;
+    transform: scale(1.014) translateY(-10px);
+  }
+  55% {
+    opacity: 0.86;
+    transform: scale(0.985) translateY(10px);
+  }
+  100% {
     opacity: 0;
-    transform: scale(0.9) translateY(64px);
+    transform: scale(0.86) translateY(112px);
   }
 }
 
 .netease-app .ne-now-page[data-phase='leave'] {
-  animation: ne-now-page-out var(--ne-now-out) cubic-bezier(0.4, 0, 0.2, 1) both;
+  animation: ne-now-page-out var(--ne-now-out) cubic-bezier(0.32, 0.72, 0, 1) both;
   pointer-events: none;
   will-change: transform, opacity;
+}
+
+/* What leaves in what order: the words and the controls at once and early, the cover a little after them, the
+   colours (the backdrop and the tints) last of all. */
+.netease-app .ne-now-page[data-phase='leave'] .ne-now-head {
+  opacity: 0;
+  transition: opacity 200ms ease-out;
+}
+
+.netease-app .ne-now-page[data-phase='leave'] .ne-now-side {
+  opacity: 0;
+  transform: translateY(22px);
+  transition:
+    opacity 240ms ease-out,
+    transform 420ms var(--ne-now-ios);
+}
+
+.netease-app .ne-now-page[data-phase='leave'] .ne-now-foot {
+  opacity: 0;
+  transform: translateY(34px);
+  transition:
+    opacity 280ms ease-out 40ms,
+    transform 440ms var(--ne-now-ios) 40ms;
+}
+
+.netease-app .ne-now-page[data-phase='leave'] .ne-now-cover {
+  transform: scale(0.9) translateY(16px);
+  transition: transform 480ms var(--ne-now-ios) 60ms;
+}
+
+.netease-app .ne-now-page[data-phase='leave'] .ne-now-backdrop,
+.netease-app .ne-now-page[data-phase='leave'] .ne-now-tints {
+  transition: opacity 460ms ease-in 60ms;
 }
 
 /* The colours come first (the page's own first 40%): the blurred cover and the gradient, before the cover itself. */

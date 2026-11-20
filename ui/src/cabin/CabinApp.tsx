@@ -8,7 +8,7 @@ import { pauseYouTubeWithGame, youtubePlayer } from './apps/youtube/pauseWithGam
 import { pauseYouTubeMusicWithGame, youtubeMusicPlayer } from './apps/youtubeMusic/pauseWithGame'
 import { pausePlayerWithGame, playerAppPlayer } from './apps/player/pauseWithGame'
 import { pauseSafariWithGame, safariPlayer } from './apps/safari/pauseWithGame'
-import { neteasePlayer, pauseNeteaseWithGame } from './apps/netease/netease'
+import { neteasePlayer, pauseNeteaseWithGame, useNeteaseBridge as useNeteaseBridgeHere } from './apps/netease/netease'
 import { AppScreen } from './apps/AppScreen'
 import { BootScreen } from './boot/BootScreen'
 import { Dashboard } from './dashboard/Dashboard'
@@ -50,6 +50,9 @@ export function CabinApp() {
   useEffect(() => pausePlayerWithGame(), [])
   useEffect(() => pauseSafariWithGame(), [])
   useEffect(() => pauseNeteaseWithGame(), [])
+  // Its page's state, heard in every app of the cab: its music plays on while another app shows, and the game's
+  // menu pauses it and plays it back on as inside the app (the page itself runs when its app opens).
+  useNeteaseBridgeHere(false)
   // One of them at a time: the newest to start plays on, the others pause (apps/oneAtATime.ts).
   useEffect(() => oneAtATime(PLAYERS), [])
   // The player's keybinds pressed in the game: the music's volume, or play/pause (apps/keybinds.ts).
