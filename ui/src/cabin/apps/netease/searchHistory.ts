@@ -19,7 +19,7 @@ function saidOf(query: string): string {
 
 /** `history` cleaned: strings only, each trimmed and capped, no empty, no duplicate (however it's cased), `most`
  *  of them at the front of the list. */
-export function keptSearches(history: readonly unknown[], most = HISTORY_MOST): string[] {
+export function keptSearches(history: readonly unknown[] | null | undefined, most = HISTORY_MOST): string[] {
   const seen = new Set<string>()
   const kept: string[] = []
   for (const entry of Array.isArray(history) ? history : []) {
