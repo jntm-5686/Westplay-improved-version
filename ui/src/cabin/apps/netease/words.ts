@@ -172,6 +172,13 @@ export interface NeteaseWords {
   searchFound: (songs: number, artists: number, playlists: number) => string
   searchFor: (query: string) => string
   searchArtistFirst: string
+  /** The still-empty Search page: what was searched before, then the playlists picked for the account. */
+  searchHistory: string
+  searchHistoryHint: string
+  searchHistoryEmpty: string
+  searchHistoryClear: string
+  searchLike: string
+  searchLikeHint: string
   /** An artist's page (a search's artist pressed). */
   artist: string
   artistHint: string
@@ -364,6 +371,12 @@ export function neteaseWords(locale: string): NeteaseWords {
         `找到 ${foundSongs} 首歌、${artists} 位艺人、${playlists} 个歌单`,
       searchFor: (query) => `“${query}” 的结果`,
       searchArtistFirst: '有相符的艺人，先放在最上面',
+      searchHistory: '搜索历史',
+      searchHistoryHint: '最近搜过的三个',
+      searchHistoryEmpty: '还没有搜过什么，搜一次就会留在这里。',
+      searchHistoryClear: '清空',
+      searchLike: '猜你喜欢',
+      searchLikeHint: '按你的口味挑的歌单',
       artist: '艺人',
       artistHint: '热门歌曲',
       artistFailed: '这个艺人的页面没有读到',
@@ -534,6 +547,12 @@ export function neteaseWords(locale: string): NeteaseWords {
       `Found ${foundSongs} songs, ${artists} artists and ${playlists} playlists`,
     searchFor: (query) => `Results for “${query}”`,
     searchArtistFirst: 'Matching artists come first',
+    searchHistory: 'Recent searches',
+    searchHistoryHint: 'The last three',
+    searchHistoryEmpty: 'Nothing searched yet: search once and it stays here.',
+    searchHistoryClear: 'Clear',
+    searchLike: 'For you',
+    searchLikeHint: 'Playlists picked for your taste',
     artist: 'Artist',
     artistHint: 'Popular songs',
     artistFailed: 'This artist’s page didn’t come',

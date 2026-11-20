@@ -32,7 +32,8 @@ import {
 } from './netease'
 import { usePrefs, type Motion } from './prefs'
 import { expectSong } from './playback'
-import { hasResults, resultCounts, searchSections } from './sections'
+import { hasResults, resultCounts, searchSections, suggestLists } from './sections'
+import { useSearchHistory } from './searchHistory'
 import type { Page, Tab } from './stack'
 import {
   ArtistCard,
@@ -528,13 +529,25 @@ export function SearchPage() {
   const search = useNetease((state) => state.search)
   const asking = useNetease((state) => state.searchAsking)
   const lists = useNetease((state) => state.lists)
+  const home = useNetease((state) => state.home)
   const open = useNav((state) => state.open)
   const play = usePlay()
   const [allSongs, setAllSongs] = useState(false)
+  const history = useSearchHistory((state) => state.items)
+  const rememberSearch = useSearchHistory((state) => state.add)
+  const clearHistory = useSearchHistory((state) => state.clear)
   const wanted = query.trim()
   const shown = search && search.query === wanted ? search : null
   const sections = searchSections(shown)
   const counts = shown ? resultCounts(shown) : null
+  // The still-empty page's playlists: Home's own picks (its taste), or the app's lists before Home is read.
+  const suggestions = useMemo(() => suggestLists(home, lists), [home, lists])
+  /** A kept search pressed: its words in the bar, and its results asked for at once (and moved to the front). */
+  const recall = (entry: string) => {
+    rememberSearch(entry)
+    setQuery(entry)
+    searchFor(entry)
+  }
   const openList = (list: NeteaseList) => {
     stopTyping()
     open({ kind: 'playlist', id: list.id, name: list.name, cover: list.cover, plays: list.playCount })
@@ -551,16 +564,39 @@ export function SearchPage() {
     <div className="ne-scroll ne-search">
       {!wanted ? (
         <div className="ne-search-idle">
-          <h2>{words.searchIdle}</h2>
-          <p>{words.searchIdleHint}</p>
-          {lists.length > 0 && (
-            <section className="ne-section">
-              <SectionHead title={words.searchHot} hint={words.searchHotHint} />
-              <div className="ne-chips">
-                {lists.slice(0, 8).map((list) => (
-                  <button key={list.id} type="button" className="ne-chip" onClick={() => setQuery(list.name)}>
-                    {list.name}
+          <header className="ne-search-idle-head">
+            <h2>{words.searchIdle}</h2>
+            <p>{words.searchIdleHint}</p>
+          </header>
+          {/* What was searched before: three words at most, and the way to forget them. */}
+          <section className="ne-section ne-search-history">
+            <SectionHead
+              title={words.searchHistory}
+              hint={words.searchHistoryHint}
+              action={
+                history.length > 0 ? (
+                  <button type="button" className="ne-history-clear" onClick={clearHistory}>
+                    {words.searchHistoryClear}
                   </button>
+                ) : undefined
+              }
+            />
+            <div className="ne-chips ne-history-chips">
+              {history.map((entry) => (
+                <button key={entry} type="button" className="ne-chip" onClick={() => recall(entry)}>
+                  {entry}
+                </button>
+              ))}
+              {history.length === 0 && <p className="ne-note">{words.searchHistoryEmpty}</p>}
+            </div>
+          </section>
+          {/* The playlists picked for the account's taste, with nothing typed. */}
+          {suggestions.length > 0 && (
+            <section className="ne-section">
+              <SectionHead title={words.searchLike} hint={words.searchLikeHint} />
+              <div className="ne-grid">
+                {suggestions.map((list) => (
+                  <PlaylistCard key={list.id} list={list} onOpen={openList} />
                 ))}
               </div>
             </section>

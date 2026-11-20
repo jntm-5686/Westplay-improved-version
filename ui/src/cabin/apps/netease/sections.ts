@@ -1,4 +1,4 @@
-import type { NeteaseSearch } from './netease'
+import type { NeteaseHome, NeteaseList, NeteaseSearch } from './netease'
 
 /**
  * A search's results as one page, in NetEase's own order of importance: the artists it found first (a search
@@ -34,4 +34,28 @@ export function hasResults(search: NeteaseSearch | null): boolean {
 /** The counts a search's page says it found, for its one-line summary. */
 export function resultCounts(search: NeteaseSearch): { songs: number; artists: number; playlists: number } {
   return { songs: search.songsTotal, artists: search.artistsTotal, playlists: search.playlistsTotal }
+}
+
+/** How many playlists the still-empty Search page suggests. */
+const SUGGESTED_LISTS = 12
+
+/**
+ * The playlists Search suggests while nothing is typed: Home's own picks first (its personalised shelf and the
+ * recommended one), then whatever playlists the app already has, each once, at most `most` (12). Home's shelves
+ * are what the account's taste is; the lists fill the row before Home has been read (and in the preview).
+ */
+export function suggestLists(
+  home: NeteaseHome | null,
+  lists: readonly NeteaseList[],
+  most = SUGGESTED_LISTS,
+): NeteaseList[] {
+  const seen = new Set<string>()
+  const picked: NeteaseList[] = []
+  for (const list of [...(home?.personal ?? []), ...(home?.recommended ?? []), ...lists]) {
+    if (seen.has(list.id)) continue
+    seen.add(list.id)
+    picked.push(list)
+    if (picked.length >= most) break
+  }
+  return picked
 }

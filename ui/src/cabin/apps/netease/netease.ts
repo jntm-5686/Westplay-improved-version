@@ -40,6 +40,9 @@ export interface NeteaseTrack {
   id?: string
   title: string
   artist: string
+  /** The first artist's NetEase id, when the page gave a real one: the full-screen player opens their page from
+   *  it. Missing for a song whose answer didn't say (the artist's name stays plain words there). */
+  artistId?: string
   album: string
   cover: string | null
   /** Seconds. */
@@ -54,6 +57,8 @@ export interface NeteaseSong {
   id: string
   title: string
   artist: string
+  /** The first artist's NetEase id, when the answer said one. */
+  artistId?: string
   duration: number
   playable: boolean
   /** The song's album, when its answer said one (`playlist`, `recent`, a search's songs). */
@@ -488,7 +493,7 @@ function readTrack(raw: unknown): NeteaseTrack | null {
   const title = text(track.title)
   if (!title) return null
   const duration = Math.max(0, count(track.duration, 0))
-  return {
+  const read: NeteaseTrack = {
     id: track.id === null || track.id === undefined || track.id === '' ? undefined : text(track.id),
     title,
     artist: text(track.artist),
@@ -498,6 +503,9 @@ function readTrack(raw: unknown): NeteaseTrack | null {
     position: clamp(count(track.position, 0), 0, duration || Number.MAX_SAFE_INTEGER),
     playable: track.playable !== false,
   }
+  const artistId = text(track.artistId)
+  if (artistId) read.artistId = artistId
+  return read
 }
 
 function readLists(raw: unknown): NeteaseList[] {
@@ -572,6 +580,8 @@ function readSongs(raw: unknown): NeteaseSong[] {
       duration: Math.max(0, count(song.duration, 0)),
       playable: song.playable !== false,
     }
+    const artistId = text(song.artistId)
+    if (artistId) read.artistId = artistId
     const album = text(song.album)
     if (album) read.album = album
     const playCount = Math.max(0, count(song.playCount, 0))

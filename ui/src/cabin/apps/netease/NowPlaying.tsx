@@ -14,7 +14,7 @@ import {
 import { openTab, useNav } from './nav'
 import { expectChange, usePlayback } from './playback'
 import { playPause, positionOf, seek, setLiked, setVolume, showToast, skip, useNetease, useNow } from './netease'
-import { fullScreen, leftFullScreen } from './stack'
+import { fullScreen, leftFullScreen, artistPageOf } from './stack'
 import { useNeteaseWords } from './strings'
 
 /** The NetEase app's player: the bar at the screen's foot (always there), and its Now Playing page. */
@@ -194,6 +194,7 @@ export function NowPlayingPage() {
   // The page fades and scales in each time it's opened (it's kept mounted while another page shows, so the app's
   // own layer switch can't do it): the class is put back before the frame it shows in.
   const shown = useNav(fullScreen)
+  const open = useNav((state) => state.open)
   const root = useRef<HTMLDivElement>(null)
   useLayoutEffect(() => {
     const element = root.current
@@ -218,6 +219,10 @@ export function NowPlayingPage() {
     )
   }
   const palette = layers.current.palette
+  // The artist's own page, when the song's answer gave their NetEase id (the page opens over the player: Back comes
+  // back to it). A song whose answer gave none has plain words there.
+  const artistPage = artistPageOf(track.artistId)
+  const artistName = track.artist.split('/')[0]?.trim() || track.artist
   // The cover's accent, on WestPlay's own skin; NetEase's red keeps NetEase's own accent on the app's controls.
   const accent =
     palette && style !== 'red'
@@ -261,7 +266,18 @@ export function NowPlayingPage() {
             <h1 className="ne-now-title" title={track.title}>
               {track.title}
             </h1>
-            <p className="ne-now-artist">{track.artist}</p>
+            {artistPage ? (
+              <button
+                type="button"
+                className="ne-now-artist link"
+                title={`${words.artist} · ${artistName}`}
+                onClick={() => open({ kind: 'artist', id: artistPage.id, name: artistName, cover: track.cover })}
+              >
+                {track.artist}
+              </button>
+            ) : (
+              <p className="ne-now-artist">{track.artist}</p>
+            )}
             {track.album && (
               <p className="ne-now-album">
                 {words.album} · {track.album}

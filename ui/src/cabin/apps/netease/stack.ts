@@ -96,6 +96,24 @@ export function leftFullScreen(nav: Nav): Nav {
   return back(nav) ?? goToTab(nav, 'home')
 }
 
+/**
+ * The artist page a playing song's artist opens (the full-screen player's artist name), from the first artist's
+ * NetEase id: `null` for a name whose answer gave none — it stays plain words there, never a broken page.
+ */
+export function artistPageOf(artistId: string | null | undefined): ({ kind: 'artist'; id: string } & PageMeta) | null {
+  const id = (artistId ?? '').trim()
+  return /^\d{1,20}$/.test(id) ? { kind: 'artist', id } : null
+}
+
+/**
+ * Search's own page brought up (the search bar at the top pressed, on any page): what the player was on stays behind
+ * it for Back — the tab, or the page over it. On Search already with a page over it, that page is put away.
+ */
+export function openSearchPage(nav: Nav): Nav {
+  if (nav.tab === 'search' && nav.stacks.search.length === 0) return nav
+  return goToTab(nav, 'search')
+}
+
 /** The tab the player came from last (skipping the current one), or `null`. */
 function previousTab(nav: Nav): Tab | null {
   for (let at = nav.history.length - 1; at >= 0; at--) {

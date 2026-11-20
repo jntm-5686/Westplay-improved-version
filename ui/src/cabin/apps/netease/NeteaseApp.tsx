@@ -16,7 +16,8 @@ import { useCanGoBack, useNav } from './nav'
 import { PlayerBar } from './NowPlaying'
 import { PageBody, TabPage } from './pages'
 import { usePrefs } from './prefs'
-import { TABS, fullScreen, pageKey, type Tab } from './stack'
+import { useSearchHistory } from './searchHistory'
+import { TABS, fullScreen, openSearchPage, pageKey, type Tab } from './stack'
 import { accountOf, searchFor, SEARCH_FIELD, setQuery, useNetease, useNeteaseBridge } from './netease'
 import { useNeteaseWords } from './strings'
 import type { NeteaseWords } from './strings'
@@ -102,10 +103,15 @@ function TopBar() {
 }
 
 /** The search bar at the page's top: the app's own search (the rail has no search tab: this is it), its words
- * asked of the hidden page a moment after the last key, and its page opened as they're typed. */
+ * asked of the hidden page a moment after the last key, and its page opened as they're typed. Pressing the bar
+ * brings Search's own page up first, wherever the player was (history and the playlists picked for them when it's
+ * empty), and only then the keyboard. */
 export function SearchBar() {
   const words = useNeteaseWords()
   const query = useNetease((state) => state.query)
+  // Pressed: Search's page first (what it was on stays behind it for Back), then the field takes the keyboard
+  // (TextField's onSelect runs before it does, and Search's tab change doesn't put it away: NeteaseApp's own rule).
+  const showSearch = () => useNav.setState((nav) => openSearchPage(nav))
   // As the player types: the words asked a moment after the last key (never once per key).
   useEffect(() => {
     const timer = setTimeout(() => searchFor(query), 500)
@@ -125,8 +131,11 @@ export function SearchBar() {
         id={SEARCH_FIELD}
         value={query}
         onChange={setQuery}
+        onSelect={showSearch}
         onSubmit={() => {
           searchFor(query)
+          // A search actually asked (the return key) is one of the three Search keeps.
+          useSearchHistory.getState().add(query)
           useKeyboard.getState().detach(SEARCH_FIELD)
         }}
         returnKind="search"

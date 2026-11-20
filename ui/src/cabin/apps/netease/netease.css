@@ -1783,6 +1783,12 @@
   padding: 14px 4px 4px;
 }
 
+.netease-app .ne-search-idle-head {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
 .netease-app .ne-search-idle h2 {
   margin: 0;
   font-size: var(--ne-type-title);
@@ -1790,7 +1796,7 @@
   letter-spacing: -0.02em;
 }
 
-.netease-app .ne-search-idle > p {
+.netease-app .ne-search-idle-head p {
   margin: 0;
   font-size: var(--ne-type-label);
   line-height: 1.45;
@@ -1799,6 +1805,41 @@
 
 .netease-app .ne-search-idle .ne-section {
   margin-top: 14px;
+}
+
+/* The kept searches: a row of chips as wide as three, always as tall (fewer of them, and none at all, hold the
+   page still), with the way to clear them at the section's end. */
+.netease-app .ne-search-history .ne-history-chips {
+  min-height: 56px;
+  align-items: center;
+}
+
+.netease-app .ne-search-history .ne-note {
+  font-size: var(--ne-type-label);
+}
+
+.netease-app .ne-history-clear {
+  flex: none;
+  height: 40px;
+  padding-inline: 16px;
+  border-radius: 999px;
+  background: var(--ne-surface);
+  color: var(--ne-dim);
+  font-size: var(--ne-type-small);
+  font-weight: 600;
+  transition:
+    background-color var(--ne-quick),
+    color var(--ne-quick),
+    scale var(--ne-quick) var(--ne-ease);
+}
+
+.netease-app .ne-history-clear:hover {
+  background: var(--ne-hover);
+  color: var(--ne-text);
+}
+
+.netease-app .ne-history-clear:active {
+  scale: 0.96;
 }
 
 .netease-app .ne-chips {

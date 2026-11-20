@@ -21,6 +21,9 @@ interface TextFieldProps {
   icon?: ReactNode
   /** Selected as it comes (Safari's address field, pressed: typed into at once, the keyboard up). */
   autoSelect?: boolean
+  /** Before it takes the keyboard: what pressing it should show (the NetEase app's search page) — the app brings it
+   *  up first, so the keyboard isn't put away by the very page change that follows. */
+  onSelect?(): void
 }
 
 /**
@@ -38,6 +41,7 @@ export function TextField({
   label,
   icon,
   autoSelect = false,
+  onSelect,
 }: TextFieldProps) {
   const text = useText()
   const typing = useKeyboard((state) => state.field?.id === id)
@@ -68,7 +72,10 @@ export function TextField({
     }),
     [id, returnKind],
   )
-  const select = () => useKeyboard.getState().attach(field, language)
+  const select = () => {
+    onSelect?.()
+    useKeyboard.getState().attach(field, language)
+  }
 
   useEffect(() => () => useKeyboard.getState().detach(field.id), [field])
   useEffect(() => {

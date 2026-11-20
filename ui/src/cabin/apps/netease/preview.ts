@@ -82,9 +82,10 @@ const ARTISTS = [
 /** The albums: each list's songs are from one, so the preview's rows have an album to show. */
 const ALBUMS = ['夜航', '沿海', '雨天', '山雾', '晚风', '零点', '副驾', '长途', '磁带', '隧道', '货场', '码头']
 
-/** The artists as a search's cards say them (`preview-artist-1`…): a picture the preview has none of. */
+/** The artists as a search's cards say them (`9000001`…): a picture the preview has none of. Their ids are numeric,
+ *  as NetEase's own are, so the playing song can open their page here too. */
 const ARTIST_CARDS: NeteaseArtist[] = ARTISTS.map((name, index) => ({
-  id: `preview-artist-${index + 1}`,
+  id: String(9_000_001 + index),
   name,
   cover: null,
 }))
@@ -98,10 +99,13 @@ function songsOf(listIndex: number, name: string): NeteaseSong[] {
   return Array.from({ length: 14 }, (_, index): NeteaseSong => {
     const pick = seed + index * 17
     const title = TITLES[pick % TITLES.length]
+    const artist = ARTISTS[(seed + index * 7) % ARTISTS.length]
     const song: NeteaseSong = {
       id: `preview-${listIndex + 1}-${index + 1}`,
       title: index === 0 ? name : title,
-      artist: ARTISTS[(seed + index * 7) % ARTISTS.length],
+      artist,
+      // The first artist's id, as a real answer's song has (the player's artist opens their page).
+      artistId: ARTIST_CARDS.find((card) => card.name === artist)?.id,
       duration: 174 + (pick % 11) * 17,
       // A few that the preview can't play, so the app's mark for them is there to see.
       playable: !(index === 5 || (index === 2 && listIndex % 3 === 1) || (listIndex % 4 === 2 && index === 9)),
@@ -277,6 +281,7 @@ function toTrack(song: NeteaseSong, album: string): NeteaseTrack {
     id: song.id,
     title: song.title,
     artist: song.artist,
+    artistId: song.artistId,
     album: song.album ?? album,
     cover: null,
     duration: song.duration,

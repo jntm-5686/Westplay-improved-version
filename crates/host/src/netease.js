@@ -29,7 +29,7 @@
 //
 // Messages to the host (netease.rs), over `chrome.webview.postMessage` as the other players':
 //   { state: { signedIn, playing, volume, track, liked?, lists?, account?, audio? } }   what the page says of itself
-//   { playlist: { id, name, songs: [{ id, title, artist, album?, duration, playable }], cover?, playCount?,
+//   { playlist: { id, name, songs: [{ id, title, artist, artistId?, album?, duration, playable }], cover?, playCount?,
 //                 trackCount?, updateFrequency?, creator?, description? } }   a playlist's (or a ranking's) songs
 //   { home: { daily: { songs } | null, radar, personal, recommended } }   Home's day and its playlist shelves
 //   { library: { groups: [{ title, count, playlists: [{ id, name, cover, playCount, songCount, by }] }] } }
@@ -175,6 +175,8 @@
       cover: song.cover || before?.cover || null,
       duration: song.duration || before?.duration || 0,
       playable: song.playable ?? before?.playable ?? true,
+      // The first artist's NetEase id, for the app to open their page from the playing song.
+      artistId: song.artistId || before?.artistId || null,
     })
     if (knownSongs.size > 3000) knownSongs.delete(knownSongs.keys().next().value)
   }
@@ -278,8 +280,13 @@
     return found
   }
   // A song as the page's own answers say it: its id, name, artists (joined as its pages show them), length (its
-  // answers' milliseconds), album and cover, and whether the account's own rights let it play (`st` below 0: not; a
-  // fee of 4 or 8 without a privilege is an album's to buy).
+  // answers' milliseconds), album and cover, whether the account's own rights let it play (`st` below 0: not; a
+  // fee of 4 or 8 without a privilege is an album's to buy), and the first artist's own id (the app opens their page
+  // from the playing song; left out when the answer gives none).
+  const artistIdOf = (artists) => {
+    const id = String(artists[0]?.id ?? '')
+    return /^\d{1,20}$/.test(id) && Number(id) > 0 ? id : undefined
+  }
   const songOf = (song) => {
     if (!song?.id || !song?.name) return null
     const artists = Array.isArray(song.ar) ? song.ar : Array.isArray(song.artists) ? song.artists : []
@@ -290,6 +297,7 @@
       id: String(song.id),
       title: String(song.name),
       artist: artists.map((artist) => artist?.name).filter(Boolean).join('/'),
+      artistId: artistIdOf(artists),
       duration: Math.round((Number(song.dt ?? song.duration) || 0) / 1000),
       playable: (right !== null ? right >= 0 : Number(song.fee ?? 0) < 4) && !song.noCopyrightRcmd,
       album: album?.name ? String(album.name) : '',
@@ -452,6 +460,9 @@
       id,
       title,
       artist: text(document.querySelector(S.trackArtist)),
+      // The first artist's NetEase id (the app opens their page from the full-screen player), once the song's own
+      // detail is known.
+      artistId: known?.artistId ?? undefined,
       album: known?.album ?? '',
       cover: known?.cover ?? wide(document.querySelector(S.cover)?.getAttribute('src')),
       duration,
@@ -950,68 +961,91 @@
   // playlists (歌单), each with its page's own count. The last search asked is the only one answered (a newer one
   // takes over).
   const SEARCH_KINDS = { songs: 1, artists: 100, playlists: 1000 }
+  // Its search interfaces, the newest first: the page's own cloud search, its older search, and the first one it had.
+  // Asked in that order, each in turn, so a burst refused by one (code 405) is answered by the next.
+  const SEARCH_PATHS = ['/api/cloudsearch/pc', '/api/search/pc', '/api/search/get/web']
+  // Asked answers kept for a while: the same words again (a chip, a history press, a back and forth) cost nothing.
+  const SEARCH_KEPT_FOR = 5 * 60 * 1000
+  // Its interfaces count calls (a burst hears "操作频繁", code 405): all search calls leave one at a time, a gap between
+  // them, and a refusal blocks them for a while (the app is told its search failed, never "nothing matched").
+  const SEARCH_GAP = 220
+  const SEARCH_BLOCKED_FOR = 10000
+  const searchCache = new Map()
+  let searchQueue = Promise.resolve()
+  let searchBlockedUntil = 0
   let searchAsked = 0
-  // The page's own cloud search (`cloudsearch/pc`, what its search box asks): the older `/api/search/get` and
-  // `get/web` are refused in bursts ("操作频繁，请稍候再试", code 405, seen on the owner's account after a few
-  // searches, and after our own repeated asks) and left the app showing "nothing found" for every search.
+  const spaced = (work) => {
+    const run = searchQueue.then(async () => {
+      await sleep(SEARCH_GAP)
+      return work()
+    })
+    searchQueue = run.catch(() => {})
+    return run
+  }
+  // One of its interfaces, asked for one kind of result; the first that answers with results answers.
   const searchKind = async (query, type) => {
     const limit = type === SEARCH_KINDS.songs ? 60 : 30
-    const ask = () =>
-      api(
-        `/api/cloudsearch/pc?csrf_token=${encodeURIComponent(csrf())}&s=${encodeURIComponent(query)}&type=${type}&limit=${limit}&offset=0`,
+    for (const path of SEARCH_PATHS) {
+      if (Date.now() < searchBlockedUntil) return { result: null, failed: true }
+      const answer = await spaced(() =>
+        api(`${path}?csrf_token=${encodeURIComponent(csrf())}&s=${encodeURIComponent(query)}&type=${type}&limit=${limit}&offset=0`),
       )
-    // Refused for its rate ("操作频繁，请稍候再试", code 405): asked again, each time a little later — and if it keeps
-    // refusing, said so (the app shows "search failed" with Retry, never "nothing found" for a search it never made).
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      const answer = await ask()
-      if (answer && Number(answer.code) !== 405) return { result: answer.result ?? null, failed: false }
-      await sleep(600 + attempt * 900)
+      const refused = !answer || Number(answer.code) === 405
+      if (!refused) {
+        // Answered: whatever it refused before is its past.
+        searchBlockedUntil = 0
+        return { result: answer.result ?? null, failed: false, path }
+      }
+      // A refusal is its rate's, not this interface's: the next one is asked at once.
+      if (Number(answer?.code) === 405) searchBlockedUntil = Date.now() + SEARCH_BLOCKED_FOR
     }
     return { result: null, failed: true }
   }
   const answerSearch = async (query) => {
     const said = String(query ?? '').trim().slice(0, 60)
     const token = ++searchAsked
-    const answer = { search: { query: said, songs: [], artists: [], playlists: [], songsTotal: 0, artistsTotal: 0, playlistsTotal: 0 } }
-    if (!said) return post(answer)
-    const [songKind, artistKind, playlistKind] = await Promise.all([
-      searchKind(said, SEARCH_KINDS.songs),
-      searchKind(said, SEARCH_KINDS.artists),
-      searchKind(said, SEARCH_KINDS.playlists),
-    ])
+    const empty = { query: said, songs: [], artists: [], playlists: [], songsTotal: 0, artistsTotal: 0, playlistsTotal: 0 }
+    if (!said) return post({ search: empty })
+    const kept = searchCache.get(said)
+    if (kept && Date.now() - kept.at < SEARCH_KEPT_FOR) return post({ search: kept.answer })
+    // The songs first: the app draws them while the rest is being asked.
+    const songKind = await searchKind(said, SEARCH_KINDS.songs)
     if (token !== searchAsked) return
-    const songResults = songKind.result
-    const artistResults = artistKind.result
-    const playlistResults = playlistKind.result
-    // Its own interface refused all three (a burst's rate): the app is told it failed, not that nothing matched.
-    answer.search.failed = songKind.failed && artistKind.failed && playlistKind.failed
-    const raw = Array.isArray(songResults?.songs) ? songResults.songs : []
-    // Its search's answer has no rights: its own song detail has each one's `st`.
-    const details = await songsByIds(raw.map((song) => song.id))
-    if (token !== searchAsked) return
-    const known = new Map(details.map((song) => [song.id, song]))
-    const found = raw
-      .map((song) => known.get(String(song.id)) ?? songOf(song))
-      .filter(Boolean)
-      .slice(0, 60)
+    const raw = Array.isArray(songKind.result?.songs) ? songKind.result.songs : []
+    const found = raw.map(songOf).filter(Boolean).slice(0, 60)
     rememberContext('search', found)
-    answer.search.songs = found.map(songOut)
-    answer.search.songsTotal = Math.max(0, Number(songResults?.songCount) || answer.search.songs.length)
-    answer.search.artists = (Array.isArray(artistResults?.artists) ? artistResults.artists : [])
-      .map((artist) => ({
-        id: String(artist?.id ?? ''),
-        name: String(artist?.name ?? ''),
-        cover: wide(artist?.picUrl ?? artist?.img1v1Url, '130y130'),
-      }))
-      .filter((artist) => artist.id && artist.name)
-      .slice(0, 30)
-    answer.search.artistsTotal = Math.max(0, Number(artistResults?.artistCount) || answer.search.artists.length)
-    answer.search.playlists = (Array.isArray(playlistResults?.playlists) ? playlistResults.playlists : [])
-      .map(playlistOf)
-      .filter(Boolean)
-      .slice(0, 30)
-    answer.search.playlistsTotal = Math.max(0, Number(playlistResults?.playlistCount) || answer.search.playlists.length)
-    post(answer)
+    const partial = {
+      ...empty,
+      songs: found.map(songOut),
+      songsTotal: Math.max(0, Number(songKind.result?.songCount) || found.length),
+      failed: songKind.failed,
+    }
+    post({ search: partial })
+    if (songKind.failed) return
+    const [artistKind, playlistKind] = await Promise.all([searchKind(said, SEARCH_KINDS.artists), searchKind(said, SEARCH_KINDS.playlists)])
+    if (token !== searchAsked) return
+    const answer = {
+      ...partial,
+      artists: (Array.isArray(artistKind.result?.artists) ? artistKind.result.artists : [])
+        .map((artist) => ({
+          id: String(artist?.id ?? ''),
+          name: String(artist?.name ?? ''),
+          cover: wide(artist?.picUrl ?? artist?.img1v1Url, '130y130'),
+        }))
+        .filter((artist) => artist.id && artist.name)
+        .slice(0, 30),
+      artistsTotal: Math.max(0, Number(artistKind.result?.artistCount) || 0),
+      playlists: (Array.isArray(playlistKind.result?.playlists) ? playlistKind.result.playlists : [])
+        .map(playlistOf)
+        .filter(Boolean)
+        .slice(0, 30),
+      playlistsTotal: Math.max(0, Number(playlistKind.result?.playlistCount) || 0),
+      failed: false,
+    }
+    answer.artistsTotal = Math.max(answer.artistsTotal, answer.artists.length)
+    answer.playlistsTotal = Math.max(answer.playlistsTotal, answer.playlists.length)
+    searchCache.set(said, { at: Date.now(), answer })
+    post({ search: answer })
   }
 
   // An artist's page: its own artist (name, alias, picture, introduction) and its songs (its own `artist/songs`, the

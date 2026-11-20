@@ -124,6 +124,10 @@ pub struct Song {
     pub title: String,
     #[serde(default)]
     pub artist: String,
+    /// The first artist's NetEase id, when the page gave a real one (the app opens their page from the playing
+    /// song); left out otherwise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub artist_id: Option<String>,
     /// The song's album, when its answer said one (a playlist's songs, the recent ones, a search's).
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub album: String,
@@ -137,10 +141,12 @@ pub struct Song {
 }
 
 impl Song {
-    /// The song cleaned: its words as the app shows them (short), its times real, its own count sane.
+    /// The song cleaned: its words as the app shows them (short), its times real, its own count sane, and only an
+    /// artist id that's NetEase's own (digits).
     fn checked(mut self) -> Self {
         self.title = short(self.title, 300);
         self.artist = short(self.artist, 300);
+        self.artist_id = self.artist_id.filter(|id| is_id(id));
         self.album = short(self.album, 300);
         self.duration = finite(self.duration);
         self.play_count = self.play_count.min(1_000_000);
@@ -215,6 +221,10 @@ pub struct Track {
     pub title: String,
     #[serde(default)]
     pub artist: String,
+    /// The first artist's NetEase id, when the page gave a real one (the full-screen player opens their page from
+    /// it); left out otherwise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub artist_id: Option<String>,
     #[serde(default)]
     pub album: String,
     #[serde(default)]
@@ -228,12 +238,13 @@ pub struct Track {
 }
 
 impl Track {
-    /// The song cleaned: its words as the app shows them (short), its times real, and only a cover on NetEase's own
-    /// image hosts (whatever else the page might say is dropped).
+    /// The song cleaned: its words as the app shows them (short), its times real, only a cover on NetEase's own
+    /// image hosts (whatever else the page might say is dropped), and only an artist id that's NetEase's own.
     fn checked(mut self) -> Self {
         self.id = if is_id(&self.id) { self.id } else { String::new() };
         self.title = short(self.title, 300);
         self.artist = short(self.artist, 300);
+        self.artist_id = self.artist_id.filter(|id| is_id(id));
         self.album = short(self.album, 300);
         self.cover = self.cover.filter(|cover| is_net_ease_image(cover));
         self.duration = finite(self.duration);
@@ -1474,13 +1485,15 @@ mod tests {
         );
         let Some(Message::State(state)) = read_message(
             r##"{"state":{"signedIn":true,"playing":true,"volume":0.5,"track":{"id":"1","title":"歌名","artist":"歌手",
-                "album":"专辑","cover":"https://p2.music.126.net/a.jpg?param=300y300","duration":240,"position":63,
-                "playable":true},"lists":[{"id":"456","name":"歌单名","cover":null,"playCount":123456}]}}"##,
+                "artistId":"5770","album":"专辑","cover":"https://p2.music.126.net/a.jpg?param=300y300","duration":240,
+                "position":63,"playable":true},"lists":[{"id":"456","name":"歌单名","cover":null,"playCount":123456}]}}"##,
         ) else {
             panic!("not a state")
         };
         assert_eq!(state.signed_in, Some(true));
-        assert_eq!(state.track.expect("a track").duration, 240.0);
+        let track = state.track.expect("a track");
+        assert_eq!(track.duration, 240.0);
+        assert_eq!(track.artist_id.as_deref(), Some("5770"), "the first artist's id comes through");
         assert_eq!(state.lists.expect("lists")[0].play_count, 123456);
         assert_eq!(read_message("not json"), None);
         assert_eq!(read_message(r#"{"state":"no"}"#), None);
@@ -1492,11 +1505,11 @@ mod tests {
             r##"{"playlist":{"id":"3778678","name":"热歌榜","cover":"https://p1.music.126.net/0.jpg",
                 "playCount":14253657088,"trackCount":200,"updateFrequency":"每天更新","creator":"",
                 "description":"","songs":[
-                {"id":"1","title":"冬天又来临","artist":"歌手","album":"冬天又来临","duration":240.5,"playable":true},
+                {"id":"1","title":"冬天又来临","artist":"歌手","artistId":"5770","album":"冬天又来临","duration":240.5,"playable":true},
                 {"id":"1","title":"repeat","artist":"","duration":100,"playable":true},
                 {"id":"","title":"no id","duration":1,"playable":false},
                 {"id":"2","title":"","duration":1,"playable":false},
-                {"id":"3","title":"a song","artist":"","duration":null,"playable":false}]}}"##,
+                {"id":"3","title":"a song","artist":"","artistId":"12x","duration":null,"playable":false}]}}"##,
         ) else {
             panic!("not a playlist")
         };
@@ -1509,7 +1522,9 @@ mod tests {
         assert_eq!(songs.songs.len(), 2, "{songs:?}");
         assert_eq!(songs.songs[0].title, "冬天又来临");
         assert_eq!(songs.songs[0].album, "冬天又来临");
+        assert_eq!(songs.songs[0].artist_id.as_deref(), Some("5770"));
         assert_eq!(songs.songs[1].duration, 0.0);
+        assert_eq!(songs.songs[1].artist_id, None, "not an id the app opens a page by");
         assert!(read_message(r#"{"playlist":"no"}"#).is_none());
         // A v2 answer (no head at all) is read the same: no cover, no counts, the same songs.
         let Some(Message::Playlist(songs)) = read_message(r#"{"playlist":{"id":"456","name":"歌单名"}}"#) else {
@@ -1557,6 +1572,22 @@ mod tests {
         assert!(!message.contains("someone"), "nothing of the account passes: {message}");
     }
 
+    /// An artist's page: the first artist's NetEase id passes (the app opens their page from the playing song), only
+    /// when it is one (digits), and is left out of the messages when there's none.
+    #[test]
+    fn carries_only_netease_artist_ids() {
+        let song: Song = serde_json::from_str(r#"{"id":"1","title":"歌","artistId":"5770"}"#).unwrap();
+        assert_eq!(song.artist_id.as_deref(), Some("5770"));
+        assert_eq!(Song { artist_id: Some("12x".into()), ..song.clone() }.checked().artist_id, None);
+        let track: Track = serde_json::from_str(r#"{"title":"歌","artistId":"abc"}"#).unwrap();
+        assert_eq!(track.checked().artist_id, None);
+        // Leave the field out when there's none (never an empty one), and say it when there is.
+        let value: serde_json::Value = serde_json::to_value(Song { artist_id: None, ..song.clone() }).unwrap();
+        assert!(value.get("artistId").is_none(), "{value}");
+        let value: serde_json::Value = serde_json::to_value(Song { artist_id: Some("5770".into()), ..song }).unwrap();
+        assert_eq!(value["artistId"], "5770");
+    }
+
     /// The state to the cabin page: its protocol's own (`type`/`kind`), `null` before NetEase runs, the sign-in
     /// window's state in it.
     #[test]
@@ -1570,6 +1601,7 @@ mod tests {
                 id: "123".into(),
                 title: "歌名".into(),
                 artist: "歌手".into(),
+                artist_id: None,
                 album: "专辑".into(),
                 cover: Some("https://p2.music.126.net/a.jpg".into()),
                 duration: 240.0,
@@ -1622,6 +1654,7 @@ mod tests {
                 id: "1".into(),
                 title: "冬天又来临".into(),
                 artist: "歌手".into(),
+                artist_id: Some("5770".into()),
                 album: String::new(),
                 duration: 240.5,
                 playable: true,
@@ -1869,6 +1902,7 @@ mod tests {
             id: "1".into(),
             title: "歌".into(),
             artist: "人".into(),
+            artist_id: None,
             album: String::new(),
             duration: 200.0,
             playable: true,
@@ -1930,7 +1964,7 @@ mod tests {
             alias: "Jay Chou".into(),
             cover: Some("https://p1.music.126.net/j.jpg?param=300y300".into()),
             description: "华语流行歌手。".into(),
-            songs: vec![Song { id: "2".into(), title: "晴天".into(), artist: "周杰伦".into(), album: String::new(), duration: 269.0, playable: true, play_count: 0 }],
+            songs: vec![Song { id: "2".into(), title: "晴天".into(), artist: "周杰伦".into(), artist_id: Some("6452".into()), album: String::new(), duration: 269.0, playable: true, play_count: 0 }],
         }
         .checked();
         let value: serde_json::Value = serde_json::from_str(&artist_message(&artist)).unwrap();
