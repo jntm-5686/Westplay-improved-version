@@ -297,6 +297,10 @@
       id: String(song.id),
       title: String(song.name),
       artist: artists.map((artist) => artist?.name).filter(Boolean).join('/'),
+      // Each of them, with their own NetEase id: the full-screen player opens any of their pages.
+      artists: artists
+        .map((artist) => ({ id: String(artist?.id ?? ''), name: String(artist?.name ?? '') }))
+        .filter((artist) => /^\d{1,20}$/.test(artist.id) && artist.name),
       artistId: artistIdOf(artists),
       duration: Math.round((Number(song.dt ?? song.duration) || 0) / 1000),
       playable: (right !== null ? right >= 0 : Number(song.fee ?? 0) < 4) && !song.noCopyrightRcmd,
@@ -460,9 +464,10 @@
       id,
       title,
       artist: text(document.querySelector(S.trackArtist)),
-      // The first artist's NetEase id (the app opens their page from the full-screen player), once the song's own
-      // detail is known.
-      artistId: known?.artistId ?? undefined,
+      // Its artists (each with their own NetEase id), once the song's own detail is known: the full-screen player
+      // opens their pages.
+      artists: known?.artists,
+      artistId: known?.artists?.[0]?.id,
       album: known?.album ?? '',
       cover: known?.cover ?? wide(document.querySelector(S.cover)?.getAttribute('src')),
       duration,

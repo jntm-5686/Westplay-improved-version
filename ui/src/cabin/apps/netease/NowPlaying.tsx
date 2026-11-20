@@ -1,4 +1,4 @@
-import { type CSSProperties, useEffect, useLayoutEffect, useRef } from 'react'
+import { type CSSProperties, Fragment, useEffect, useLayoutEffect, useRef } from 'react'
 import { useCoverPalette } from './coverColors'
 import { Cover, Slider, clock } from './parts'
 import {
@@ -14,7 +14,7 @@ import {
 import { openTab, useNav } from './nav'
 import { expectChange, usePlayback } from './playback'
 import { playPause, positionOf, seek, setLiked, setVolume, showToast, skip, useNetease, useNow } from './netease'
-import { fullScreen, leftFullScreen, artistPageOf } from './stack'
+import { fullScreen, leftFullScreen } from './stack'
 import { useNeteaseWords } from './strings'
 
 /** The NetEase app's player: the bar at the screen's foot (always there), and its Now Playing page. */
@@ -219,10 +219,15 @@ export function NowPlayingPage() {
     )
   }
   const palette = layers.current.palette
-  // The artist's own page, when the song's answer gave their NetEase id (the page opens over the player: Back comes
-  // back to it). A song whose answer gave none has plain words there.
-  const artistPage = artistPageOf(track.artistId)
-  const artistName = track.artist.split('/')[0]?.trim() || track.artist
+  // Its artists, each with the id their own page opens by (`artistId` is the first, for an answer of the older
+  // shape): the full-screen player links every one of them, and Back comes back to it.
+  const artists =
+    track.artists && track.artists.length > 0
+      ? track.artists
+      : track.artist
+          .split('/')
+          .map((name, index) => ({ id: index === 0 ? (track.artistId ?? '') : '', name: name.trim() }))
+          .filter((artist) => artist.name)
   // The cover's accent, on WestPlay's own skin; NetEase's red keeps NetEase's own accent on the app's controls.
   const accent =
     palette && style !== 'red'
@@ -266,18 +271,25 @@ export function NowPlayingPage() {
             <h1 className="ne-now-title" title={track.title}>
               {track.title}
             </h1>
-            {artistPage ? (
-              <button
-                type="button"
-                className="ne-now-artist link"
-                title={`${words.artist} · ${artistName}`}
-                onClick={() => open({ kind: 'artist', id: artistPage.id, name: artistName, cover: track.cover })}
-              >
-                {track.artist}
-              </button>
-            ) : (
-              <p className="ne-now-artist">{track.artist}</p>
-            )}
+            <p className="ne-now-artist">
+              {artists.map((artist, index) => (
+                <Fragment key={`${artist.id}:${artist.name}:${index}`}>
+                  {index > 0 && <span className="ne-now-artist-sep"> / </span>}
+                  {/^\d{1,20}$/.test(artist.id) ? (
+                    <button
+                      type="button"
+                      className="ne-now-artist-link"
+                      title={`${words.artist} · ${artist.name}`}
+                      onClick={() => open({ kind: 'artist', id: artist.id, name: artist.name, cover: track.cover })}
+                    >
+                      {artist.name}
+                    </button>
+                  ) : (
+                    <span>{artist.name}</span>
+                  )}
+                </Fragment>
+              ))}
+            </p>
             {track.album && (
               <p className="ne-now-album">
                 {words.album} · {track.album}

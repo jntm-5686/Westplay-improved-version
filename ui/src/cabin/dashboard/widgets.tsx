@@ -18,6 +18,7 @@ import {
   useYouTubeMusicSource,
 } from '../apps/youtubeMusic/youtubeMusic'
 import { playOrPause as playOrPausePlayer, skip as skipPlayer, usePlayer, usePlayerSource } from '../apps/player/player'
+import { playPause as playPauseNetease, skip as skipNetease, useNeteaseSource } from '../apps/netease/netease'
 import type { MediaAction, MediaSource } from '../../shared/media'
 import { useLook } from '../state/hooks'
 import { go, useCabin } from '../state/store'
@@ -38,12 +39,13 @@ import { cabClock } from '../../shared/host'
  */
 export function NowPlayingWidget() {
   const shown = useCabin((state) => state.dashboardWidgets.nowPlaying)
-  const { showing, spotify, appleMusic, youtubeMusic, player } = useNowPlaying()
+  const { showing, spotify, appleMusic, netease, youtubeMusic, player } = useNowPlaying()
   return (
     <div className={`widget-slot${shown ? ' open' : ''}`}>
       {shown && showing === 'video' && <VideoWidget />}
       {shown && showing === 'spotify' && spotify && <SpotifyWidget spotify={spotify} />}
       {shown && showing === 'appleMusic' && appleMusic && <AppleMusicWidget appleMusic={appleMusic} />}
+      {shown && showing === 'netease' && netease && <NeteaseWidget netease={netease} />}
       {shown && showing === 'youtubeMusic' && youtubeMusic && <YouTubeMusicWidget youtubeMusic={youtubeMusic} />}
       {shown && showing === 'player' && player && <PlayerWidget player={player} />}
       {shown && showing === null && <MusicWidget source={null} artwork={null} onControl={() => {}} />}
@@ -65,6 +67,22 @@ function AppleMusicWidget({ appleMusic }: { appleMusic: NonNullable<ReturnType<t
         if (action === 'playPause') playOrPauseAppleMusic()
         else if (action === 'next') skipAppleMusic(1)
         else if (action === 'previous') skipAppleMusic(-1)
+      }}
+    />
+  )
+}
+
+/** NetEase Cloud Music's music: what plays, its controls, opening the app on Now Playing. */
+function NeteaseWidget({ netease }: { netease: NonNullable<ReturnType<typeof useNeteaseSource>> }) {
+  return (
+    <MusicWidget
+      source={netease.source}
+      artwork={netease.artwork}
+      onOpen={() => go({ type: 'openApp', app: 'netease' })}
+      onControl={(action) => {
+        if (action === 'playPause') playPauseNetease()
+        else if (action === 'next') skipNetease(1)
+        else if (action === 'previous') skipNetease(-1)
       }}
     />
   )

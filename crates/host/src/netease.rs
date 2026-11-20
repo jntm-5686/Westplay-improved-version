@@ -128,6 +128,9 @@ pub struct Song {
     /// song); left out otherwise.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub artist_id: Option<String>,
+    /// Each of its artists, with their own id (`None`: the answer gave none).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub artists: Option<Vec<ArtistRef>>,
     /// The song's album, when its answer said one (a playlist's songs, the recent ones, a search's).
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub album: String,
@@ -147,6 +150,14 @@ impl Song {
         self.title = short(self.title, 300);
         self.artist = short(self.artist, 300);
         self.artist_id = self.artist_id.filter(|id| is_id(id));
+        self.artists = self.artists.map(|artists| {
+            artists
+                .into_iter()
+                .filter(|artist| is_id(&artist.id))
+                .map(|artist| ArtistRef { id: artist.id, name: short(artist.name, 120) })
+                .take(8)
+                .collect::<Vec<_>>()
+        });
         self.album = short(self.album, 300);
         self.duration = finite(self.duration);
         self.play_count = self.play_count.min(1_000_000);
@@ -211,6 +222,14 @@ fn checked_songs(songs: Vec<Song>, most: usize) -> Vec<Song> {
         .collect()
 }
 
+/// One artist of a song, as NetEase names them, with their own id (their page opens from the full-screen player).
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ArtistRef {
+    pub id: String,
+    pub name: String,
+}
+
 /// What plays: the song's id, name, artist and album, its cover (on NetEase's own image hosts), how long it is
 /// (seconds), how far into it (seconds), and whether it's playable (one the page plays is).
 #[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
@@ -225,6 +244,9 @@ pub struct Track {
     /// it); left out otherwise.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub artist_id: Option<String>,
+    /// Each of the song's artists, with their own id (`None`: the page's answer gave none).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub artists: Option<Vec<ArtistRef>>,
     #[serde(default)]
     pub album: String,
     #[serde(default)]
@@ -245,6 +267,14 @@ impl Track {
         self.title = short(self.title, 300);
         self.artist = short(self.artist, 300);
         self.artist_id = self.artist_id.filter(|id| is_id(id));
+        self.artists = self.artists.map(|artists| {
+            artists
+                .into_iter()
+                .filter(|artist| is_id(&artist.id))
+                .map(|artist| ArtistRef { id: artist.id, name: short(artist.name, 120) })
+                .take(8)
+                .collect::<Vec<_>>()
+        });
         self.album = short(self.album, 300);
         self.cover = self.cover.filter(|cover| is_net_ease_image(cover));
         self.duration = finite(self.duration);
@@ -1602,6 +1632,7 @@ mod tests {
                 title: "歌名".into(),
                 artist: "歌手".into(),
                 artist_id: None,
+                artists: None,
                 album: "专辑".into(),
                 cover: Some("https://p2.music.126.net/a.jpg".into()),
                 duration: 240.0,
@@ -1655,6 +1686,7 @@ mod tests {
                 title: "冬天又来临".into(),
                 artist: "歌手".into(),
                 artist_id: Some("5770".into()),
+                artists: None,
                 album: String::new(),
                 duration: 240.5,
                 playable: true,
@@ -1903,6 +1935,7 @@ mod tests {
             title: "歌".into(),
             artist: "人".into(),
             artist_id: None,
+            artists: None,
             album: String::new(),
             duration: 200.0,
             playable: true,
@@ -1964,7 +1997,7 @@ mod tests {
             alias: "Jay Chou".into(),
             cover: Some("https://p1.music.126.net/j.jpg?param=300y300".into()),
             description: "华语流行歌手。".into(),
-            songs: vec![Song { id: "2".into(), title: "晴天".into(), artist: "周杰伦".into(), artist_id: Some("6452".into()), album: String::new(), duration: 269.0, playable: true, play_count: 0 }],
+            songs: vec![Song { id: "2".into(), title: "晴天".into(), artist: "周杰伦".into(), artist_id: Some("6452".into()), artists: None, album: String::new(), duration: 269.0, playable: true, play_count: 0 }],
         }
         .checked();
         let value: serde_json::Value = serde_json::from_str(&artist_message(&artist)).unwrap();

@@ -35,6 +35,11 @@ export interface NeteaseList {
 }
 
 /** What plays, as the host's hidden page says. `playable`: NetEase's rights allow it (VIP, region, copyright). */
+export interface NeteaseArtistRef {
+  id: string
+  name: string
+}
+
 export interface NeteaseTrack {
   /** NetEase's id, when the page gave one (v1's state message may leave it out). */
   id?: string
@@ -43,6 +48,8 @@ export interface NeteaseTrack {
   /** The first artist's NetEase id, when the page gave a real one: the full-screen player opens their page from
    *  it. Missing for a song whose answer didn't say (the artist's name stays plain words there). */
   artistId?: string
+  /** Each of the song's artists, with their own id: the full-screen player opens their pages. */
+  artists?: NeteaseArtistRef[]
   album: string
   cover: string | null
   /** Seconds. */
@@ -59,6 +66,8 @@ export interface NeteaseSong {
   artist: string
   /** The first artist's NetEase id, when the answer said one. */
   artistId?: string
+  /** Each of its artists, with their own id: the full-screen player opens their pages. */
+  artists?: NeteaseArtistRef[]
   duration: number
   playable: boolean
   /** The song's album, when its answer said one (`playlist`, `recent`, a search's songs). */
@@ -487,6 +496,22 @@ function image(value: unknown): string | null {
   return typeof value === 'string' && value ? value : null
 }
 
+/** A song's artists, each with the id its own page opens by (`[]` for one that gave none, or none at all). */
+function readArtistRefs(raw: unknown): NeteaseArtistRef[] {
+  if (!Array.isArray(raw)) return []
+  const artists: NeteaseArtistRef[] = []
+  for (const entry of raw) {
+    if (!entry || typeof entry !== 'object') continue
+    const artist = entry as Record<string, unknown>
+    const id = text(artist.id)
+    const name = text(artist.name)
+    if (!/^\d{1,20}$/.test(id) || !name) continue
+    if (artists.some((kept) => kept.id === id)) continue
+    artists.push({ id, name })
+  }
+  return artists.slice(0, 8)
+}
+
 function readTrack(raw: unknown): NeteaseTrack | null {
   if (!raw || typeof raw !== 'object') return null
   const track = raw as Record<string, unknown>
@@ -505,6 +530,8 @@ function readTrack(raw: unknown): NeteaseTrack | null {
   }
   const artistId = text(track.artistId)
   if (artistId) read.artistId = artistId
+  const artists = readArtistRefs(track.artists)
+  if (artists.length > 0) read.artists = artists
   return read
 }
 
@@ -582,6 +609,8 @@ function readSongs(raw: unknown): NeteaseSong[] {
     }
     const artistId = text(song.artistId)
     if (artistId) read.artistId = artistId
+    const artists = readArtistRefs(song.artists)
+    if (artists.length > 0) read.artists = artists
     const album = text(song.album)
     if (album) read.album = album
     const playCount = Math.max(0, count(song.playCount, 0))

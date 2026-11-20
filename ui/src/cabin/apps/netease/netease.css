@@ -2081,18 +2081,18 @@
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(112% 84% at 17% -6%, var(--ne-now-a) 0%, transparent 62%),
-    radial-gradient(98% 78% at 96% 4%, var(--ne-now-b) 0%, transparent 66%),
-    linear-gradient(178deg, var(--ne-now-b) 1%, var(--ne-now-c) 60%, var(--ne-now-c) 100%);
-  opacity: 0.94;
+    radial-gradient(120% 95% at 12% -8%, var(--ne-now-a) 0%, transparent 62%),
+    radial-gradient(105% 90% at 96% 2%, var(--ne-now-b) 0%, transparent 66%),
+    linear-gradient(176deg, var(--ne-now-b) 0%, var(--ne-now-a) 46%, var(--ne-now-c) 100%);
+  opacity: 0.96;
 }
 
 .netease-app .ne-now-tint.live {
   animation: ne-now-tint-in 900ms ease both;
 }
 
-/* The veil: dark where the words and buttons are, so white reads on any cover (the top keeps the picture's
-   colours, the foot is darker under the controls). */
+/* The veil: a light haze for the words' contrast, the colours all the way down (owner 2026-11-20: "全屏都是
+   渐变色", no black foot) — brightest at the top, a little deeper under the controls, never a flat black. */
 .netease-app .ne-now-veil {
   position: absolute;
   inset: 0;
@@ -2101,12 +2101,13 @@
   background:
     linear-gradient(
       180deg,
-      var(--ne-now-veil-top) 0%,
-      transparent 26%,
-      transparent 54%,
-      var(--ne-now-veil-bottom) 100%
+      rgb(4 3 8 / 0.24) 0%,
+      rgb(4 3 8 / 0.04) 24%,
+      rgb(4 3 8 / 0.02) 52%,
+      rgb(4 3 8 / 0.16) 86%,
+      rgb(4 3 8 / 0.28) 100%
     ),
-    linear-gradient(90deg, rgb(0 0 0 / 0.2) 0%, transparent 48%);
+    linear-gradient(90deg, rgb(0 0 0 / 0.16) 0%, transparent 52%);
 }
 
 /* The page's content, over the colours: the head, the cover and the song, and the controls at its foot. It's the
@@ -4055,4 +4056,39 @@
   .netease-app * {
     transition-duration: 0ms;
   }
+}
+
+/* The full-screen player's artists: each of them a link to their page, marked by a line under its name. */
+.netease-app .ne-now-artist {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0;
+}
+
+.netease-app .ne-now-artist-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 5px;
+  text-decoration-thickness: 2px;
+  text-decoration-color: rgb(255 255 255 / 0.5);
+  transition:
+    color var(--ne-quick),
+    text-decoration-color var(--ne-quick);
+}
+
+.netease-app .ne-now-artist-link:hover,
+.netease-app .ne-now-artist-link:focus-visible {
+  color: var(--ne-now-accent, #fff);
+  text-decoration-color: currentColor;
+}
+
+.netease-app .ne-now-artist-sep {
+  color: rgb(255 255 255 / 0.6);
+  white-space: pre;
 }
