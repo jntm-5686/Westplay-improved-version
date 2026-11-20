@@ -47,9 +47,10 @@ export function NeteaseApp() {
   const motion = usePrefs((state) => state.motion)
   useNeteaseBridge()
   // Leaving the page puts the keyboard away (the search bar stays where it is: only a result picked, or another
-  // page, lets it go).
+  // page, lets it go). Typing is what brings the search page up, and the keyboard goes with it: were it put away on
+  // that tab change too, the first letter typed would close it under the player's hands (owner 2026-11-20).
   useEffect(() => {
-    useKeyboard.getState().detach(SEARCH_FIELD)
+    if (tab !== 'search' || opened > 0) useKeyboard.getState().detach(SEARCH_FIELD)
   }, [tab, opened])
   return (
     <section

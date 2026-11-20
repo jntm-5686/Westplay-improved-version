@@ -951,9 +951,21 @@
   // takes over).
   const SEARCH_KINDS = { songs: 1, artists: 100, playlists: 1000 }
   let searchAsked = 0
+  // The page's own search interface (`get/web`, the one its search page calls): the older `/api/search/get` is
+  // refused in bursts ("操作频繁，请稍候再试", code 405, seen on the owner's account after a few searches) and left
+  // the app showing "nothing found" for every search after the first.
   const searchKind = async (query, type) => {
     const limit = type === SEARCH_KINDS.songs ? 60 : 30
-    const answer = await api(`/api/search/get?s=${encodeURIComponent(query)}&type=${type}&limit=${limit}&offset=0`)
+    const ask = () =>
+      api(
+        `/api/search/get/web?csrf_token=${encodeURIComponent(csrf())}&s=${encodeURIComponent(query)}&type=${type}&limit=${limit}&offset=0`,
+      )
+    let answer = await ask()
+    if (!answer || Number(answer.code) === 405) {
+      // Refused for its rate: asked once more, a moment later.
+      await sleep(700)
+      answer = await ask()
+    }
     return answer?.result ?? null
   }
   const answerSearch = async (query) => {
