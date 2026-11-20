@@ -919,7 +919,10 @@ impl Netease {
     /// Opens NetEase's web player in a WebView of `stage`'s frame (`width` x `height`), hidden under the cabin
     /// page.
     pub fn start(stage: &Stage, width: u32, height: u32, user_data: &Path) -> Result<Self, webview::Error> {
-        let view = OffscreenWebView::new(stage, width, height, user_data)?;
+        // Its sound reaches the cab's speakers (cab_sound.js, below), its audio coming from another host: its own
+        // browser's cross-origin checks off for this profile alone (owner 2026-11-20; every other page of WestPlay's
+        // keeps them). Without it a taken element plays silent (measured: the graph's analysers read 0).
+        let view = OffscreenWebView::new_with_arguments(stage, width, height, user_data, "--disable-web-security")?;
         view.log_as("netease")?;
         view.show(false)?;
         stage.add(&view, false)?;

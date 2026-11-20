@@ -1248,10 +1248,12 @@
 
   // The sound's own element (the page's audio), made through the truck's speakers (cab_sound.js, loaded first): told
   // the speakers, the head and the camera by the host.
-  // The page's sound itself for now: the cab's speakers' routing is not given this page (`() => null` is no
-  // element to take), so its sound plays as the page's own, out of the system's output — always heard. The spatial
-  // wiring (cab_sound.js taking its element) is a later change on purpose: a song must never come out silent.
-  const cab = window.westplayCabSound?.(() => null, post)
+  // The cab's speakers take its sound (cab_sound.js: the truck's speakers, the driver's head, the camera outside and
+  // the game's menu), as Spotify's do. The page's own element is given as it changes (a new song makes another one):
+  // cab_sound keeps one source per element and rewires to the one playing. Its own browser's cross-origin checks are
+  // off (`--disable-web-security` in netease.rs's start): NetEase's audio is served from another host, and an element
+  // taken from a page that may not read it would play silent.
+  const cab = window.westplayCabSound?.(() => soundingNow(), post)
   if (cab) setInterval(() => cab.tick(), 250)
   window.westplaySpeakerLevel = () => cab?.level() ?? null
   const CAB = {

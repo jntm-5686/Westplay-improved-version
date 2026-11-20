@@ -223,7 +223,20 @@ pub struct OffscreenWebView {
 impl OffscreenWebView {
     /// A WebView of `width` x `height` on `stage`'s compositor (not on the frame until [`Stage::add`]).
     pub fn new(stage: &Stage, width: u32, height: u32, user_data: &Path) -> Result<Self, Error> {
-        Self::in_environment(stage, width, height, create_environment(user_data, true)?)
+        Self::new_with_arguments(stage, width, height, user_data, "")
+    }
+
+    /// A WebView as [`OffscreenWebView::new`], its browser process given these extra arguments (this profile's own:
+    /// the NetEase page's needs `--disable-web-security`, its songs' audio being served from another host, or the
+    /// sound taken into the cab's speakers (cab_sound.js) would come out silent).
+    pub fn new_with_arguments(
+        stage: &Stage,
+        width: u32,
+        height: u32,
+        user_data: &Path,
+        extra: &str,
+    ) -> Result<Self, Error> {
+        Self::in_environment(stage, width, height, create_environment(user_data, true, extra)?)
     }
 
     /// A WebView as [`OffscreenWebView::new`], in a WebView2 environment already made: another WebView of a
@@ -974,7 +987,7 @@ fn process_failure(kind: COREWEBVIEW2_PROCESS_FAILED_KIND) -> String {
 /// A WebView2 environment on the profile `user_data` for browsing the web (Safari): as the players' own, but a
 /// page plays sound by itself only as a browser lets it (once the player has clicked in it), not as it loads.
 pub fn browsing_environment(user_data: &Path) -> Result<ICoreWebView2Environment, Error> {
-    create_environment(user_data, false)
+    create_environment(user_data, false, "")
 }
 
 /// Whether `error` is WebView2's "invalid state" (`HRESULT_FROM_WIN32(ERROR_INVALID_STATE)`): a browser of the same
@@ -990,7 +1003,7 @@ pub fn invalid_state(error: &Error) -> bool {
 }
 
 /// `autoplay`: pages play sound without being clicked first (WestPlay's own players, which play as the cab asks).
-fn create_environment(user_data: &Path, autoplay: bool) -> Result<ICoreWebView2Environment, Error> {
+fn create_environment(user_data: &Path, autoplay: bool, extra: &str) -> Result<ICoreWebView2Environment, Error> {
     let options = CoreWebView2EnvironmentOptions::default();
     // Chromium throttles or stops rendering for hidden or occluded windows; ours is never shown.
     let mut arguments = "--disable-features=CalculateNativeWinOcclusion --disable-background-timer-throttling \
@@ -1002,6 +1015,9 @@ fn create_environment(user_data: &Path, autoplay: bool) -> Result<ICoreWebView2E
     // The GPU it draws on (graphics.rs).
     if let Some(gpu) = GPU_ARGUMENT.lock().unwrap_or_else(|e| e.into_inner()).as_deref() {
         arguments = format!("{arguments} {gpu}");
+    }
+    if !extra.trim().is_empty() {
+        arguments = format!("{arguments} {extra}");
     }
     // SAFETY: the options object is ours and alive; the arguments are a plain string.
     unsafe {
