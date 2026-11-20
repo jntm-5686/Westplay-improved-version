@@ -22,7 +22,7 @@
 
 <br>
 
-<img src="images/home-dark.png" width="100%" alt="WestPlay 主屏：地图、音乐、Spotify、YouTube 与 YouTube Music 在卡车自己的屏幕上">
+<img src="images/home-dark.png" width="100%" alt="WestPlay 主屏：地图、音乐、Spotify、YouTube、YouTube Music 与网易云音乐在卡车自己的屏幕上">
 
 WestPlay 把一块车机风格的屏幕放进卡车自己的仪表台，在游戏里显示——欧卡 2 与美卡共用同一个 WestPlay。用你自己的游戏生成的地图画路线，加上音乐、YouTube、沿途天气：就在真车中控屏的位置上，用鼠标操作，按住一个键就能接管。
 
@@ -57,7 +57,7 @@ WestPlay 把一块车机风格的屏幕放进卡车自己的仪表台，在游�
 
 **应用**
 
-14. **新增网易云音乐车机版 V1.1**（原版没有）：车机里独立 App，仿桌面版现代界面、大字号精简布局；登录在伴生程序的「账号」页扫码完成；**接入了车内空间音效**（按卡车喇叭位置分频定位 + 头部追踪，车外与 Esc 菜单自动静音）；首页每日推荐、榜单、按账号同步的我的歌单/最近播放、在线搜索（歌曲/艺人/歌单）、红心同步、沉浸式正在播放；界面风格可选「跟随体系 / 网易云红」，浅色深色自动跟随。
+14. **新增网易云音乐车机版 V1.3**（原版没有）：车机里独立 App，仿桌面版现代界面、大字号精简布局；登录在伴生程序的「账号」页扫码完成；**接入了车内空间音效**（按卡车喇叭位置分频定位 + 头部追踪，车外与 Esc 菜单自动静音）；首页每日推荐、榜单、按账号同步的我的歌单/最近播放、在线搜索（歌曲/艺人/歌单）、红心同步；**滚动歌词**（未展开三行、可展开全屏跟唱、点句跳转、纯音乐标记、中文界面显示翻译）；**艺人页**（热门 50 首 / 全部歌曲分页 / 专辑分页 / 资料统计）；**播放模式**（列表循环 / 随机 / 单曲循环）；按所在列表顺序切歌；沉浸式正在播放（iOS 式展开与收起动画）；长列表分页浏览、回到原滚动位置；界面风格可选「跟随体系 / 网易云红」，浅色深色自动跟随。
 
 ## YTHQ 平板
 
@@ -83,6 +83,13 @@ WestPlay 把一块车机风格的屏幕放进卡车自己的仪表台，在游�
       <img src="images/dashboard.png" width="100%" alt="驾驶仪表盘：地图旁边是正在播放与目的地">
       <h3>驾驶仪表盘</h3>
       地图旁边是正在播放的音乐和你要去的地方，沿途天气也在，一屏就能看完。
+    </td>
+  </tr>
+  <tr>
+    <td colspan="2" valign="top">
+      <img src="images/netease.png" width="100%" alt="网易云音乐车机版：首页每日推荐、左侧导航与底部播放条">
+      <h3>网易云音乐车机版 V1.3（本版新增）</h3>
+      车机里独立的网易云：每日推荐、榜单、我的歌单与最近播放、在线搜索，红心与账号同步；滚动歌词跟着声音走，可展开全屏跟唱；播放模式（列表循环 / 随机 / 单曲循环）与按列表顺序切歌；声音接进车内空间音效。
     </td>
   </tr>
   <tr>
@@ -237,7 +244,9 @@ WestPlay puts a CarPlay-style screen on your truck's own dashboard display, insi
 
 **Apps**
 
-14. **NetEase Cloud Music V1.1** is a new app in this edition (the original has none): a standalone app on the truck's screen, in a simplified desktop-style layout with large type; sign in from the companion's Accounts page (QR code); **its sound plays through the truck's own speakers** (split by band and placed at each speaker, following the driver's head, silent outside the cab and under the game's menu); the day's recommendations, charts, the account's playlists and recent songs, online search (songs, artists, playlists), likes synced to the account, and a full-screen now playing; the look can follow WestPlay or use NetEase's red, in light and dark.
+14. **NetEase Cloud Music V1.3** is a new app in this edition (the original has none): a standalone app on the truck's screen, in a simplified desktop-style layout with large type; sign in from the companion's Accounts page (QR code); **its sound plays through the truck's own speakers** (split by band and placed at each speaker, following the driver's head, silent outside the cab and under the game's menu); the day's recommendations, charts, the account's playlists and recent songs, online search (songs, artists, playlists), and likes synced to the account; **scrolling lyrics** (three lines on the player, expandable to a full page that follows the song, tap a line to seek, an instrumental mark, translations in Chinese); **artist pages** (their 50 popular songs, all songs and albums paged, with their numbers); **play modes** (repeat list / shuffle / repeat one) and next/previous following the list a song was played from; an iOS-style full-screen now playing that opens and closes with its own motion; long lists paged and kept where they were read; the look can follow WestPlay or use NetEase's red, in light and dark.
+
+![WestPlay's NetEase Cloud Music app](images/netease.png)
 
 ### Requirements and installation
 
