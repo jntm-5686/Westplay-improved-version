@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useState } from 'react'
+import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { isInHost } from '../../../shared/host'
 import { useKeyboard } from '../../keyboard/store'
 import { TextField } from '../../keyboard/TextField'
@@ -253,12 +253,17 @@ function Layers() {
   return (
     <>
       {TABS.map((each) => (
-        <Layer key={each} shown={each === tab && stack.length === 0}>
+        <Layer key={each} scrollKey={`tab:${each}`} shown={each === tab && stack.length === 0}>
           <TabPage tab={each} active={each === tab} />
         </Layer>
       ))}
       {stack.map((page, index) => (
-        <Layer key={pageKey(page)} shown={index === stack.length - 1} opened>
+        <Layer
+          key={pageKey(page)}
+          scrollKey={`${tab}:${pageKey(page)}`}
+          shown={index === stack.length - 1}
+          opened
+        >
           <PageBody page={page} />
         </Layer>
       ))}
@@ -266,13 +271,52 @@ function Layers() {
   )
 }
 
+/** Where each page was read (its own scroll), kept across the full-screen player: opening it switches the app's tab,
+ * and the page behind is put away and brought back — its scroll with it (owner 2026-11-20: a long list went back to
+ * its top after the player was closed). */
+const readAt = new Map<string, number>()
+
 /** A page layer: one just opened comes in from the side; one shown again (Back, a tab chosen again) only
  * fades up, where it was. Away, it's kept as it is (its scroll and all) but not laid out, drawn or reached. */
-function Layer({ shown, opened = false, children }: { shown: boolean; opened?: boolean; children: ReactNode }) {
+function Layer({
+  shown,
+  opened = false,
+  scrollKey,
+  children,
+}: {
+  shown: boolean
+  opened?: boolean
+  scrollKey: string
+  children: ReactNode
+}) {
   const [fresh, setFresh] = useState(opened)
+  const host = useRef<HTMLDivElement>(null)
   const className = !shown ? 'ne-layer away' : fresh ? 'ne-layer fresh' : 'ne-layer'
+  // Read where it was left when it comes back, and keep where it is while it shows: the page's own scroll (the one
+  // the page itself draws, `.ne-scroll`), kept by the layer rather than by the page, so a page brought back after
+  // the full-screen player is where the player found it.
+  useLayoutEffect(() => {
+    const box = host.current?.querySelector('.ne-scroll') as HTMLElement | null
+    const saved = readAt.get(scrollKey)
+    if (box && saved) box.scrollTop = saved
+  }, [scrollKey])
+  useEffect(() => {
+    const layer = host.current
+    const boxes = layer ? Array.from(layer.querySelectorAll<HTMLElement>('.ne-scroll')) : []
+    if (boxes.length === 0) return
+    const save = () => {
+      const box = boxes.find((each) => each.scrollTop > 0) ?? boxes[0]
+      readAt.set(scrollKey, box.scrollTop)
+    }
+    for (const box of boxes) box.addEventListener('scroll', save, { passive: true })
+    return () => {
+      save()
+      for (const box of boxes) box.removeEventListener('scroll', save)
+    }
+  }, [scrollKey])
   return (
     <div
+      ref={host}
       className={className}
       inert={shown ? undefined : true}
       onAnimationEnd={(event) => event.target === event.currentTarget && setFresh(false)}

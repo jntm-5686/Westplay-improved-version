@@ -95,6 +95,11 @@ function groupTitle(title: string, words: NeteaseWords): string {
 /** Plays a song pressed, and says over the player — if the hints are still on — that NetEase was asked. The song
  * goes on the player bar and lights its row at once (see playback.ts); the page's own state catches up a moment
  * later. */
+/** How much of each long list was drawn (its 显示更多 presses), and which of an artist's own pages was read: kept by
+ * id, so a page brought back from the full-screen player is exactly where it was left (owner 2026-11-20). */
+const drawnAt = new Map<string, number>()
+const artistPageAt = new Map<string, 'hot' | 'all' | 'albums'>()
+
 function usePlay(): (song: NeteaseSong, options?: { inPlaylist?: string }) => void {
   const words = useNeteaseWords()
   return (song, options) => {
@@ -1057,7 +1062,10 @@ export function ArtistPage({ page }: { page: Page }) {
   const name = found?.name || card?.name || words.artist
   const cover = found?.cover ?? card?.cover ?? null
   const songs = found?.songs ?? null
-  const [tab, setTab] = useState<'hot' | 'all' | 'albums'>('hot')
+  const [tab, setTab] = useState<'hot' | 'all' | 'albums'>(() => artistPageAt.get(artistId) ?? 'hot')
+  useEffect(() => {
+    artistPageAt.set(artistId, tab)
+  }, [artistId, tab])
   useEffect(() => {
     if (artistId) retryArtist(artistId)
   }, [artistId])
@@ -1228,10 +1236,18 @@ export function PlaylistPage({ page }: { page: Page }) {
   const plays = head?.playCount || known?.playCount || card?.plays || 0
   const songs = found?.songs ?? null
   // A list of a thousand songs is drawn a part at a time (the page stays quick): the rest at a press.
-  const [shown, setShown] = useState(120)
+  const [shown, setShownState] = useState(() => drawnAt.get(`playlist:${playlistId}`) ?? 120)
+  const setShown = (next: number | ((count: number) => number)) => {
+    setShownState((count) => {
+      const wanted = typeof next === 'function' ? next(count) : next
+      drawnAt.set(`playlist:${playlistId}`, wanted)
+      return wanted
+    })
+  }
   useEffect(() => {
-    setShown(120)
+    setShown(drawnAt.get(`playlist:${playlistId}`) ?? 120)
     if (playlistId) retryPlaylist(playlistId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playlistId])
   const playAll = () => {
     const first = songs?.find((song) => song.playable)
@@ -1321,10 +1337,18 @@ export function RankingPage({ page }: { page: Page }) {
   const plays = head?.playCount || known?.playCount || card?.plays || 0
   const songs = found?.songs ?? null
   // Its own list of a thousand songs, drawn a part at a time.
-  const [shown, setShown] = useState(120)
+  const [shown, setShownState] = useState(() => drawnAt.get(`ranking:${rankingId}`) ?? 120)
+  const setShown = (next: number | ((count: number) => number)) => {
+    setShownState((count) => {
+      const wanted = typeof next === 'function' ? next(count) : next
+      drawnAt.set(`ranking:${rankingId}`, wanted)
+      return wanted
+    })
+  }
   useEffect(() => {
-    setShown(120)
+    setShown(drawnAt.get(`ranking:${rankingId}`) ?? 120)
     if (rankingId) retryRanking(rankingId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rankingId])
   const playAll = () => {
     const first = songs?.find((song) => song.playable)
