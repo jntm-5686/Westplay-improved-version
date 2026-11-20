@@ -57,7 +57,7 @@ WestPlay 把一块车机风格的屏幕放进卡车自己的仪表台，在游�
 
 **应用**
 
-14. **新增网易云音乐应用**（原版没有）：车机里独立 App，仿桌面版现代界面、大字号精简布局；登录在伴生程序的「账号」页扫码完成；支持推荐歌单、歌单播放、正在播放、播放控制与音量；界面风格可选「跟随体系 / 网易云红」，浅色深色自动跟随。
+14. **新增网易云音乐车机版 V1.1**（原版没有）：车机里独立 App，仿桌面版现代界面、大字号精简布局；登录在伴生程序的「账号」页扫码完成；**接入了车内空间音效**（按卡车喇叭位置分频定位 + 头部追踪，车外与 Esc 菜单自动静音）；首页每日推荐、榜单、按账号同步的我的歌单/最近播放、在线搜索（歌曲/艺人/歌单）、红心同步、沉浸式正在播放；界面风格可选「跟随体系 / 网易云红」，浅色深色自动跟随。
 
 ## YTHQ 平板
 
@@ -237,7 +237,7 @@ WestPlay puts a CarPlay-style screen on your truck's own dashboard display, insi
 
 **Apps**
 
-14. **NetEase Cloud Music** is a new app in this edition (the original has none): a standalone app on the truck's screen, in a simplified desktop-style layout with large type; sign in from the companion's Accounts page (QR code); recommended playlists, playlist playback, now playing, transport and volume; the look can follow WestPlay or use NetEase's red, in light and dark.
+14. **NetEase Cloud Music V1.1** is a new app in this edition (the original has none): a standalone app on the truck's screen, in a simplified desktop-style layout with large type; sign in from the companion's Accounts page (QR code); **its sound plays through the truck's own speakers** (split by band and placed at each speaker, following the driver's head, silent outside the cab and under the game's menu); the day's recommendations, charts, the account's playlists and recent songs, online search (songs, artists, playlists), likes synced to the account, and a full-screen now playing; the look can follow WestPlay or use NetEase's red, in light and dark.
 
 ### Requirements and installation
 
