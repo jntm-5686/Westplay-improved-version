@@ -22,7 +22,7 @@ function saidOf(query: string): string {
 export function keptSearches(history: readonly unknown[], most = HISTORY_MOST): string[] {
   const seen = new Set<string>()
   const kept: string[] = []
-  for (const entry of history) {
+  for (const entry of Array.isArray(history) ? history : []) {
     if (typeof entry !== 'string') continue
     const said = saidOf(entry)
     const key = said.toLocaleLowerCase()
