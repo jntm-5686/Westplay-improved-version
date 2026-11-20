@@ -40,6 +40,9 @@
 //   { profile: { uid, name, avatar, signature, level, listenSongs, follows, fans, playlistCount, createDays,
 //                vipType, background } | null }   the account's own profile
 //   { like: { id, liked, ok, reason } }   a like asked for, done (or not)
+//   { lyric: { id, instrumental, lines: [{ t, text, tr? }] } }   the playing song's words (its own LRC read), read
+//                 once as the song changes: each line with when it's sung (seconds) and its translation; `instrumental`
+//                 for a pure music (which has no lines)
 //   { timing: { action, sounding, steps, rescue?, reloading? } }   a play timed, with what its rescues did
 //   { ready: true }   the page loaded (anew)
 // and the host's to it: { action, value?, list? } — the app's own commands (netease.rs's Command), `refresh`, and the
@@ -1229,6 +1232,99 @@
     tell(true)
   }
 
+  // --- A song's words: the page's own lyric interface -------------------------------------------------------------
+  //
+  // `/api/song/lyric` (the page's own same-origin interface, its session) answers the words as an LRC (`lrc.lyric`),
+  // the song's translation when it has one (`tlyric.lyric`) and the page's own marks for a song without words:
+  // `pureMusic` / `nolyric` (a pure music) or `uncollected` (no words collected). Read into lines with when each is
+  // sung — the file's own credits (作词 : …) and a pure music's notice are not lines to sing — each with its
+  // translation at the same moment. The app shows the words, and their translation in the cabin's Chinese.
+  const LYRIC_MOST = 2000
+  const LYRIC_PURE = /纯音乐/
+  const LYRIC_CREDIT = /^(作词|作曲|编曲|制作人|混音|母带|录音|和声|监制|出品|发行|原唱|演唱|词|曲|OP|SP|吉他|贝斯|鼓|键盘|弦乐)\s*[:：]/
+  // A row of an LRC: its leading time tags (`[mm:ss.xx]`, a row may carry more than one) and the words after them.
+  const LRC_ROW = /^\[(\d{1,3}):(\d{1,2})(?:[.:](\d{1,3}))?\]\s*/
+  const readLrc = (said) => {
+    const lines = []
+    for (const row of String(said ?? '').split(/\r?\n/)) {
+      let rest = row.trim()
+      const times = []
+      for (;;) {
+        const found = LRC_ROW.exec(rest)
+        if (!found) break
+        const fraction = found[3] ?? ''
+        const millis = fraction ? Number(fraction.padEnd(3, '0').slice(0, 3)) : 0
+        times.push(Number(found[1]) * 60 + Number(found[2]) + millis / 1000)
+        rest = rest.slice(found[0].length)
+      }
+      if (times.length === 0) continue
+      const text = rest.replace(/\s+/g, ' ').trim()
+      for (const t of times) lines.push({ t, text })
+    }
+    lines.sort((one, other) => one.t - other.t)
+    return lines
+  }
+  // The page's answer read: its lines (credits and a pure music's notice left out), each with its translation when the
+  // song has one sung at the same moment (or the nearest within half a second: a file's two sides are read from the
+  // same time, but not always to the same millisecond), and whether a song with no lines at all is a pure music (the
+  // app says 纯音乐) or one whose words weren't collected (the app says 暂无歌词).
+  const readLyric = (answer) => {
+    const original = readLrc(answer?.lrc?.lyric)
+    const translated = readLrc(answer?.tlyric?.lyric).filter((line) => line.text)
+    const byTime = new Map(translated.map((line) => [Math.round(line.t * 1000), line.text]))
+    const near = (t) => {
+      let found = ''
+      let closest = 0.5
+      for (const line of translated) {
+        const gap = Math.abs(line.t - t)
+        if (gap <= closest) {
+          closest = gap
+          found = line.text
+        }
+      }
+      return found
+    }
+    let pure = false
+    const lines = []
+    for (const line of original) {
+      if (!line.text) continue
+      if (LYRIC_PURE.test(line.text)) {
+        pure = true
+        continue
+      }
+      if (LYRIC_CREDIT.test(line.text)) continue
+      const tr = byTime.get(Math.round(line.t * 1000)) ?? near(line.t)
+      lines.push(tr ? { t: line.t, text: line.text, tr } : { t: line.t, text: line.text })
+    }
+    const instrumental =
+      lines.length === 0 &&
+      (pure || LYRIC_PURE.test(String(answer?.lrc?.lyric ?? '')) || answer?.pureMusic === true || answer?.nolyric === true)
+    return { instrumental, lines: lines.slice(0, LYRIC_MOST) }
+  }
+  // The words read, by song id (a song played again is answered at once); and the songs its interface is yet to answer
+  // for (asked again a moment later, a few times at most: a page still settling).
+  const lyrics = new Map()
+  const lyricTried = new Map()
+  let lyricForTrack = ''
+  const askLyric = async (id) => {
+    const kept = lyrics.get(id)
+    if (kept) return post({ lyric: { id, ...kept } })
+    const answer = await api(`/api/song/lyric?id=${encodeURIComponent(id)}&lv=-1&kv=-1&tv=-1`)
+    // The song changed while its words were on their way: they were the old song's to show, not this one's.
+    if (lyricForTrack !== id) return
+    if (!answer || Number(answer.code) !== 200) {
+      const tried = (lyricTried.get(id) ?? 0) + 1
+      lyricTried.set(id, tried)
+      if (tried <= 2) setTimeout(() => lyricForTrack === id && askLyric(id), 3000)
+      else post({ lyric: { id, instrumental: false, lines: [] } })
+      return
+    }
+    const read = readLyric(answer)
+    lyrics.set(id, read)
+    if (lyrics.size > 40) lyrics.delete(lyrics.keys().next().value)
+    post({ lyric: { id, ...read } })
+  }
+
   // --- The app's commands, as the host passes them on (netease.rs's Command) -----------------------------------
   //
   //   { action: "play" }                        play on (its own play button, when its state says paused)
@@ -1407,6 +1503,12 @@
         if (known) tell(true)
       })
     }
+    // A song's own words: the page's lyric interface is asked once as the song changes (a song played again is answered
+    // from what it read before).
+    if (playing?.id && playing.id !== lyricForTrack) {
+      lyricForTrack = playing.id
+      askLyric(playing.id)
+    }
     const state = {
       signedIn: signed,
       playing: isPlaying(),
@@ -1519,6 +1621,10 @@
     watching: watch.timer !== null,
     liked: likedNow(track()?.id),
     likedKnown: likedIds ? likedIds.size : null,
+    // The song's words read so far (their own lines, or a pure music's mark), for the live test.
+    lyric: lyricForTrack || null,
+    lyrics: lyrics.size,
+    lyricFor: lyrics.get(lyricForTrack) ?? null,
   })
 
   addEventListener('DOMContentLoaded', () => post({ ready: true }))

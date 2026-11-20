@@ -2128,6 +2128,11 @@
 .netease-app .ne-now-title,
 .netease-app .ne-now-artist,
 .netease-app .ne-now-album,
+.netease-app .ne-lyric-preview,
+.netease-app .ne-lyric-wait,
+.netease-app .ne-lyric-pure,
+.netease-app .ne-lyric-none,
+.netease-app .ne-now-lyrics-open,
 .netease-app .ne-now-foot,
 .netease-app .ne-now-head {
   transition:
@@ -2138,6 +2143,11 @@
 .netease-app .ne-now-page[data-phase='enter'] .ne-now-title,
 .netease-app .ne-now-page[data-phase='enter'] .ne-now-artist,
 .netease-app .ne-now-page[data-phase='enter'] .ne-now-album,
+.netease-app .ne-now-page[data-phase='enter'] .ne-lyric-preview,
+.netease-app .ne-now-page[data-phase='enter'] .ne-lyric-wait,
+.netease-app .ne-now-page[data-phase='enter'] .ne-lyric-pure,
+.netease-app .ne-now-page[data-phase='enter'] .ne-lyric-none,
+.netease-app .ne-now-page[data-phase='enter'] .ne-now-lyrics-open,
 .netease-app .ne-now-page[data-phase='enter'] .ne-now-foot,
 .netease-app .ne-now-page[data-phase='enter'] .ne-now-head {
   opacity: 0;
@@ -2163,6 +2173,18 @@
   transition-delay: 150ms;
 }
 
+/* The song's words under its names come after them (the hidden page reads them a moment after the song starts, so
+   they can join the page's own way in whenever they arrive). */
+.netease-app .ne-now-page[data-phase='open'] .ne-lyric-preview,
+.netease-app .ne-now-page[data-phase='open'] .ne-lyric-wait,
+.netease-app .ne-now-page[data-phase='open'] .ne-lyric-pure,
+.netease-app .ne-now-page[data-phase='open'] .ne-lyric-none,
+.netease-app .ne-now-page[data-phase='open'] .ne-now-lyrics-open {
+  opacity: 1;
+  transform: none;
+  transition-delay: 190ms;
+}
+
 .netease-app .ne-now-page[data-phase='open'] .ne-now-foot {
   opacity: 1;
   transform: none;
@@ -2178,6 +2200,11 @@
 .netease-app .ne-now-page[data-phase='leave'] .ne-now-title,
 .netease-app .ne-now-page[data-phase='leave'] .ne-now-artist,
 .netease-app .ne-now-page[data-phase='leave'] .ne-now-album,
+.netease-app .ne-now-page[data-phase='leave'] .ne-lyric-preview,
+.netease-app .ne-now-page[data-phase='leave'] .ne-lyric-wait,
+.netease-app .ne-now-page[data-phase='leave'] .ne-lyric-pure,
+.netease-app .ne-now-page[data-phase='leave'] .ne-lyric-none,
+.netease-app .ne-now-page[data-phase='leave'] .ne-now-lyrics-open,
 .netease-app .ne-now-page[data-phase='leave'] .ne-now-foot,
 .netease-app .ne-now-page[data-phase='leave'] .ne-now-head {
   opacity: 0;
@@ -2477,10 +2504,26 @@
 }
 
 .netease-app .ne-now-side {
+  position: relative;
+  flex: 1;
+  align-self: stretch;
+  justify-content: center;
   min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+/* The song's names over its words: the title, the artists and the album (and a song NetEase can't play, its own
+   warning), one block that steps aside together when all the words open. */
+.netease-app .ne-now-names {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transition:
+    opacity 260ms ease-out,
+    transform 340ms var(--ne-now-ios);
 }
 
 .netease-app .ne-now-title {
@@ -2609,6 +2652,410 @@
 
 .netease-app .ne-now-page .ne-like.waiting svg {
   opacity: 0.35;
+}
+
+/* --- The song's words (NowPlaying.tsx's LyricsClosed and LyricsOpen) ---------------------------------------- */
+
+/* Closed: the line sung under the song's names, its translation under it while the cabin is Chinese, and the two lines
+   around it (the one before faded as sung, the one after dimmer as still to come). The whole block is pressed to open
+   them; the button under it is the same way in. */
+.netease-app .ne-lyric-preview {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition:
+    opacity 260ms ease-out,
+    transform 340ms var(--ne-now-ios);
+}
+
+.netease-app .ne-lyric-line {
+  min-width: 0;
+  max-width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  font-size: calc(21px * var(--text-scale, 1));
+  font-weight: 500;
+  line-height: 1.3;
+  color: var(--ne-now-text);
+  opacity: 0.5;
+  transition: opacity 320ms ease;
+}
+
+.netease-app .ne-lyric-line.sung {
+  opacity: 0.3;
+}
+
+.netease-app .ne-lyric-line.now {
+  font-weight: 700;
+  opacity: 1;
+}
+
+.netease-app .ne-lyric-line.next {
+  opacity: 0.62;
+}
+
+.netease-app .ne-lyric-text {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.netease-app .ne-lyric-tr {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: calc(16px * var(--text-scale, 1));
+  font-weight: 500;
+  line-height: 1.25;
+  color: var(--ne-now-dim);
+}
+
+/* A song without words says which kind it is: a pure music has its own mark; one whose words NetEase didn't collect
+   says 暂无歌词. A page still reading them shows a light skeleton in their place. */
+.netease-app .ne-lyric-pure,
+.netease-app .ne-lyric-none {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 32px;
+  font-size: calc(20px * var(--text-scale, 1));
+  font-weight: 600;
+  color: var(--ne-now-dim);
+  transition:
+    opacity 260ms ease-out,
+    transform 340ms var(--ne-now-ios);
+}
+
+.netease-app .ne-lyric-pure {
+  color: var(--ne-now-text);
+}
+
+.netease-app .ne-lyric-pure svg {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  opacity: 0.85;
+}
+
+.netease-app .ne-lyric-wait,
+.netease-app .ne-now-lyrics-wait {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(100%, 560px);
+  padding-block: 4px;
+  transition:
+    opacity 260ms ease-out,
+    transform 340ms var(--ne-now-ios);
+}
+
+.netease-app .ne-lyric-skel-line {
+  display: block;
+  width: 78%;
+  height: 15px;
+  border-radius: 8px;
+  background: rgb(255 255 255 / 0.16);
+}
+
+.netease-app .ne-lyric-skel-line.short {
+  width: 46%;
+}
+
+/* The way into all of the words: a glass pill under them, its own mark (a speech bubble) and a chevron up. */
+.netease-app .ne-now-lyrics-open {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  height: 46px;
+  padding: 0 18px 0 15px;
+  border: 0;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.14);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.14);
+  color: var(--ne-now-text);
+  font: inherit;
+  font-size: var(--ne-type-small);
+  font-weight: 700;
+  cursor: pointer;
+  backdrop-filter: blur(12px);
+  touch-action: manipulation;
+  transition:
+    background-color var(--ne-quick),
+    scale var(--ne-quick) var(--ne-ease),
+    opacity 260ms ease-out,
+    transform 340ms var(--ne-now-ios);
+}
+
+.netease-app .ne-now-lyrics-open:hover,
+.netease-app .ne-now-lyrics-open:focus-visible {
+  background: rgb(255 255 255 / 0.24);
+}
+
+.netease-app .ne-now-lyrics-open:active {
+  scale: 0.96;
+}
+
+.netease-app .ne-now-lyrics-open svg {
+  width: 22px;
+  height: 22px;
+}
+
+.netease-app .ne-now-lyrics-open svg:last-child {
+  width: 17px;
+  height: 17px;
+  opacity: 0.65;
+}
+
+/* Opened: all of the words, in the song's names' place. The names (and the closed player's few lines, and the way in)
+   go up and out; the words' panel comes up after them. The cover stays, smaller — the picture of what plays is still
+   there, over the colours. */
+.netease-app .ne-now-body[data-lyrics='open'] .ne-now-art {
+  transform: scale(0.62);
+  transition:
+    opacity 260ms ease-out,
+    transform 480ms var(--ne-now-ios);
+}
+
+.netease-app .ne-now-body[data-lyrics='open'] .ne-now-names,
+.netease-app .ne-now-body[data-lyrics='open'] .ne-lyric-preview,
+.netease-app .ne-now-body[data-lyrics='open'] .ne-lyric-wait,
+.netease-app .ne-now-body[data-lyrics='open'] .ne-lyric-pure,
+.netease-app .ne-now-body[data-lyrics='open'] .ne-lyric-none,
+.netease-app .ne-now-body[data-lyrics='open'] .ne-now-lyrics-open {
+  opacity: 0;
+  transform: translateY(-18px);
+  pointer-events: none;
+  transition:
+    opacity 190ms ease-out,
+    transform 300ms var(--ne-now-ios);
+}
+
+.netease-app .ne-now-lyrics {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(24px);
+  pointer-events: none;
+  transition:
+    opacity 220ms ease-out,
+    transform 340ms var(--ne-now-ios),
+    visibility 0s linear 340ms;
+}
+
+.netease-app .ne-now-lyrics[data-showing] {
+  opacity: 1;
+  visibility: visible;
+  transform: none;
+  pointer-events: auto;
+  transition:
+    opacity 300ms ease-out 90ms,
+    transform 440ms var(--ne-now-ios) 70ms,
+    visibility 0s;
+}
+
+.netease-app .ne-now-lyrics-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 44px;
+}
+
+.netease-app .ne-now-lyrics-kicker {
+  font-size: var(--ne-type-small);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--ne-now-dim);
+}
+
+.netease-app .ne-now-lyrics-close {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 44px;
+  padding: 0 18px 0 13px;
+  border: 0;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.12);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.12);
+  color: var(--ne-now-text);
+  font: inherit;
+  font-size: var(--ne-type-small);
+  font-weight: 700;
+  cursor: pointer;
+  backdrop-filter: blur(12px);
+  touch-action: manipulation;
+  transition:
+    background-color var(--ne-quick),
+    scale var(--ne-quick) var(--ne-ease);
+}
+
+.netease-app .ne-now-lyrics-close:hover,
+.netease-app .ne-now-lyrics-close:focus-visible {
+  background: rgb(255 255 255 / 0.22);
+}
+
+.netease-app .ne-now-lyrics-close:active {
+  scale: 0.96;
+}
+
+.netease-app .ne-now-lyrics-close svg {
+  width: 20px;
+  height: 20px;
+  opacity: 0.8;
+}
+
+/* The words themselves: the sung line large in the middle, the others smaller and dimmed above and below, the whole
+   list sliding under the sung line (one transform), the panel's edges fading so no line is ever cut in two. */
+.netease-app .ne-now-lyrics-view {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  padding-inline: 2px;
+  mask-image: linear-gradient(180deg, transparent 0%, #000 15%, #000 85%, transparent 100%);
+}
+
+.netease-app .ne-now-lyrics-list {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  transition: transform 520ms var(--ne-now-ios);
+  will-change: transform;
+}
+
+.netease-app .ne-now-lyric {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 9px 16px;
+  border: 0;
+  border-radius: 16px;
+  background: none;
+  color: var(--ne-now-text);
+  font: inherit;
+  font-size: calc(23px * var(--text-scale, 1));
+  font-weight: 600;
+  line-height: 1.3;
+  text-align: start;
+  opacity: 0.38;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition:
+    opacity 300ms ease,
+    background-color var(--ne-quick);
+}
+
+.netease-app .ne-now-lyric.sung {
+  opacity: 0.26;
+}
+
+.netease-app .ne-now-lyric.next {
+  opacity: 0.6;
+}
+
+.netease-app .ne-now-lyric.now {
+  font-size: calc(33px * var(--text-scale, 1));
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  line-height: 1.22;
+  opacity: 1;
+}
+
+.netease-app .ne-now-lyric:hover,
+.netease-app .ne-now-lyric:focus-visible {
+  background: rgb(255 255 255 / 0.08);
+}
+
+.netease-app .ne-now-lyric-text {
+  min-width: 0;
+}
+
+.netease-app .ne-now-lyric-tr {
+  font-size: calc(18px * var(--text-scale, 1));
+  font-weight: 500;
+  color: var(--ne-now-dim);
+}
+
+.netease-app .ne-now-lyric.now .ne-now-lyric-tr {
+  font-size: calc(20px * var(--text-scale, 1));
+  color: rgb(255 255 255 / 0.84);
+}
+
+/* The opened panel's own words for a song without any: the pure music's mark, or 暂无歌词, in the middle of the
+   space the names gave up. */
+.netease-app .ne-now-lyrics-pure,
+.netease-app .ne-now-lyrics-none {
+  flex: 1;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  font-size: calc(30px * var(--text-scale, 1));
+  font-weight: 700;
+  color: var(--ne-now-text);
+}
+
+.netease-app .ne-now-lyrics-none {
+  font-weight: 600;
+  color: var(--ne-now-dim);
+}
+
+.netease-app .ne-now-lyrics-pure svg {
+  width: 46px;
+  height: 46px;
+  opacity: 0.85;
+}
+
+.netease-app .ne-now-lyrics-wait {
+  flex: 1;
+  justify-content: center;
+  padding-inline: 16px;
+}
+
+/* The page's own way out, with all the words open: they go down with the cover, and the whole page shrinks into the
+   player bar after them. */
+.netease-app .ne-now-page[data-phase='leave'] .ne-now-body[data-lyrics='open'] .ne-now-art {
+  opacity: 0.6;
+  transform: scale(0.9) translateY(10px);
+  transition-delay: 0ms;
+}
+
+.netease-app .ne-now-page[data-phase='leave'] .ne-now-lyrics {
+  opacity: 0;
+  transform: translateY(48px);
+  transition:
+    opacity 300ms ease-out,
+    transform 440ms var(--ne-now-ios);
 }
 
 .netease-app .ne-now-page .ne-warn {
@@ -3759,6 +4206,44 @@
     gap: 6px;
   }
 
+  /* A smaller screen: the cover a step smaller with the words open, and the words a step down (the sung line still
+     three or four times the body's height clear of the others). */
+  .netease-app .ne-now-body[data-lyrics='open'] .ne-now-art {
+    transform: scale(0.56);
+  }
+
+  .netease-app .ne-lyric-line {
+    font-size: calc(19px * var(--text-scale, 1));
+  }
+
+  .netease-app .ne-now-lyric {
+    font-size: calc(21px * var(--text-scale, 1));
+    padding: 7px 13px;
+  }
+
+  .netease-app .ne-now-lyric.now {
+    font-size: calc(28px * var(--text-scale, 1));
+  }
+
+  .netease-app .ne-now-lyric-tr {
+    font-size: calc(16px * var(--text-scale, 1));
+  }
+
+  .netease-app .ne-now-lyric.now .ne-now-lyric-tr {
+    font-size: calc(17px * var(--text-scale, 1));
+  }
+
+  .netease-app .ne-now-lyrics-open,
+  .netease-app .ne-now-lyrics-close {
+    height: 40px;
+    padding-inline: 14px;
+    font-size: calc(16px * var(--text-scale, 1));
+  }
+
+  .netease-app .ne-now-lyrics-open {
+    padding-inline: 13px 14px;
+  }
+
   .netease-app .ne-now-tools {
     gap: 10px;
   }
@@ -4225,6 +4710,47 @@
     gap: 4px;
   }
 
+  /* The 7" screens: the cover a good step smaller with the words open, the words a step down again, and the two
+     buttons that open and close them a size the screen's own. */
+  .netease-app .ne-now-body[data-lyrics='open'] .ne-now-art {
+    transform: scale(0.56);
+  }
+
+  .netease-app .ne-lyric-line {
+    font-size: calc(17px * var(--text-scale, 1));
+  }
+
+  .netease-app .ne-now-lyric {
+    font-size: calc(18px * var(--text-scale, 1));
+    padding: 5px 10px;
+  }
+
+  .netease-app .ne-now-lyric.now {
+    font-size: calc(27px * var(--text-scale, 1));
+  }
+
+  .netease-app .ne-now-lyric-tr,
+  .netease-app .ne-now-lyric.now .ne-now-lyric-tr {
+    font-size: calc(15px * var(--text-scale, 1));
+  }
+
+  .netease-app .ne-now-lyrics-head {
+    min-height: 36px;
+  }
+
+  .netease-app .ne-now-lyrics-open,
+  .netease-app .ne-now-lyrics-close {
+    height: 36px;
+    padding-inline: 12px;
+    font-size: var(--ne-type-caption);
+  }
+
+  .netease-app .ne-now-lyrics-open svg,
+  .netease-app .ne-now-lyrics-close svg {
+    width: 18px;
+    height: 18px;
+  }
+
   .netease-app .ne-now-foot {
     gap: 7px;
   }
@@ -4335,6 +4861,40 @@
     align-items: center;
     text-align: center;
     width: 100%;
+  }
+
+  /* A tall panel: the cover stays as a small card over the words (which get the body's remaining height), and the
+     closed player's few lines are written centred, as the names above them are. */
+  .netease-app .ne-now-body[data-lyrics='open'] .ne-now-art {
+    transform: scale(0.46) translateY(-10px);
+  }
+
+  .netease-app .ne-now-body[data-lyrics='open'] .ne-now-side {
+    min-height: 0;
+  }
+
+  .netease-app .ne-now-lyrics {
+    width: 100%;
+  }
+
+  .netease-app .ne-lyric-preview {
+    align-items: center;
+    text-align: center;
+    align-self: stretch;
+  }
+
+  .netease-app .ne-lyric-line {
+    align-items: center;
+    text-align: center;
+    white-space: normal;
+  }
+
+  .netease-app .ne-lyric-text {
+    white-space: normal;
+  }
+
+  .netease-app .ne-now-lyrics-open {
+    align-self: center;
   }
 
   .netease-app .ne-now-page .ne-warn {

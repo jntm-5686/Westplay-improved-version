@@ -360,3 +360,32 @@ export function ChevronDownGlyph() {
     </svg>
   )
 }
+
+/** A chevron pointing up: the words' own way back (their panel folds down under the song's names again). */
+export function ChevronUpGlyph() {
+  return (
+    <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M5 14.5 12 7.5 19 14.5" />
+    </svg>
+  )
+}
+
+/** The playing song's words: a speech bubble with two lines in it (the closed player's 展开歌词). */
+export function LyricsGlyph() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <rect
+        x="2.7"
+        y="3.9"
+        width="18.6"
+        height="12.6"
+        rx="3.2"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.9"
+      />
+      <path d="M8.2 16.5v3.9l4.3-3.9" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinejoin="round" />
+      <path d="M6.6 8.3h10.8M6.6 12h6.6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  )
+}

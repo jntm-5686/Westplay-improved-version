@@ -1,10 +1,14 @@
 import { type CSSProperties, Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useLanguage } from '../../state/text'
 import { useCoverPalette } from './coverColors'
 import { Cover, Slider, clock } from './parts'
 import {
   ChevronDownGlyph,
+  ChevronUpGlyph,
   HeartGlyph,
+  LyricsGlyph,
   NextGlyph,
+  NoteGlyph,
   PauseGlyph,
   PlayGlyph,
   PreviousGlyph,
@@ -12,6 +16,7 @@ import {
   VolumeGlyph,
   ModeGlyph,
 } from './glyphs'
+import { lyricLineAt, lyricWindow, showsTranslation } from './lyrics'
 import { openTab, useNav } from './nav'
 import { expectChange, expectSong, usePlayback } from './playback'
 import {
@@ -25,6 +30,7 @@ import {
   skip,
   useNetease,
   useNow,
+  type NeteaseLyric,
 } from './netease'
 import { fullScreen, leftFullScreen } from './stack'
 import { useNeteaseWords } from './strings'
@@ -230,6 +236,158 @@ function leaveDuration(element: HTMLElement | null): number {
   return Number.isFinite(said) ? said + 20 : 360
 }
 
+/** The words of the song that plays, and whether the cabin shows their translation (Chinese only, for now): the store
+ * keeps no other song's words, and neither does the page (one that arrived after the player left its song is no
+ * other song's to show). */
+function useSongLyric(): { lyric: NeteaseLyric | null; translated: boolean } {
+  const lyric = useNetease((state) => state.lyric)
+  const track = useNetease((state) => state.track)
+  const locale = useLanguage()
+  return { lyric: lyric && track?.id === lyric.id ? lyric : null, translated: showsTranslation(locale) }
+}
+
+/** The few lines of the closed player's words: the line sung, under the song's names, with the one before it and the
+ * one after; pressed, all of them open. A song with no words says which kind it is (纯音乐, or 暂无歌词), and a page
+ * still reading its words shows a light skeleton rather than nothing. */
+function LyricsClosed({
+  lyric,
+  position,
+  translated,
+  onOpen,
+}: {
+  lyric: NeteaseLyric | null
+  position: number
+  translated: boolean
+  onOpen(): void
+}) {
+  const words = useNeteaseWords()
+  if (!lyric) {
+    return (
+      <div className="ne-lyric-wait" role="status" aria-label={words.loading}>
+        <span className="ne-lyric-skel-line ne-skeleton" />
+        <span className="ne-lyric-skel-line short ne-skeleton" />
+        <span className="ne-lyric-skel-line ne-skeleton" />
+      </div>
+    )
+  }
+  if (lyric.instrumental) {
+    return (
+      <p className="ne-lyric-pure">
+        <NoteGlyph />
+        <span>{words.instrumental}</span>
+      </p>
+    )
+  }
+  if (lyric.lines.length === 0) return <p className="ne-lyric-none">{words.noLyrics}</p>
+  const at = lyricLineAt(lyric.lines, position)
+  const shown = lyricWindow(lyric.lines, at, 3)
+  return (
+    <button
+      type="button"
+      className="ne-lyric-preview"
+      title={words.expandLyrics}
+      aria-label={words.expandLyrics}
+      onClick={onOpen}
+    >
+      {shown.map((index) => {
+        const line = lyric.lines[index]
+        const state = index === at ? ' now' : index < at ? ' sung' : index === at + 1 ? ' next' : ''
+        return (
+          <span key={index} className={`ne-lyric-line${state}`}>
+            <span className="ne-lyric-text">{line.text}</span>
+            {index === at && translated && line.tr && <span className="ne-lyric-tr">{line.tr}</span>}
+          </span>
+        )
+      })}
+    </button>
+  )
+}
+
+/** All of a song's words: the sung line large and kept in the middle, the others dimmed above and below under a soft
+ * mask, each pressed to play the song from its own moment. The panel takes the song's names' place (they step aside
+ * with the cover still in sight, smaller); it scrolls under the line itself as the song plays — one transform, so
+ * nothing is laid out again on every line. */
+function LyricsOpen({
+  lyric,
+  position,
+  translated,
+  showing,
+  onClose,
+}: {
+  lyric: NeteaseLyric | null
+  position: number
+  translated: boolean
+  showing: boolean
+  onClose(): void
+}) {
+  const words = useNeteaseWords()
+  const view = useRef<HTMLDivElement>(null)
+  const list = useRef<HTMLDivElement>(null)
+  const at = lyric && lyric.lines.length > 0 ? lyricLineAt(lyric.lines, position) : -1
+  // Before a song's first line its first one waits in the middle, where the eye will read it.
+  const middle = Math.max(0, at)
+  const [measured, setMeasured] = useState(0)
+  // The sung line in the middle of the panel: the list slides under it.
+  useLayoutEffect(() => {
+    const box = view.current
+    const rows = list.current
+    if (!box || !rows) return
+    const line = rows.children[middle] as HTMLElement | undefined
+    if (!line) return
+    const shift = box.clientHeight / 2 - (line.offsetTop + line.offsetHeight / 2)
+    rows.style.transform = `translate3d(0, ${shift}px, 0)`
+  }, [middle, lyric, measured])
+  // A panel whose own size changes (the cab's screen, the page's way in): the line is put back in the middle.
+  useEffect(() => {
+    const box = view.current
+    if (!box) return
+    const observer = new ResizeObserver(() => setMeasured((count) => count + 1))
+    observer.observe(box)
+    return () => observer.disconnect()
+  }, [])
+  return (
+    <div className="ne-now-lyrics" data-showing={showing ? '' : undefined} aria-hidden={showing ? undefined : true}>
+      <div className="ne-now-lyrics-head">
+        <span className="ne-now-lyrics-kicker">{words.lyrics}</span>
+        <button type="button" className="ne-now-lyrics-close" title={words.collapseLyrics} onClick={onClose}>
+          <ChevronDownGlyph />
+          <span>{words.collapseLyrics}</span>
+        </button>
+      </div>
+      {!lyric ? (
+        <div className="ne-now-lyrics-wait" role="status" aria-label={words.loading}>
+          <span className="ne-lyric-skel-line ne-skeleton" />
+          <span className="ne-lyric-skel-line ne-skeleton" />
+          <span className="ne-lyric-skel-line short ne-skeleton" />
+        </div>
+      ) : lyric.instrumental ? (
+        <p className="ne-now-lyrics-pure">
+          <NoteGlyph />
+          <span>{words.instrumental}</span>
+        </p>
+      ) : lyric.lines.length === 0 ? (
+        <p className="ne-now-lyrics-none">{words.noLyrics}</p>
+      ) : (
+        <div ref={view} className="ne-now-lyrics-view">
+          <div ref={list} className="ne-now-lyrics-list">
+            {lyric.lines.map((line, index) => (
+              <button
+                key={`${index}:${line.t}`}
+                type="button"
+                className={`ne-now-lyric${index === at ? ' now' : index < at ? ' sung' : index === at + 1 ? ' next' : ''}`}
+                onClick={() => seek(line.t)}
+              >
+                <span className="ne-now-lyric-text">{line.text}</span>
+                {translated && line.tr && <span className="ne-now-lyric-tr">{line.tr}</span>}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 /** Now Playing: the song large, its time, the controls and the volume, as NetEase's desktop player has it.
  *
  * Immersive as NetEase's own app: the cover fills the page's top as a blurred backdrop, a gradient made of the
@@ -266,6 +424,10 @@ export function NowPlayingPage() {
   const [phase, setPhase] = useState<Phase>('open')
   const leaving = useRef(false)
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  // The song's words, and whether all of them show: the closed page keeps them under the song's names; opened, they
+  // take the names' place (the cover staying, smaller).
+  const { lyric, translated } = useSongLyric()
+  const [lyricsOpen, setLyricsOpen] = useState(false)
   // Opened: the page starts at the player bar's place, a hair small and clear of the screen's foot, and comes up on
   // the next frame — the start has to be painted before the transition to the open one can run.
   useLayoutEffect(() => {
@@ -314,6 +476,8 @@ export function NowPlayingPage() {
     timer.current = setTimeout(() => {
       leaving.current = false
       useNav.setState((nav) => ({ ...leftFullScreen(nav), leaving: false }))
+      // The page gone: it comes back as it was always seen (its words closed).
+      setLyricsOpen(false)
     }, leaveDuration(root.current))
   }
   if (!track) {
@@ -397,44 +561,61 @@ export function NowPlayingPage() {
           <span className="ne-kicker">{words.brand}</span>
           <h2>{words.nowPlaying}</h2>
         </header>
-        <div className="ne-now-body">
+        <div className="ne-now-body" data-lyrics={lyricsOpen ? 'open' : 'closed'}>
           <div className="ne-now-art">
             <Cover name={art} cover={track.cover} className="ne-now-cover" />
           </div>
           <div className="ne-now-side">
-            <h1 className="ne-now-title" title={track.title}>
-              {track.title}
-            </h1>
-            <p className="ne-now-artist">
-              {artists.map((artist, index) => (
-                <Fragment key={`${artist.id}:${artist.name}:${index}`}>
-                  {index > 0 && <span className="ne-now-artist-sep"> / </span>}
-                  {/^\d{1,20}$/.test(artist.id) ? (
-                    <button
-                      type="button"
-                      className="ne-now-artist-link"
-                      title={`${words.artist} · ${artist.name}`}
-                      onClick={() => open({ kind: 'artist', id: artist.id, name: artist.name, cover: track.cover })}
-                    >
-                      {artist.name}
-                    </button>
-                  ) : (
-                    <span>{artist.name}</span>
-                  )}
-                </Fragment>
-              ))}
-            </p>
-            {track.album && (
-              <p className="ne-now-album">
-                {words.album} · {track.album}
+            <div className="ne-now-names">
+              <h1 className="ne-now-title" title={track.title}>
+                {track.title}
+              </h1>
+              <p className="ne-now-artist">
+                {artists.map((artist, index) => (
+                  <Fragment key={`${artist.id}:${artist.name}:${index}`}>
+                    {index > 0 && <span className="ne-now-artist-sep"> / </span>}
+                    {/^\d{1,20}$/.test(artist.id) ? (
+                      <button
+                        type="button"
+                        className="ne-now-artist-link"
+                        title={`${words.artist} · ${artist.name}`}
+                        onClick={() => open({ kind: 'artist', id: artist.id, name: artist.name, cover: track.cover })}
+                      >
+                        {artist.name}
+                      </button>
+                    ) : (
+                      <span>{artist.name}</span>
+                    )}
+                  </Fragment>
+                ))}
               </p>
+              {track.album && (
+                <p className="ne-now-album">
+                  {words.album} · {track.album}
+                </p>
+              )}
+              {!track.playable && (
+                <p className="ne-warn">
+                  <UnplayableGlyph />
+                  {words.unplayableHint}
+                </p>
+              )}
+            </div>
+            <LyricsClosed lyric={lyric} position={position} translated={translated} onOpen={() => setLyricsOpen(true)} />
+            {lyric && !lyric.instrumental && lyric.lines.length > 0 && (
+              <button type="button" className="ne-now-lyrics-open" onClick={() => setLyricsOpen(true)}>
+                <LyricsGlyph />
+                <span>{words.expandLyrics}</span>
+                <ChevronUpGlyph />
+              </button>
             )}
-            {!track.playable && (
-              <p className="ne-warn">
-                <UnplayableGlyph />
-                {words.unplayableHint}
-              </p>
-            )}
+            <LyricsOpen
+              lyric={lyric}
+              position={position}
+              translated={translated}
+              showing={lyricsOpen}
+              onClose={() => setLyricsOpen(false)}
+            />
           </div>
         </div>
         <div className="ne-now-foot">

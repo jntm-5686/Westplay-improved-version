@@ -4,6 +4,8 @@ import type {
   NeteaseLibraryGroup,
   NeteaseLibraryPlaylist,
   NeteaseList,
+  NeteaseLyric,
+  NeteaseLyricLine,
   NeteasePlayerState,
   NeteaseProfile,
   NeteaseRanking,
@@ -275,6 +277,87 @@ export function previewPlaylists(): NeteaseList[] {
   return PLAYLISTS.map((each) => each.list)
 }
 
+/** The preview's invented words of the road: a line every few seconds from the song's start, as a song's own LRC
+ * comes (stanzas of four, a longer breath between them). */
+const LYRIC_STANZAS = [
+  [
+    '北环线的风穿过车窗',
+    '把路灯一盏盏吹向身后',
+    '后视镜里还有半座城',
+    '导航把前方念成温柔',
+    '我在服务区停了一会儿',
+    '让月亮先替我开一段',
+    '收音机换了三个频道',
+    '每个都在唱回家的路',
+    '把车窗摇下来一点',
+    '让柴油味混进晚风',
+    '前面还有很长的夜',
+    '而我不急着到终点',
+  ],
+  [
+    '路肩上的花开了又谢',
+    '像那些来不及说的话',
+    '隧道尽头亮起一点光',
+    '像谁在另一头等我',
+    '仪表盘的指针轻轻晃',
+    '陪我把这段黑走完',
+    '如果天亮还没有来',
+    '就再开慢一点点',
+    '把座位放低一些',
+    '听轮胎和柏油说悄悄话',
+    '这一路没有尽头',
+    '也就没有真正的告别',
+  ],
+]
+
+/** A foreign song's words in the preview: English lines with the Chinese translation NetEase's `tlyric` would give
+ * (the cabin's Chinese shows the translation under each line; any other language shows the words alone). */
+const LYRIC_FOREIGN: [text: string, tr: string][] = [
+  ['Headlights on the long road home', '回家的长路上亮着车灯'],
+  ['Mile by mile the night unfolds', '夜色一里一里地铺开'],
+  ['Radio low, the engine hums', '收音机压得很低，引擎在哼'],
+  ['Somewhere east the morning comes', '东边的某处，早晨正赶来'],
+  ['Border signs in another tongue', '路牌上是另一种语言'],
+  ['Coffee cold, the tank half full', '咖啡凉了，油箱半满'],
+  ['Every town a name unsung', '每个小镇都是没唱出的名字'],
+  ['Every bridge another pull', '每座桥都是又一次停靠'],
+  ['Keep it steady, keep it slow', '开得稳一点，慢一点'],
+  ['There’s a dock where the lights still glow', '有个码头，灯还亮着'],
+  ['Keep it steady, let it roll', '开得稳一点，让它滚着走'],
+  ['Every road leads someone home', '每一条路都送一个人回家'],
+]
+
+/** Which of the preview's songs get words: its own index in its list (a pure music now and then, a song whose words
+ * weren't collected now and then, a foreign song now and then). */
+function lyricSeed(track: NeteaseTrack): number {
+  const found = /-(\d+)$/.exec(track.id ?? '')
+  return found ? Number(found[1]) : seedOf(track.title)
+}
+
+/** The playing song's words in the preview: invented lines from the song's start, a pure music now and then (its own
+ * mark, as the hidden page's answer has), and a song whose words weren't collected (none at all). */
+export function previewLyric(track: NeteaseTrack): NeteaseLyric {
+  const id = track.id ?? track.title
+  const seed = lyricSeed(track)
+  if (seed % 7 === 4) return { id, instrumental: true, lines: [] }
+  if (seed % 13 === 7) return { id, instrumental: false, lines: [] }
+  const foreign = seed % 3 === 2
+  const stanza = LYRIC_STANZAS[seed % LYRIC_STANZAS.length]
+  const lines: NeteaseLyricLine[] = []
+  let at = 6.5
+  for (let n = 0; n < 40; n++) {
+    const t = Math.round(at * 1000) / 1000
+    if (foreign) {
+      const [text, tr] = LYRIC_FOREIGN[(seed + n) % LYRIC_FOREIGN.length]
+      lines.push({ t, text, tr })
+    } else {
+      lines.push({ t, text: stanza[(seed + n) % stanza.length] })
+    }
+    at += n % 4 === 3 ? 9.5 : 6.5
+  }
+  return { id, instrumental: false, lines }
+}
+
 /** `album` of a preview track: the playlist it came from. */
 function toTrack(song: NeteaseSong, album: string): NeteaseTrack {
   return {
@@ -321,6 +404,8 @@ export interface Preview {
   ranking(id: string): { meta: PlaylistMeta; songs: NeteaseSong[] } | null
   /** The account's own profile, as a `profile` answer would give it. */
   profile(): NeteaseProfile
+  /** A song's words, as a `lyric` answer would give them. */
+  lyric(track: NeteaseTrack): NeteaseLyric
   play(playing: boolean): void
   playPlaylist(id: string): void
   playSong(id: string, song: NeteaseSong): void
@@ -400,6 +485,7 @@ export function createPreview(): Preview {
     rankings: () => previewRankings(),
     ranking: (id) => previewRanking(id),
     profile: () => previewProfile(),
+    lyric: (track) => previewLyric(track),
     play: (next) => {
       fold()
       playing = next

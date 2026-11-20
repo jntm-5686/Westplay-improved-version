@@ -25,9 +25,10 @@
 //! `{"type":"netease","kind":"state",…}`, `{"type":"netease","kind":"playlist",…}`, `{"type":"netease","kind":"home",…}`,
 //! `{"type":"netease","kind":"library",…}`, `{"type":"netease","kind":"search",…}`,
 //! `{"type":"netease","kind":"artist",…}`, `{"type":"netease","kind":"recent",…}`,
-//! `{"type":"netease","kind":"rankings",…}`, `{"type":"netease","kind":"profile",…}` and
-//! `{"type":"netease","kind":"like",…}` to the cabin page, and `{"type":"netease","kind":"command","command":{…}}`
-//! from it (see [`Command`]). The whole protocol is written down in notes/netease-v3-protocol.md.
+//! `{"type":"netease","kind":"rankings",…}`, `{"type":"netease","kind":"profile",…}`,
+//! `{"type":"netease","kind":"like",…}` and `{"type":"netease","kind":"lyric",…}` to the cabin page, and
+//! `{"type":"netease","kind":"command","command":{…}}` from it (see [`Command`]). The whole protocol is written down in
+//! notes/netease-v3-protocol.md.
 
 use std::cell::RefCell;
 use std::path::Path;
@@ -720,6 +721,54 @@ impl Recent {
     }
 }
 
+/// A line of a song's words, as the page read them from its lyric interface: when it's sung (seconds), the words, and
+/// their translation when the song has one (`tr`: NetEase's own `tlyric`, in Chinese). Only the lines with words are
+/// here: a blank row of the page's file is its stanza gap, and a pure music's notice is not a line to sing.
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LyricLine {
+    #[serde(default, deserialize_with = "some_f64")]
+    pub t: f64,
+    #[serde(default)]
+    pub text: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub tr: String,
+}
+
+/// The playing song's words (`netease` `lyric`): the page's own answer to its lyric interface (`/api/song/lyric`),
+/// read into lines. The page also says what a song without words is: `instrumental` marks a pure music (the app says
+/// 纯音乐 rather than showing nothing); a song whose words it couldn't collect is neither (the app says 暂无歌词).
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Lyric {
+    /// The song's NetEase id, as the page read its words for.
+    pub id: String,
+    #[serde(default)]
+    pub instrumental: bool,
+    #[serde(default)]
+    pub lines: Vec<LyricLine>,
+}
+
+impl Lyric {
+    /// The answer cleaned: only lines the app can show (a time, some words), so many lines, so long, in the song's
+    /// own order (a page's file is in time, but never trusted to be), its translation as short as its words.
+    fn checked(mut self) -> Self {
+        const MOST: usize = 2000;
+        const TEXT: usize = 300;
+        self.lines.retain(|line| {
+            line.t.is_finite() && (0.0..=86_400.0).contains(&line.t) && !line.text.trim().is_empty()
+        });
+        for line in &mut self.lines {
+            line.text = short(line.text.trim().to_string(), TEXT);
+            line.tr = short(line.tr.trim().to_string(), TEXT);
+            line.t = (line.t * 1000.0).round() / 1000.0;
+        }
+        self.lines.sort_by(|one, other| one.t.partial_cmp(&other.t).unwrap_or(std::cmp::Ordering::Equal));
+        self.lines.truncate(MOST);
+        self
+    }
+}
+
 /// Whose account it is, as NetEase's own top bar says it: a name, and the picture of it (NetEase's own URL).
 #[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -900,6 +949,8 @@ pub enum Report {
     Profile(Option<Box<Profile>>),
     /// A like asked for, and whether it landed: the page's answer to the app's `setLike`.
     Like(Box<Like>),
+    /// The playing song's words, as the page read them (each line when it's sung; a pure music's own mark).
+    Lyric(Box<Lyric>),
     /// A play timed by the page: for the host's log.
     Timing(Box<Timing>),
     /// What Home shows: the page's answer to the app's `home`.
@@ -1115,6 +1166,7 @@ impl Netease {
                     reports.push(Report::Profile(profile.and_then(Profile::checked).map(Box::new)))
                 }
                 Some(Message::Like(like)) => reports.push(Report::Like(Box::new(like))),
+                Some(Message::Lyric(lyric)) => reports.push(Report::Lyric(Box::new(lyric.checked()))),
                 Some(Message::Timing(timing)) => reports.push(Report::Timing(Box::new(timing))),
                 Some(Message::Home(home)) => reports.push(Report::Home(Box::new(home.checked()))),
                 None => {}
@@ -1164,6 +1216,8 @@ enum Message {
     Profile(Option<Profile>),
     /// A like asked for, answered.
     Like(Like),
+    /// The playing song's words, answered (its lines, or the mark of a pure music).
+    Lyric(Lyric),
     /// A play's own timing, said as it goes.
     Timing(Timing),
     /// What Home shows, answered.
@@ -1198,6 +1252,13 @@ fn read_message(message: &str) -> Option<Message> {
     }
     if let Some(like) = value.get("like") {
         return serde_json::from_value::<Like>(like.clone()).ok().map(Message::Like);
+    }
+    // A song's words: only for a NetEase song's own id (the app shows them over the song that plays).
+    if let Some(lyric) = value.get("lyric") {
+        return serde_json::from_value::<Lyric>(lyric.clone())
+            .ok()
+            .filter(|lyric| is_id(&lyric.id))
+            .map(Message::Lyric);
     }
     if let Some(timing) = value.get("timing") {
         return serde_json::from_value::<Timing>(timing.clone()).ok().map(Message::Timing);
@@ -1343,6 +1404,20 @@ pub fn profile_message(profile: Option<&Profile>) -> String {
         "type": "netease",
         "kind": "profile",
         "profile": profile,
+    })
+    .to_string()
+}
+
+/// `{"type":"netease","kind":"lyric","id":"…","instrumental":false,"lines":[{"t":16.922,"text":"…","tr":"…"}]}`: the
+/// playing song's words, as the page read them — each line with when it's sung (seconds) and its translation when the
+/// song has one; `instrumental`: a pure music (no words to show, and the app says so).
+pub fn lyric_message(lyric: &Lyric) -> String {
+    serde_json::json!({
+        "type": "netease",
+        "kind": "lyric",
+        "id": lyric.id,
+        "instrumental": lyric.instrumental,
+        "lines": lyric.lines,
     })
     .to_string()
 }
@@ -2123,6 +2198,102 @@ mod tests {
         let cards_only = Home { daily: None, radar: None, personal: vec![], recommended: vec![] }.checked();
         let value: serde_json::Value = serde_json::from_str(&home_message(&cards_only)).unwrap();
         assert!(value["daily"].is_null(), "the cards' answer: its day's songs still to come");
+    }
+
+    /// The playing song's words: the page's own lines, each with when it's sung, its words and its translation, read
+    /// as the app shows them — in the song's own order, only lines it can show, only a NetEase song's own id.
+    #[test]
+    fn reads_a_songs_words() {
+        let Some(Message::Lyric(lyric)) = read_message(
+            r##"{"lyric":{"id":"26896129","instrumental":false,"lines":[
+                {"t":16.922,"text":"We were both young when I first saw you","tr":"第一次见到你的时候我们都很年轻"},
+                {"t":20.569,"text":"I close my eyes and the flashback starts"},
+                {"t":-1,"text":"a time that isn't one"},
+                {"t":24,"text":"   "},
+                {"t":23.98,"text":"I'm standing there on a balcony in summer air","tr":"我站在那里 在一个阳台上乘凉"}]}}"##,
+        ) else {
+            panic!("not a lyric")
+        };
+        let lyric = lyric.checked();
+        assert_eq!(lyric.id, "26896129");
+        assert!(!lyric.instrumental);
+        assert_eq!(lyric.lines.len(), 3, "{lyric:?}");
+        // The song's own order, whatever order its answer came in; a line with no translation says none.
+        assert_eq!(lyric.lines[0].t, 16.922);
+        assert_eq!(lyric.lines[1].t, 20.569);
+        assert_eq!(lyric.lines[1].tr, "");
+        assert_eq!(lyric.lines[2].text, "I'm standing there on a balcony in summer air");
+        assert_eq!(lyric.lines[2].tr, "我站在那里 在一个阳台上乘凉");
+        // Only a NetEase song's own id is words the app can put over the song that plays.
+        assert_eq!(read_message(r#"{"lyric":{"id":"12x","lines":[]}}"#), None);
+        assert_eq!(read_message(r#"{"lyric":"no"}"#), None);
+    }
+
+    /// A song without words: a pure music is marked as one (the app then says 纯音乐); a song whose words the page
+    /// couldn't collect is neither a pure music nor a song with lines (the app says 暂无歌词).
+    #[test]
+    fn marks_a_pure_music_and_an_empty_answer() {
+        let Some(Message::Lyric(pure)) = read_message(r#"{"lyric":{"id":"478507889","instrumental":true,"lines":[]}}"#)
+        else {
+            panic!("not a lyric")
+        };
+        let pure = pure.checked();
+        assert!(pure.instrumental && pure.lines.is_empty());
+        let Some(Message::Lyric(none)) = read_message(r#"{"lyric":{"id":"3433373114","instrumental":false}}"#) else {
+            panic!("not a lyric")
+        };
+        let none = none.checked();
+        assert!(!none.instrumental && none.lines.is_empty());
+        assert_eq!(none.id, "3433373114");
+    }
+
+    /// The words to the cabin page: its own protocol (`type`/`kind`), a line's moment, words and translation (left
+    /// out when the song has none), and a pure music's own mark.
+    #[test]
+    fn says_a_songs_words_the_way_the_app_reads_them() {
+        let lyric = Lyric {
+            id: "26896129".into(),
+            instrumental: false,
+            lines: vec![
+                LyricLine { t: 16.922, text: "We were both young".into(), tr: "我们都很年轻".into() },
+                LyricLine { t: 20.569, text: "I close my eyes".into(), tr: String::new() },
+            ],
+        };
+        let message = lyric_message(&lyric);
+        let value: serde_json::Value = serde_json::from_str(&message).unwrap();
+        assert_eq!((value["type"].as_str(), value["kind"].as_str()), (Some("netease"), Some("lyric")));
+        assert_eq!(value["id"], "26896129");
+        assert_eq!(value["instrumental"], false);
+        assert_eq!(value["lines"][0]["t"], 16.922);
+        assert_eq!(value["lines"][0]["text"], "We were both young");
+        assert_eq!(value["lines"][0]["tr"], "我们都很年轻");
+        assert!(value["lines"][1].get("tr").is_none(), "no translation to say: {message}");
+        let pure = lyric_message(&Lyric { id: "478507889".into(), instrumental: true, lines: vec![] });
+        let value: serde_json::Value = serde_json::from_str(&pure).unwrap();
+        assert_eq!(value["instrumental"], true);
+        assert_eq!(value["lines"].as_array().map(Vec::len), Some(0));
+    }
+
+    /// Only what the app can show passes: so many lines, so long (translation and words), times that are times.
+    #[test]
+    fn passes_only_words_the_app_can_show() {
+        let lines: Vec<LyricLine> =
+            (0..2500).map(|n| LyricLine { t: n as f64, text: "歌".repeat(400), tr: "tr".repeat(400) }).collect();
+        let checked = Lyric { id: "1".into(), instrumental: false, lines }.checked();
+        assert_eq!(checked.lines.len(), 2000);
+        assert_eq!(checked.lines[0].text.chars().count(), 300);
+        assert_eq!(checked.lines[0].tr.chars().count(), 300);
+        let odd = Lyric {
+            id: "1".into(),
+            instrumental: false,
+            lines: vec![
+                LyricLine { t: f64::NAN, text: "not a time".into(), tr: String::new() },
+                LyricLine { t: 90_000.0, text: "not a song's time".into(), tr: String::new() },
+                LyricLine { t: 5.0, text: "  ".into(), tr: String::new() },
+            ],
+        }
+        .checked();
+        assert!(odd.lines.is_empty(), "{odd:?}");
     }
 
     #[test]

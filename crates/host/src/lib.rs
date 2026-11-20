@@ -453,6 +453,8 @@ pub fn run(mut config: Config, stop: Arc<AtomicBool>) -> Result<(), Error> {
     // NetEase's cookies alone).
     let mut netease: Option<netease::Netease> = None;
     let mut netease_state: Option<netease::State> = None;
+    // The playing song's words last read (sent again to a cabin page that loaded anew, while it's still that song).
+    let mut netease_lyric: Option<netease::Lyric> = None;
     let (mut netease_window_open, mut netease_confirming) = (false, false);
     // Its page, idle (nothing playing) for a long while, is closed: a hidden page costs memory, and the
     // page opens it again when the cab's app is next used (its cookies stay, so it's still signed in).
@@ -930,6 +932,14 @@ pub fn run(mut config: Config, stop: Arc<AtomicBool>) -> Result<(), Error> {
                         let signing_in = netease_window_open || netease_confirming;
                         let message = netease::state_message(netease_state.as_ref(), signing_in);
                         let _ = webview.post_json(&message);
+                        // The words of the song that plays, when they were read before this page loaded (the hidden
+                        // page reads them as the song changes only).
+                        if let Some(lyric) = &netease_lyric
+                            && let Some(track) = netease_state.as_ref().and_then(|state| state.track.as_ref())
+                            && track.id == lyric.id
+                        {
+                            let _ = webview.post_json(&netease::lyric_message(lyric));
+                        }
                     }
                     if youtube_music.is_some() {
                         let signing_in = youtube_music_window_open || youtube_music_confirming;
@@ -1541,6 +1551,7 @@ pub fn run(mut config: Config, stop: Arc<AtomicBool>) -> Result<(), Error> {
                     failed.close(&stage);
                 }
                 netease_state = None;
+                netease_lyric = None;
                 (netease_window_open, netease_confirming) = (false, false);
                 status.netease_signed_in = None;
                 status.netease_signing_in = false;
@@ -1616,6 +1627,11 @@ pub fn run(mut config: Config, stop: Arc<AtomicBool>) -> Result<(), Error> {
                         netease::Report::Like(like) => {
                             let _ = webview.post_json(&netease::like_message(&like));
                         }
+                        // The playing song's words: straight on to the page (the app's lyrics), never logged.
+                        netease::Report::Lyric(lyric) => {
+                            let _ = webview.post_json(&netease::lyric_message(&lyric));
+                            netease_lyric = Some(*lyric);
+                        }
                         // A play timed by the page: its steps, for the log only.
                         netease::Report::Timing(timing) => {
                             log!(
@@ -1665,6 +1681,7 @@ pub fn run(mut config: Config, stop: Arc<AtomicBool>) -> Result<(), Error> {
                 idle.close(&stage);
             }
             netease_state = None;
+            netease_lyric = None;
             (netease_window_open, netease_confirming) = (false, false);
             let _ = webview.post_json(&netease::state_message(None, false));
         }

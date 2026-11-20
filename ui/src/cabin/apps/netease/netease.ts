@@ -83,6 +83,23 @@ export interface NeteaseAccount {
   avatar: string | null
 }
 
+/** A line of the playing song's words (`netease` `lyric`): when it's sung (seconds into the song), its words, and
+ *  their translation when NetEase has one (`tr`; the app shows it in the cabin's Chinese only). */
+export interface NeteaseLyricLine {
+  t: number
+  text: string
+  tr?: string
+}
+
+/** The playing song's words, as the hidden page read them (`netease` `lyric`): its id, whether it's a pure music (a
+ *  song with no words by nature: the app says 纯音乐), and its lines, each with when it's sung. A song whose words
+ *  weren't collected is neither: its lines are empty and the app says 暂无歌词. */
+export interface NeteaseLyric {
+  id: string
+  instrumental: boolean
+  lines: NeteaseLyricLine[]
+}
+
 /** The account's own profile (`netease` `profile`): the page's user detail and its music level. */
 export interface NeteaseProfile {
   /** NetEase's own user id (digits), as the page's top bar's address says it. */
@@ -332,6 +349,8 @@ interface NeteaseAppState {
   track: NeteaseTrack | null
   /** Whether the playing song is liked (in 我喜欢的音乐): `null` until the page has read it. */
   liked: boolean | null
+  /** The playing song's own words, as the hidden page read them (`null`: not read yet, or none for this song). */
+  lyric: NeteaseLyric | null
   /** A like asked of the page, not answered yet. */
   liking: boolean
   /** A like that didn't land, for the app's own one-line word over the player (`reason`: the page's own). */
@@ -416,12 +435,15 @@ function fromPlayer(
 }
 
 /** Outside WestPlay (a plain browser) the preview is the player from the first frame: there's no host to wait
- * for. */
+ * for. Its own first song has its words from that frame too (the hidden page would read a song's on its changes). */
 const PREVIEW = isInHost() ? null : createPreview()
+const PREVIEW_START = PREVIEW ? PREVIEW.read() : null
+const PREVIEW_TRACK = PREVIEW_START?.track ?? null
+const PREVIEW_LYRIC = PREVIEW && PREVIEW_TRACK?.id ? PREVIEW.lyric(PREVIEW_TRACK) : null
 
 export const useNetease = create<NeteaseAppState>()(() => ({
-  ...(PREVIEW
-    ? { ...fromPlayer(PREVIEW.read()), mode: 'list' as PlayMode }
+  ...(PREVIEW_START
+    ? { ...fromPlayer(PREVIEW_START), mode: 'list' as PlayMode }
     : {
         signedIn: null,
         signingIn: false,
@@ -440,6 +462,7 @@ export const useNetease = create<NeteaseAppState>()(() => ({
   views: { home: [], mine: [], search: [], now: [] },
   playlists: {},
   history: [],
+  lyric: PREVIEW_LYRIC,
   toast: null,
   style: keptStyle(),
   home: null,
@@ -474,10 +497,22 @@ export function netease(command: NeteaseCommand): void {
  * playlists, a search, the recent songs, the rankings, the profile). */
 interface NeteaseMessage {
   type: 'netease'
-  kind?: 'state' | 'playlist' | 'home' | 'library' | 'search' | 'artist' | 'recent' | 'like' | 'rankings' | 'profile'
+  kind?:
+    | 'state'
+    | 'playlist'
+    | 'home'
+    | 'library'
+    | 'search'
+    | 'artist'
+    | 'recent'
+    | 'like'
+    | 'rankings'
+    | 'profile'
+    | 'lyric'
   state?: unknown
   id?: unknown
   songs?: unknown
+  lines?: unknown
   groups?: unknown
   query?: unknown
   daily?: unknown
@@ -559,6 +594,32 @@ function readTrack(raw: unknown): NeteaseTrack | null {
   const artists = readArtistRefs(track.artists)
   if (artists.length > 0) read.artists = artists
   return read
+}
+
+/** The `lyric` message's lines: only the ones the app can show (a real moment, some words), its translation when the
+ *  song has one, in the song's own order. */
+function readLyricLines(raw: unknown): NeteaseLyricLine[] {
+  if (!Array.isArray(raw)) return []
+  const lines: NeteaseLyricLine[] = []
+  for (const entry of raw) {
+    if (!entry || typeof entry !== 'object') continue
+    const line = entry as Record<string, unknown>
+    const words = text(line.text).trim()
+    const t = count(line.t, Number.NaN)
+    if (!words || !Number.isFinite(t) || t < 0 || t > 86_400) continue
+    const tr = text(line.tr).trim()
+    lines.push(tr ? { t, text: words, tr } : { t, text: words })
+  }
+  return lines.slice(0, 2000)
+}
+
+/** The hidden page's answer with the playing song's words (`netease` `lyric`), or `null` for one the app can't use. */
+function readLyric(raw: unknown): NeteaseLyric | null {
+  if (!raw || typeof raw !== 'object') return null
+  const said = raw as Record<string, unknown>
+  const id = text(said.id)
+  if (!id) return null
+  return { id, instrumental: said.instrumental === true, lines: readLyricLines(said.lines) }
 }
 
 function readLists(raw: unknown): NeteaseList[] {
@@ -825,7 +886,13 @@ export function receiveState(state: NeteasePlayerState): void {
   const before = useNetease.getState().track
   const said = readMode(state.mode)
   useNetease.setState({ ...fromPlayer(state), ...(said === undefined ? {} : { mode: modeSaid(said) }) })
-  if (state.track && (!before || songKey(before) !== songKey(state.track))) rememberPlayed(state.track)
+  const next = state.track
+  // A new song (or none at all): the song before it's words leave with it — the hidden page reads this one's a moment
+  // after it starts playing (the preview answers at once), so the last song's words never stand over this one.
+  if ((next && (!before || songKey(before) !== songKey(next))) || (!next && before)) {
+    if (next) rememberPlayed(next)
+    useNetease.setState({ lyric: next && next.id && PREVIEW ? PREVIEW.lyric(next) : null })
+  }
 }
 
 /** A mode the page said, taken as it is — unless it's the one the app just pressed away from and the page hasn't
@@ -1488,6 +1555,14 @@ export function receiveLike(id: string, liked: boolean, ok: boolean, reason: str
   }))
 }
 
+/** The playing song's words, as the hidden page read them (`netease` `lyric`): kept only for the song that plays, so
+ * an answer for a song the player has already left never stands over the next one. */
+export function receiveLyric(lyric: NeteaseLyric): void {
+  const { track } = useNetease.getState()
+  if (!track?.id || track.id !== lyric.id) return
+  useNetease.setState({ lyric })
+}
+
 /** Plays the playlist from its start (its page's Play): its first playable song, by id, once the songs are
  * known (or as they arrive). */
 export function playPlaylist(playlistId: string): void {
@@ -1840,6 +1915,11 @@ export function receiveMessage(message: unknown): void {
     case 'like': {
       const id = text(each.id)
       if (id) receiveLike(id, each.liked === true, each.ok === true, text(each.reason))
+      return
+    }
+    case 'lyric': {
+      const lyric = readLyric(each)
+      if (lyric) receiveLyric(lyric)
       return
     }
     default:

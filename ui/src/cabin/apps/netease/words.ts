@@ -212,6 +212,13 @@ export interface NeteaseWords {
   volume: string
   mute: string
   unmute: string
+  /** The playing song's words: the closed player's few lines, the way into all of them, and the two kinds of song
+   *  without words (a pure music, and one NetEase collected none for). */
+  lyrics: string
+  expandLyrics: string
+  collapseLyrics: string
+  instrumental: string
+  noLyrics: string
 }
 
 const LOADING = { zh: '正在读取…', en: 'Loading…' }
@@ -411,6 +418,11 @@ export function neteaseWords(locale: string): NeteaseWords {
       volume: '音量',
       mute: '静音',
       unmute: '取消静音',
+      lyrics: '歌词',
+      expandLyrics: '展开歌词',
+      collapseLyrics: '收起歌词',
+      instrumental: '纯音乐',
+      noLyrics: '暂无歌词',
     }
   }
   return {
@@ -592,5 +604,10 @@ export function neteaseWords(locale: string): NeteaseWords {
     volume: 'Volume',
     mute: 'Mute',
     unmute: 'Unmute',
+    lyrics: 'Lyrics',
+    expandLyrics: 'Show lyrics',
+    collapseLyrics: 'Hide lyrics',
+    instrumental: 'Instrumental',
+    noLyrics: 'No lyrics yet',
   }
 }

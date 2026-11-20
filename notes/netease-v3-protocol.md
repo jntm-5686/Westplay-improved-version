@@ -247,7 +247,36 @@
 - `ok=false` 时 `reason` 是页面的话：`account`（未登录/找不到喜欢的歌单）、`csrf`（拿不到 csrf）、`http`、或接口的 code/message。
 - 写成功后**回读**「我喜欢的音乐」的 trackIds 确认，才 `ok=true`。
 
-### 3.11 `timing`（只进 host 日志，不转发给 UI）
+### 3.11 `lyric`（r10.5 新增：播放页歌词）
+
+```json
+{
+  "type": "netease", "kind": "lyric",
+  "id": "26896129",
+  "instrumental": false,
+  "lines": [
+    { "t": 16.922, "text": "We were both young when I first saw you", "tr": "第一次见到你的时候我们都很年轻" },
+    { "t": 20.569, "text": "I close my eyes and the flashback starts" }
+  ]
+}
+```
+
+- 页面在**切歌时**（track id 变化）用同源 `/api/song/lyric?id=<songId>&lv=-1&kv=-1&tv=-1` 取一次，读成行后
+  `post({lyric:{id,instrumental,lines}})`；同一 id 不重复请求（页面内缓存 40 首，回放过的歌立刻答）。
+- `t`：这一行开始唱的时刻（秒，毫秒精度）；`text`：原文；`tr`：网易云自己的翻译（`tlyric`），按同一时刻对齐，
+  没有对应时**不出现**。翻译**总是随消息下发**，是否显示由 UI 按语言决定（见 §6「多语言规则」）。
+- LRC 解析在隐藏页里做：`[mm:ss.xx]` 行 → 行；`[mm:ss.xx]` 多次出现的一行展开成多行；空行（换段）丢弃；
+  文件开头的「作词 : …」「作曲 : …」等 credit 行丢弃；纯音乐的提示行（含「纯音乐」）丢弃。
+- `instrumental: true`：纯音乐（接口的 `pureMusic`/`nolyric`，或整首只有 credit 和「纯音乐，请欣赏」）——
+  `lines` 为空，UI 显示「纯音乐」而不是空白。
+- `lines: []` 且 `instrumental: false`：字被接口标为 `uncollected`（没收集到歌词）——UI 显示「暂无歌词」。
+- host 侧清洗（`netease.rs` 的 `Lyric::checked`）：id 必须是网易云的数字 id，行数 ≤2000，每行文本/翻译 ≤300 字，
+  时间必须是 0–86400 的有限数，按时间排序；不合法的行丢弃。`state.track.id` 不等于 `lyric.id` 时 UI 丢弃这条
+  （切歌瞬间的迟到答案不会盖到下一首上）。
+- host 会把**最后一条 `lyric`** 缓存：cabin 页重新加载时，如果当前播放的还是那首歌，host 重新下发它
+  （隐藏页只在切歌时取歌词，否则 UI 重新加载后会一直空白）。
+
+### 3.12 `timing`（只进 host 日志，不转发给 UI）
 
 ```json
 { "timing": { "action": "play", "sounding": 842, "steps": "command@0ms …", "rescue": null, "reloading": null } }
@@ -257,11 +286,11 @@
 `rescue`: 最终用到第几级补救（`null`=正常，1/2/3）；`reloading`: 是否重载了页面。协议字段与 v2 兼容（未加必填字段）。
 `steps` 里按时间记下每一步（`before {…}`、`track <id>`、`rescue1 …`、`sounding <ms>`），host 只记日志。
 
-### 3.12 `ready`
+### 3.13 `ready`
 
 `{"ready":true}`：页面（重新）加载完成。host 收到后重发 cab 配置并让页面 `refresh`。
 
-### 3.13 页面播放器 API（实测，2026-11-19）
+### 3.14 页面播放器 API（实测，2026-11-19）
 
 - `window.nm.x.ceo2i(action, type, id)`：页面自己的播放调用（`bLk6u`）。`type` 是资源类型：
   `13`=歌单（会加载整单为队列）、`18`=单曲（**追加**到当前页面队列）、`19`=专辑、`24`=每日推荐、`2`=歌手热歌。
@@ -293,6 +322,12 @@
 - store 新增字段：`rankings: NeteaseRanking[]|null`、`rankingsAsking: Asking`、`profile: NeteaseProfile|null`、`profileAsking: Asking`。
 - **r10.4 新增**：`PlayMode`（`'list'|'shuffle'|'one'`）、`NeteaseFrom` = `{ kind: 'playlist'|'ranking'|'daily'|'recent'|'search'|'artist', name: string }`；
   store 新增 `from: NeteaseFrom|null`（当前播放来源，UI 不展示，排查/接入用）。`NeteasePlayerState` 的 `mode?` 现在真的被读了。
+- **r10.5 新增（歌词）**：
+  - `NeteaseLyricLine` = `{ t: number, text: string, tr?: string }`（`t` 秒；`tr` 是翻译，没有就不出现）。
+  - `NeteaseLyric` = `{ id: string, instrumental: boolean, lines: NeteaseLyricLine[] }`。
+  - store 新增 `lyric: NeteaseLyric | null`（只保留**当前播放那首**的歌词；`receiveState` 切歌时清空）。
+  - `ui/.../lyrics.ts`（新文件，纯函数）：`lyricLineAt(lines, position)`（当前行，提前 0.2s 点亮）、
+    `lyricWindow(lines, at, count=3)`（未展开时围绕当前行的 3 行）、`showsTranslation(locale)`（只有 `zh*` 为 true）。
 
 ### 4.2 函数（UI 直接用）
 
@@ -324,7 +359,7 @@
 
 **消息入口（测试/host 通信用）**
 - `receiveMessage(message)`、`receiveState`、`receiveHome`、`receiveLibrary`、`receiveSearch`、`receiveRecent`、
-  `receiveArtist`、`receivePlaylist`、`receiveLike`、`receiveRankings`、`receiveProfile`
+  `receiveArtist`、`receivePlaylist`、`receiveLike`、`receiveRankings`、`receiveProfile`、`receiveLyric(lyric)`
 
 **应用接入**
 - `useNeteaseBridge()`、`neteasePlayer`、`pauseNeteaseWithGame()`、`showToast(text)`、`setStyle(style)`、`accountOf(state)`、
@@ -332,9 +367,10 @@
 
 ### 4.3 预览（纯浏览器）
 
-`preview.ts` 提供 `createPreview()`：`read()/songs()/home()/library()/recent()/search()/artist()/rankings()/ranking(id)/profile()`
+`preview.ts` 提供 `createPreview()`：`read()/songs()/home()/library()/recent()/search()/artist()/rankings()/ranking(id)/profile()/lyric(track)`
 及播放控制。无 host 时 `requestHome/requestLibrary/requestRecent/requestRankings/requestProfile/openRanking` 都从预览答，
-所以整个 UI 在浏览器里可渲染、可点、可播。
+所以整个 UI 在浏览器里可渲染、可点、可播。`lyric(track)` 按歌（id 尾号）生成假歌词：多数歌是中文原创词，少数是
+「英文原文 + 中文翻译」（演示中文界面下的翻译），还有纯音乐（`instrumental: true`）和没收到歌词的（`lines: []`）。
 
 ### 4.4 队列与上一首/下一首（r10.4）
 
@@ -363,7 +399,8 @@
 | `crates/host/src/netease.rs` | Command/Message/State/Report 类型、页面消息清洗、cabin 消息 JSON、host 侧校验、单测 |
 | `crates/host/src/lib.rs`（网易云段） | 转发 Report 到 cabin 页、日志、空闲关闭、启动 |
 | `ui/.../netease.ts` | 协议类型/解析/命令/store/请求函数（本文档 §4） |
-| `ui/.../preview.ts` | 浏览器预演数据 |
+| `ui/.../lyrics.ts` | 歌词的纯函数：当前行、未展开的 3 行、语言是否显示翻译 |
+| `ui/.../preview.ts` | 浏览器预演数据（含假歌词） |
 | `notes/netease-v3-protocol.md` | 本文档 |
 
 ---
@@ -375,6 +412,15 @@
 - `play` 新增可选 `list` 字段：旧 UI 不带它也能播（退回页面自己的单曲播放，慢一点但可用）；host 对 `list` 做白名单校验。
 - `state.state` 仍可为 `null`；`state.signedIn` 仍可为 `null`（未知）。
 - `timing` 只进日志，不改变协议。
+- **r10.5**：新增 kind `lyric`（旧 UI 忽略未知 kind，不受影响）；没有新增命令（歌词由隐藏页在切歌时自己推）。
+
+### 6.0 多语言规则（歌词翻译，r10.5）
+
+- 车机语言是**中文**（`useLanguage()` 以 `zh` 开头）时：外语歌显示**原文 + 翻译**（`tr`，歌曲自带才显示）；
+  没有翻译就只显示原文。
+- 车机语言是**其他语言**时：任何歌都**不显示翻译**，只显示原文（`tr` 仍在消息里，UI 不渲染）。
+- 实现：host 总是解析并对齐翻译一起下发；`lyrics.ts` 的 `showsTranslation(locale)`（只有 `zh*` 为 true）由
+  `NowPlaying.tsx` 读 `useLanguage()` 决定渲染。以后加别的语言只改这一个函数。
 
 ### 6.1 已知未做（可选，UI 的 notes/netease-v3-ui-needs.md §4）
 
@@ -386,7 +432,7 @@
 
 ---
 
-## 7. 接口实测记录（本机已登录隐藏页，2026-11-19，uid=1835963976）
+## 7. 接口实测记录（本机已登录隐藏页，2026-11-19；歌词一项 2026-11-20，uid=1835963976）
 
 探针：CDP `Runtime.evaluate` 在 `https://music.163.com/` 页面里同源 `fetch(credentials:'same-origin')`。
 返回条数为实测值（会随账号数据变化，这里记的是方法有效性与字段形状）。
@@ -413,6 +459,10 @@
 | 红心（加入） | `POST /api/playlist/manipulate/tracks` body `op=add&pid=<喜欢歌单id>&trackIds=[<id>]&csrf_token=<__csrf cookie>` | `code=200`，`count` 2747→**2748**，回读 `trackIds` 含该曲 | — |
 | 红心（取消） | 同上 `op=del` | `code=200`，回读 2747，`trackIds` 不含该曲 | — |
 | 搜索结果补版权 | `POST /api/v3/song/detail`（同上） | 搜索接口无 `st`，靠它补 | — |
+| **歌词（有翻译的外语歌）** | `GET /api/song/lyric?id=26896129&lv=-1&kv=-1&tv=-1` | `code=200`，`lrc.lyric` 2404 字（英文原文），`tlyric.lyric` 1290 字（中文翻译），两边时间戳逐行对齐（如 `[00:16.922]`） | `lrc.lyric` / `tlyric.lyric`；无 `pureMusic/nolyric/uncollected` |
+| **歌词（纯音乐）** | `GET /api/song/lyric?id=478507889&…`（卡农 经典钢琴版） | `code=200`，`pureMusic=true`，`lrc.lyric="[00:00.00] 作曲 : dylanf\n[00:01.00] 编曲 : dylanf\n[00:05.00]纯音乐，请欣赏\n"`，**没有 `tlyric` 字段** | `pureMusic`；另测 `20110049`（River Flows In You）：`[00:00.00] 作曲 : Yiruma` + `[00:05.00]纯音乐，请欣赏` |
+| **歌词（没收集到）** | `GET /api/song/lyric?id=3433373114&…` | `code=200`，`uncollected=true`，`lrc.lyric=""` | `uncollected` |
+| **歌词（中文歌）** | `GET /api/song/lyric?id=168091&…`（蓝莲花） | `code=200`，`lrc.lyric` 24 行，`tlyric.lyric=""`（有对象、空内容） | `lrc.lyric` / `tlyric.lyric` |
 
 其它实测（同一页面）：
 
@@ -523,6 +573,28 @@
 
 ---
 
+### 8.4 歌词实测（2026-11-20）
+
+测量方式：本机 `%LOCALAPPDATA%\WestPlay\westplay.exe` 带 `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=0`
+启动，cabin 页发 `{type:'netease',kind:'command',command:{action:'start'}}` 让隐藏页起来（端口从
+`%LOCALAPPDATA%\app.westplay\webview2-netease\EBWebView\DevToolsActivePort` 读，**没连 9223/9226**），
+然后在 `https://music.163.com/` 页面里用 CDP `Runtime.evaluate` 跑**仓库里最终版 `netease.js` 的歌词段原样**
+（只把 `api`/`post` 换成收集器；账号 `dReLuNEstella` 已登录）：
+
+| 歌曲 | 结果 |
+|---|---|
+| Love Story（Taylor Swift，`26896129`） | `instrumental:false`，**51 行**；第 1 行 `t=16.922 "We were both young when I first saw you"` + `tr:"第一次见到你的时候我们都很年轻"`；原/译时间戳逐行对齐 |
+| 卡农 经典钢琴版（`478507889`） | `instrumental:true`，**0 行**（文件只有 `作曲 : dylanf` + `纯音乐，请欣赏`，都被丢掉） |
+| River Flows In You（`20110049`） | `instrumental:true`，0 行（`pureMusic=true`） |
+| 走向晴光（`3433373114`，`uncollected`） | `instrumental:false`，0 行（UI 显示「暂无歌词」） |
+| 蓝莲花（许巍，`168091`） | `instrumental:false`，24 行，`tr` 全部没有（中文歌无翻译） |
+| 同一首再播一次 | 从页面内缓存答，**不再请求**接口（1 条消息，0 次 fetch） |
+
+- 结论：`/api/song/lyric?id=<songId>&lv=-1&kv=-1&tv=-1` 在真实隐藏页（登录态）可用，字段与 §3.11 一致；
+  纯音乐/无歌词/翻译三种情况都按预期分流。
+
+---
+
 ## 9. 给 UI 分身的交接要点
 
 1. 只 import `./netease` 和 `./preview` 里的导出；协议类型以 `netease.ts` 为准，本文档 §4 是索引。
@@ -541,3 +613,8 @@
 6. 红心：`setLiked(!liked)`，等 `like` 消息（`state.liked` 只在页面确认后变）；失败看 `likeFailure.reason`。
 7. 预览：`preview.ts` 已含榜单/资料/每日推荐假数据，浏览器里整个 UI 应能渲染与点播。
 8. 不要改 `netease.ts` / `preview.ts` / `crates/*`：缺字段/缺函数在 notes 里留需求，由后端分身补。
+9. 歌词（r10.5）：**不需要请求**——隐藏页在切歌时自己推 `kind:'lyric'`。读 `useNetease(s => s.lyric)`（只保留当前
+   播放那首的；切歌时 store 清空，迟到的旧歌答案会被丢弃）。当前行用 `lyricLineAt(lines, position)`（提前 0.2s 点亮），
+   未展开的 3 行用 `lyricWindow(lines, at, 3)`；`showsTranslation(useLanguage())` 决定渲染 `tr`（只有中文界面为 true）。
+   `instrumental` → 显示「纯音乐」；`lines` 为空且非纯音乐 → 「暂无歌词」；`lyric === null` → 轻量骨架（等隐藏页那一秒）。
+   点某一行 → `seek(line.t)`；面板展开/收起纯前端状态（现在播放页里），不经过 host。
