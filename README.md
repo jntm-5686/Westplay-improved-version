@@ -47,7 +47,7 @@ WestPlay 把一块车机风格的屏幕放进卡车自己的仪表台，在游�
 **地图与声音**
 
 9. **地图休息药丸**：轮播「距离下次强制休息还有多久」和「距离最近的休息站」；地图右上角有 2D / 3D 开关。
-10. **空间音效**：美卡卡车正在逐台适配，已实测沃尔沃 VNL 2025 与福莱纳 Cascadia 2024 的四只喇叭定位；车外改为完全静音（播放不中断）；Esc 菜单打开时音乐暂停，关闭后继续。
+10. **空间音效**：美卡已实测沃尔沃 VNL 2025、福莱纳 Cascadia 2024、福特 Bronco 2024、福特 F-150 2023 的喇叭定位（详见下方「声音」）；车外改为完全静音（播放不中断）；Esc 菜单打开时音乐暂停，关闭后继续。
 11. **默认搜索引擎改为 Bing**（可在车机设置里改回）。
 
 **其它**
@@ -164,7 +164,14 @@ WestPlay 有两种显示位置：卡车自带的屏幕，或者 WestPlay 平板�
 - Renault E-Tech T——门板低音、A 柱高音、后墙一对
 - JuseeTV 的 Scania PGR——按装的配件决定：门、A 柱、顶部控制台、后墙
 
-美卡的卡车正在逐台补齐喇叭映射，目前已支持 **Volvo VNL 2025** 与 **Freightliner Cascadia 2024**（各四只喇叭：门板前下方的低音 + A 柱/仪表台高处的高音，2 kHz 分频）；其余车型陆续适配中，在适配前按普通立体声播放。
+**美卡**（American Truck Simulator）同样按车内实际喇叭位置分频播放，已实测：
+
+- **Volvo VNL 2025**——门板前下方低音 + A 柱/仪表台高处高音（四只，2 kHz 分频）
+- **Freightliner Cascadia 2024**——同上四只（门板前下方低音 + 高处高音，2 kHz 分频）
+- **Ford Bronco 2024（烈马）**——脚坑 6.5″ 中低音 ×2（2 kHz 以下）、仪表台顶角高音 ×2、后排侧顶角 pod 4″ ×2（-6 dB / 10 ms 后补声，声场定在前方）
+- **Ford F-150 2023**——前门中低音 ×2、后门中低音 ×2（-6 dB / 10 ms 后补声）、A 柱高音 ×2、仪表台中置（-6 dB）、后排座椅背后低音炮
+
+其余车型陆续适配中，在适配前按普通立体声播放。以上所有喇叭位置都来自游戏内饰模型里实际建出来的格栅，模型没画格栅的单元按真车布局与内饰几何推算。
 
 ## 安装
 
@@ -237,7 +244,7 @@ WestPlay puts a CarPlay-style screen on your truck's own dashboard display, insi
 7. **Icon theme**: original icons or liquid-glass icons (all 13 apps).
 8. **Brand boot animation** for 15 brands; a truck without a logo shows no text.
 9. **Map rest pill** (time to next mandatory break / distance to the nearest rest stop) and a 2D/3D switch.
-10. **Spatial audio**: ATS trucks are being added one by one — Volvo VNL 2025 and Freightliner Cascadia 2024 are done (four measured speakers each); outside the cab the sound is silent (playback continues); the music pauses while the Esc menu is open and resumes when it closes.
+10. **Spatial audio**: measured speaker layouts are done for Volvo VNL 2025, Freightliner Cascadia 2024, Ford Bronco 2024 and Ford F-150 2023 in ATS (see "Sound" below); outside the cab the sound is silent (playback continues); the music pauses while the Esc menu is open and resumes when it closes.
 11. **Default search engine is Bing** (changeable in the cab's settings).
 12. **Support page and social bar use Afdian** instead of the original's donation links.
 13. **Updates come from this repository**, so an upstream release can't overwrite this edition.

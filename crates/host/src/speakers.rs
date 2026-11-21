@@ -276,6 +276,88 @@ const FREIGHTLINER_CASCADIA_2024: &[Speaker] = &[
     speaker([2000.0, OPEN], 0.0864, Channel::Right, [0.9273, 1.1613, -0.4060]),
 ];
 
+/// The Ford Bronco (2024's: ATS's, the Road Trip Ford DLC's, its four-door `offroad_4doors` cabin and its one
+/// interior, `standard` — the game has no two-door): the real Badlands' six-speaker system. SCS drew the rear pair
+/// alone, and its own drawings are measured; the front four aren't drawn, so they follow the real truck's layout on
+/// the model's trim. In the interior model (x = 0 the driver's head, the cab's middle at x 0.4025, the same in the
+/// cabin's mirrored pairs):
+///
+/// - The rear pods, the model's own: a 17 x 19 x 26 cm pod at each rear top corner, the roll bar's — piece 4's, 534
+///   vertices on the right (its box [0.7917, 0.0418, 1.2338]..[0.9595, 0.2275, 1.4978], the left one mirrored, at
+///   x -0.0785) — its face the details texture's perforated disc, piece 2's, whose vertices' mean is (0.841, 0.143,
+///   1.300) on the right and (0.4025 x 2 - 0.841, 0.143, 1.300) on the left.
+/// - The front pair aren't drawn: no material's textures name a speaker grille (every one of the interior's 30
+///   materials was read; its plastic is the tiled grain) and no piece is a grille of its own. The real truck's are
+///   in the kick panels ahead of the doors — its doors are removable, so they hold none — and in the dashboard's
+///   top corners. Placed on the model: the kick panels' vertices' mean in the front lower corner (piece 5, its
+///   plastic), (-0.308, -0.857, -0.925) and (1.113, -0.857, -0.925) (the model's two sides 6 mm and 11 mm apart in y
+///   and z: the pair's mean used); the dashboard's top corners at the A-pillars, (-0.28, -0.31, -0.95) and (1.085,
+///   -0.31, -0.95), from the dash top's corners (piece 5's there; the model has no tweeter grille). Approximate to
+///   about 5 cm.
+///
+/// Placed in the cab: the game's SDK has the driver's head by default at (-0.40249935, -1.759999, 2.1117303) in the
+/// cab's space — the owner's plugin log (2026-11-21) reading `head at [-0.40249935, -1.759999, 2.1117303], cab
+/// turning at [0.0, 3.33, -2.0]` — and that is the interior model's origin (its `interior` locator (-0.40249935,
+/// 1.5700009, 0.11173045) less the joint the game reports, (0, 3.33, -2.0), which is a car's virtual cab, the body
+/// taking no separate cabin). So cab space is the model's plus that head: each speaker below is its point in the
+/// model plus (-0.4025, -1.76, 2.1117). Symmetric about the cab's middle (x = 0).
+///
+/// A two-way front pair each side and the rear pods as a fill: the kick panels everything up to 2 kHz (a 6.5 inch
+/// unit there plays down to the bottom; there's no bass unit), the dashboard's corners the highs from there, the rear
+/// pods the kicks' band 6 dB down and 10 ms late, so that the front stage places the music (a car's rear fill; the
+/// real truck's rear units are full range).
+const FORD_BRONCO_2024: &[Speaker] = &[
+    speaker([OPEN, 2000.0], 0.0, Channel::Left, [-0.7105, -2.617, 1.1867]),
+    speaker([OPEN, 2000.0], 0.0, Channel::Right, [0.7105, -2.617, 1.1867]),
+    speaker([2000.0, OPEN], 0.0, Channel::Left, [-0.6825, -2.07, 1.1617]),
+    speaker([2000.0, OPEN], 0.0, Channel::Right, [0.6825, -2.07, 1.1617]),
+    Speaker { delay: 10.0, ..speaker([OPEN, 2000.0], -6.0, Channel::Left, [-0.4385, -1.617, 3.4117]) },
+    Speaker { delay: 10.0, ..speaker([OPEN, 2000.0], -6.0, Channel::Right, [0.4385, -1.617, 3.4117]) },
+];
+
+/// The Ford F-150 (2023's: ATS's, the Road Trip Ford DLC's, its SuperCrew `pickup_4doors_55` cabin and its one
+/// interior, `lariat`): the real Lariat's eight-speaker B&O system. SCS drew the four door units' grilles alone, and
+/// they are measured; the other four aren't drawn, so they follow the real truck's layout on the model's trim. In
+/// the interior model (x = 0 the driver's head, the cab's middle at x 0.4590):
+///
+/// - The four door units, the model's own: its speaker material (`/automat/33/3356b2bdfa50fe85.mat`, its textures
+///   `speaker_difspec.tobj` and `speaker_nrm.tobj` — the model's only speaker grilles), piece 14: an oval grille
+///   per door, 13.7 x 16.3 cm, its vertices' mean (interior space, metres) on the left front door (-0.3387,
+///   -0.6664, -0.7330) and right (1.2567, -0.6664, -0.7330), on the left rear door (-0.3384, -0.7227, 0.4745) and
+///   right (1.2564, -0.7236, 0.4708) — each pair mirrored about the cab's middle (their y and z taken at the pair's
+///   mean: 1 mm and 4 mm apart). The grilles' vertices are piece 14's four 192-vertex islands, all in it.
+/// - The A-pillar tweeters: at each A-pillar's base over the dash's top, (-0.285, -0.10, -0.86) and (1.203, -0.10,
+///   -0.86), from the windscreen glass's edge there (piece 17's vertices at x -0.301 and 1.219, y -0.035, z -0.858)
+///   a centimetre inboard. The centre dash unit: the dash top's middle, piece 2's vertices' mean (0.459, -0.165,
+///   -0.865). The subwoofer: behind the rear seat's back, at (0.459, -0.55, 1.30). The model draws no grille for
+///   any of them; approximate to about 5 cm, the subwoofer's place to about 10 cm.
+///
+/// Placed in the cab: the game's SDK reports a car's cab space from a virtual joint ((0, 3.33, -2.0), as measured in
+/// the Bronco 2024 beside: the owner's plugin log) and the driver's head by default at the interior model's origin
+/// (the camera sits there: each car's interior camera has a zero head offset). The joint isn't in the Bronco's
+/// models — no locator of its cabin's, chassis's or interior's sits there, nor is the point in any of their boxes —
+/// so it is the game's own reference for a vehicle whose body takes no separate cabin, the same for this one; the
+/// F-150's own log line hasn't been read yet. Its head is then its `interior` locator (-0.45900002, 1.6003816,
+/// -0.3425175) less that joint = (-0.45900002, -1.7296184, 1.6574825), which is this table's cab space offset: each
+/// speaker below is its point in the model plus it. If the truck's own log shows another head, every speaker here
+/// moves by the same constant. Symmetric about the cab's middle (x = 0).
+///
+/// A two-way front pair, the rear doors as their fill, and a centre and a bass unit: the doors everything from 80 Hz
+/// to 2 kHz (6.5 inch units; the subwoofer below them), the pillars the highs from there, the rear doors the front
+/// doors' band 6 dB down and 10 ms late, the centre fill both sides 250 Hz to 4 kHz 6 dB down (the driver sits to the
+/// left, so it holds the middle of the picture), the subwoofer everything under 80 Hz both sides (where it is can't
+/// be heard: behind the seat, as the real one).
+const FORD_F150_2023: &[Speaker] = &[
+    speaker([80.0, 2000.0], 0.0, Channel::Left, [-0.7977, -2.396, 0.9245]),
+    speaker([80.0, 2000.0], 0.0, Channel::Right, [0.7977, -2.396, 0.9245]),
+    speaker([2000.0, OPEN], 0.0, Channel::Left, [-0.744, -1.8296, 0.7975]),
+    speaker([2000.0, OPEN], 0.0, Channel::Right, [0.744, -1.8296, 0.7975]),
+    Speaker { delay: 10.0, ..speaker([80.0, 2000.0], -6.0, Channel::Left, [-0.7974, -2.4527, 2.1301]) },
+    Speaker { delay: 10.0, ..speaker([80.0, 2000.0], -6.0, Channel::Right, [0.7974, -2.4527, 2.1301]) },
+    speaker([250.0, 4000.0], -6.0, Channel::Both, [0.0, -1.8946, 0.7925]),
+    speaker([OPEN, 80.0], 0.0, Channel::Both, [0.0, -2.2796, 2.9575]),
+];
+
 /// The Renault Magnum (every interior, one model: owner 2026-10-26, in the cab): its main unit in each roof corner
 /// over the side window, and a tweeter under the overhead console's front either side of the mirror. In the interior
 /// model (x = 0 the driver's seat, the cab's middle at x 0.66; the UK one mirrored): the roof's grilles in the
@@ -364,6 +446,10 @@ pub fn in_truck(id: &str) -> Option<&'static [Speaker]> {
         "volvo.vnl2025" => Some(VOLVO_VNL_2025),
         // The Cascadia 2024 (ATS's): the same four speakers in every interior (its front cab is one model in all eight).
         "freightliner.cascadia2024" => Some(FREIGHTLINER_CASCADIA_2024),
+        // The Ford cars (ATS's Road Trip Ford DLC): each one cabin and one interior in the game (the Bronco four-door
+        // only, the F-150 SuperCrew only), so one table each.
+        "ford.bronco_24" => Some(FORD_BRONCO_2024),
+        "ford.f150_23" => Some(FORD_F150_2023),
         // A mod's DAF XG+ ("DAF 2021 Jasper") keeps the 2021's cab: its head sits 2 cm lower, its seat the same.
         // The XF Electric: the 2021 XF's cab and interior (doors, pillars, overhead console alike), placed alike.
         "daf.2021" | "new_daf.2021" | "daf.xf_electric" => Some(DAF_2021),
@@ -1550,6 +1636,8 @@ mod tests {
             IVECO_HIWAY,
             VOLVO_VNL_2025,
             FREIGHTLINER_CASCADIA_2024,
+            FORD_BRONCO_2024,
+            FORD_F150_2023,
         ] {
             // The cab's middle is x = 0 (cab space starts there across).
             for speaker in speakers {
@@ -1678,6 +1766,85 @@ mod tests {
     }
 
     #[test]
+    fn knows_the_ford_cars_by_their_ids_and_places_their_speakers() {
+        // The Bronco 2024: the SDK's id with and without its prefix (the DLC's `/def/vehicle/car/ford.bronco_24/
+        // data.sii` names `vehicle.ford.bronco_24`), its one four-door interior's six speakers.
+        let bronco = in_truck("vehicle.ford.bronco_24").expect("the Bronco 2024");
+        assert_eq!(in_truck("ford.bronco_24"), in_truck("vehicle.ford.bronco_24"));
+        assert_eq!(bronco, FORD_BRONCO_2024);
+        assert_eq!(bronco.len(), 6);
+        // The head the game reported by default in its cab (the owner's plugin log, 2026-11-21): the interior model's
+        // origin, so these speakers' frame less the model's own points is it.
+        let bronco_head = [-0.40249935, -1.759999, 2.1117303];
+        // The rear pods, the model's own: a pair mirrored about the cab's middle, behind the head and above it.
+        for (side, at) in [
+            (Channel::Left, [-0.4385, -1.617, 3.4117]),
+            (Channel::Right, [0.4385, -1.617, 3.4117]),
+        ] {
+            let pod = bronco.iter().find(|s| s.channel == side && s.delay > 0.0).expect("a rear pod");
+            for (axis, value) in at.iter().enumerate() {
+                assert!((pod.at[axis] - value).abs() < 1e-3, "{pod:?} at {at:?}");
+            }
+            assert_eq!((pod.band, pod.level, pod.delay), ([OPEN, 2000.0], -6.0, 10.0));
+            assert!(pod.at[2] > bronco_head[2] + 1.0, "{pod:?}");
+        }
+        // The front pair each side: the kick panel's mid-bass low and forward, the dashboard corner's highs above it.
+        for side in [Channel::Left, Channel::Right] {
+            let kick = bronco
+                .iter()
+                .find(|s| s.channel == side && s.band == [OPEN, 2000.0] && s.delay == 0.0)
+                .expect("a kick panel's");
+            let high =
+                bronco.iter().find(|s| s.channel == side && s.band == [2000.0, OPEN]).expect("a dash corner's");
+            // The tweeter high over the kick panel's unit, at the same depth in the front of the cab.
+            assert!(kick.at[1] < high.at[1] - 0.3 && (kick.at[2] - high.at[2]).abs() < 0.3, "{side:?}");
+        }
+
+        // The F-150 2023: its one interior's eight speakers; the four door units are the model's own speaker
+        // material, measured from its grille islands.
+        let f150 = in_truck("vehicle.ford.f150_23").expect("the F-150 2023");
+        assert_eq!(in_truck("ford.f150_23"), in_truck("vehicle.ford.f150_23"));
+        assert_eq!(f150, FORD_F150_2023);
+        assert_eq!(f150.len(), 8);
+        // The head its table is placed from (its interior's origin relative to the car's virtual cab joint, taken as
+        // the Bronco 2024's was measured): if the game reports another for the F-150, all of these shift alike.
+        let f150_head = [-0.45900002, -1.7296184, 1.6574825];
+        for (side, front, rear) in [
+            (Channel::Left, [-0.7977, -2.396, 0.9245], [-0.7974, -2.4527, 2.1301]),
+            (Channel::Right, [0.7977, -2.396, 0.9245], [0.7974, -2.4527, 2.1301]),
+        ] {
+            let door =
+                f150.iter().find(|s| s.channel == side && s.band == [80.0, 2000.0] && s.delay == 0.0).unwrap();
+            let fill =
+                f150.iter().find(|s| s.channel == side && s.band == [80.0, 2000.0] && s.delay > 0.0).unwrap();
+            for (speaker, at) in [(door, front), (fill, rear)] {
+                for (axis, value) in at.iter().enumerate() {
+                    assert!((speaker.at[axis] - value).abs() < 1e-3, "{speaker:?} at {at:?}");
+                }
+            }
+            // The front door's unit ahead of the head, the rear door's behind it.
+            assert!(door.at[2] < f150_head[2] - 0.5 && fill.at[2] > f150_head[2] + 0.2, "{door:?} {fill:?}");
+            assert_eq!((fill.level, fill.delay), (-6.0, 10.0));
+            let high = f150.iter().find(|s| s.channel == side && s.band == [2000.0, OPEN]).unwrap();
+            // The pillars' highs above the doors and further forward (the stage's height and depth).
+            assert!(high.at[1] > door.at[1] + 0.4 && high.at[2] < door.at[2] - 0.1, "{high:?}");
+        }
+        // The centre fill both sides' (the cab's middle) and the subwoofer's bass, behind the seat.
+        let centre = f150.iter().find(|s| s.channel == Channel::Both && s.band == [250.0, 4000.0]).unwrap();
+        assert!(centre.at[0].abs() < 1e-3 && centre.level == -6.0, "{centre:?}");
+        let sub = f150.iter().find(|s| s.channel == Channel::Both && s.band == [OPEN, 80.0]).unwrap();
+        assert!(sub.at[0].abs() < 1e-3 && sub.at[2] - f150_head[2] > 1.0, "{sub:?}");
+        // In each cab and a reach from its head: 0.8 to 2 m.
+        for (head, speakers) in [(bronco_head, bronco), (f150_head, f150)] {
+            assert!(are_sound(speakers));
+            for speaker in speakers {
+                let from_head = distance([speaker.at[0] - head[0], speaker.at[1] - head[1], speaker.at[2] - head[2]]);
+                assert!((0.8..2.0).contains(&from_head), "{speaker:?} {from_head}");
+            }
+        }
+    }
+
+    #[test]
     fn reads_only_a_spectrum_of_bars() {
         assert_eq!(read_spectrum(r#"{"spectrum":[0,12,255]}"#), Some(vec![0, 12, 255]));
         assert_eq!(read_spectrum(r#"{"spectrum":[]}"#), Some(vec![]));
@@ -1728,6 +1895,8 @@ mod tests {
             IVECO_HIWAY,
             VOLVO_VNL_2025,
             FREIGHTLINER_CASCADIA_2024,
+            FORD_BRONCO_2024,
+            FORD_F150_2023,
         ] {
             let mut bands: Vec<[f32; 2]> = speakers
                 .iter()

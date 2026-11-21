@@ -208,6 +208,9 @@ window.westplayCabSound = (media, say) => {
       ears.connect(meter, ear)
       return meter
     })
+    // A meter on each speaker's own way, in the table's order: what each of them plays now (the owner's test:
+    // 后排的喇叭响不响).
+    audio.speakerMeters = []
     for (const speaker of speakers) {
       let node = channels[speaker.channel]
       const [from, to] = speaker.band
@@ -241,6 +244,9 @@ window.westplayCabSound = (media, say) => {
       )
       node.connect(panner)
       panner.connect(out)
+      const meter = keep(new AnalyserNode(context, { fftSize: 1024 }))
+      panner.connect(meter)
+      audio.speakerMeters.push(meter)
     }
     // A way made anew (its context's listener perhaps new too): the head placed whatever it last was.
     placed = null
@@ -248,6 +254,18 @@ window.westplayCabSound = (media, say) => {
   }
   // How loud the speakers play now in each ear, 0 to 1 (the loudness of the last moment of sound), and how
   // much the limiter is taking off (dB, 0 or less); or none.
+  // How loud each speaker plays now (0 to 1, the last moment of sound), in the table's order: a speaker on its
+  // own way, before they're mixed (the owner's test, 2026-11-21).
+  const speakerLevels = () =>
+    audio?.speakerMeters?.map((meter) => {
+      const samples = new Float32Array(meter.fftSize)
+      meter.getFloatTimeDomainData(samples)
+      let sum = 0
+      for (const sample of samples) sum += sample * sample
+      return Math.round(Math.sqrt(sum / samples.length) * 10000) / 10000
+    }) ?? null
+  // The page's console can read it, where it calls this: `westplaySpeakerLevels()`.
+  window.westplaySpeakerLevels = speakerLevels
   const cabLevel = () =>
     audio?.meters && [...audio.meters.map((meter) => {
       const samples = new Float32Array(meter.fftSize)
