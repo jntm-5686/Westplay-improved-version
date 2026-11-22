@@ -500,7 +500,9 @@ pub fn addons_digest() -> u64 {
     // own UI. 9: YTHQ Tablet's own screen scripts, read from its archive and patched for the trucks' factory screens
     // (see `ythq_screens`): a mod built before them keeps YTHQ's screen instead. 8: the Ford Mustang '67 and Victoria
     // '06's YTHQ tablet models (`ats-ythq-ford`), whose screen faces were stretched over WestPlay's tablet texture.
-    const FORMAT: u64 = 14;
+    // 15: European Truck Simulator 2's YTHQ Tablet pictures go on the part of their windows YTHQ's tablet screens
+    // show, as American Truck Simulator's do (owner 2026-11-22: the whole window was the wrong shape).
+    const FORMAT: u64 = 15;
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     ADDONS.hash(&mut hasher);
     FORMAT.hash(&mut hasher);
@@ -768,7 +770,7 @@ fn ythq_screen_files(workshop: Option<&Path>, kind: crate::game::Kind) -> YthqSc
             .map(|(script, _, text)| (*script, text.as_str()))
             .chain(tablets_only.iter().map(|(script, text)| (script.as_str(), text.as_str())))
         {
-            match patch_ythq_tablet_script(text, &tablet, None) {
+            match patch_ythq_tablet_script(text, &tablet, Some(&YTHQ_TABLET_SHOWN)) {
                 Ok(patched) => copies.push((ythq_tablet_path(script), patched.into_bytes())),
                 Err(problem) => {
                     made.problems.push(format!("{script}: {problem}"));
@@ -3100,15 +3102,16 @@ ui::text : _nameless._.map {
         assert!(volvo.contains(" layer: 100\n"), "{volvo}");
         assert!(!volvo.contains("screen_tablet.mat"), "{volvo}");
         assert!(!volvo.contains(TABLET_OVERLAY), "{volvo}");
-        // The tablet's copy: the tablet layout's texture over the whole window, under where the screen's picture would
-        // be (YTHQ's own highest layer is 16), and none of the truck screen's.
+        // The tablet's copy: the tablet layout's texture on the part of the window YTHQ's tablet screens show (its own
+        // frame's shape), under where the screen's picture would be (YTHQ's own highest layer is 16), and none of the
+        // truck screen's.
         let tablet = text("ui/dashboard/westplay_ythq/ythq_tablet_gps_mirror_nfb.sii");
         assert!(tablet.contains(&format!("ui::text : {TABLET_OVERLAY} {{")), "{tablet}");
         assert!(tablet.contains("<img src=/material/ui/westplay/screen_tablet.mat xscale=stretch yscale=stretch>"));
         assert!(tablet.contains(&format!(" layer: {TABLET_LAYER}\n")), "{tablet}");
         assert!(
             tablet.contains(
-                " coords_l: 0\n coords_r: 256\n coords_t: 256\n coords_b: 0\n area_l: 1\n area_r: 0\n area_t: 0\n \
+                " coords_l: 0\n coords_r: 256\n coords_t: 207\n coords_b: 49\n area_l: 1\n area_r: 0\n area_t: 0\n \
                  area_b: 1\n id: 0\n"
             ),
             "{tablet}"
