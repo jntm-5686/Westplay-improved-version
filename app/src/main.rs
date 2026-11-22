@@ -55,6 +55,16 @@ fn companion_ready(window: WebviewWindow) {
     }
 }
 
+/// A command's failure, for the page and for WestPlay's log: the page shows the player a line ("Couldn't save the
+/// settings: …"), and `app.log` keeps the same line, so a report of "it wouldn't take it" has the reason in it.
+/// Every command's `Err` goes through here (or through the page's own logging, as the updater's and the setup's
+/// do), so nothing fails without a word.
+pub(crate) fn failed(what: &str, error: impl std::fmt::Display) -> String {
+    let said = format!("{what}: {error}");
+    westplay_host::log!("{said}");
+    said
+}
+
 /// Whether the companion's window is the one in front. Windows' word: the page's own `document.hasFocus()` says
 /// yes while the window comes up behind another.
 #[tauri::command]
@@ -218,7 +228,7 @@ fn get_settings(store: State<SettingsStore>) -> Settings {
 /// the settings as saved are returned and announced to every window (`settings-changed`).
 #[tauri::command]
 fn update_settings(settings: Settings, store: State<SettingsStore>, app: AppHandle) -> Result<Settings, String> {
-    store.file.save(&settings).map_err(|e| format!("Couldn't save the settings: {e}"))?;
+    store.file.save(&settings).map_err(|e| failed("Couldn't save the settings", e))?;
     store.shared.set(settings.clone());
     let _ = app.emit("settings-changed", &settings);
     Ok(settings)
@@ -455,6 +465,13 @@ fn start_host(
                     restarts.retain(|&at| now.duration_since(at) < RESTART_WINDOW);
                     restarts.push(now);
                     if restarts.len() <= MAX_RESTARTS {
+                        // Said so: the cabin page's browser going is a screen that's gone for a moment (the
+                        // log's how many times it has, within the window).
+                        westplay_host::log!(
+                            "the cabin browser (WebView2) stopped: starting WestPlay's engine again ({}/{MAX_RESTARTS} \
+                             in a minute)",
+                            restarts.len()
+                        );
                         std::thread::sleep(RESTART_DELAY);
                         continue;
                     }

@@ -685,10 +685,12 @@
       sayTiming(null, { rescue: 2 })
       return
     }
-    // The page loaded anew: the song played on once this script runs again and the page is up.
+    // The page loaded anew: the song played on once this script runs again and the page is up, from where it was.
     stepLine(`rescue3 reload ${facts}`)
     try {
-      sessionStorage.setItem(RELOAD_KEY, JSON.stringify({ id: watch.id ?? currentId, at: Date.now() }))
+      const state = elementState()
+      const at = state && Number.isFinite(state.at) ? state.at : null
+      sessionStorage.setItem(RELOAD_KEY, JSON.stringify({ id: watch.id ?? currentId, at: Date.now(), position: at }))
     } catch {
       // Storage blocked: the reload happens, the song isn't played on (the app's own play is still there).
     }
@@ -1543,6 +1545,7 @@
     }
     const id = saved?.id ? String(saved.id) : ''
     if (!id || Date.now() - Number(saved.at ?? 0) > 60000) return
+    const position = Number(saved.position)
     let tries = 0
     const timer = setInterval(() => {
       tries += 1
@@ -1552,6 +1555,8 @@
       }
       if (playByPlayer(id)) {
         clearInterval(timer)
+        // Where it was when its page went (as the app had it): back there once it sounds.
+        if (Number.isFinite(position) && position > 5) setTimeout(() => seek(position), 1200)
         timePlay('play', { id })
       }
     }, 500)

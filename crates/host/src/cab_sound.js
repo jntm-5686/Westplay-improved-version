@@ -99,7 +99,66 @@ window.westplayCabSound = (media, say) => {
   // 2 cm since; while it really turns, the faint swapping stays (the browser's own, about -50 dB).
   const STILL_TURN = 1 / 360
   const STILL_MOVE = 0.02
+  // The head the browser is hearing from, moved towards the host's own a step at a time: a quick look over the
+  // shoulder used to jump the 3D sound's filters by tens of degrees in one 50 ms update, and the browser's HRTF
+  // swallowed the sound for those moments (owner 2026-11-22: "大幅度扭头会断断续续"). The turn is now walked
+  // there at a speed the sound keeps up with (about 260 deg a second), however fast the player's head really went.
   let placed = null
+  let applied = null
+  let smoothing = null
+  const placedValues = (at) => {
+    const across = at.heading * 2 * Math.PI
+    const up = at.pitch * 2 * Math.PI
+    return {
+      positionX: at.x,
+      positionY: at.y,
+      positionZ: at.z,
+      forwardX: -Math.sin(across) * Math.cos(up),
+      forwardY: Math.sin(up),
+      forwardZ: -Math.cos(across) * Math.cos(up),
+      upX: Math.sin(across) * Math.sin(up),
+      upY: Math.cos(up),
+      upZ: Math.cos(across) * Math.sin(up),
+    }
+  }
+  const applyHead = () => {
+    if (!audio || !applied) return
+    const { listener, currentTime } = audio.context
+    for (const [name, value] of Object.entries(placedValues(applied))) {
+      listener[name].setTargetAtTime(value, currentTime, 0.05)
+    }
+  }
+  const stepHead = () => {
+    smoothing = null
+    if (!head || !audio) return
+    if (!applied) applied = { ...head }
+    const shortest = (from, to) => {
+      let delta = to - from
+      delta -= Math.round(delta)
+      return delta
+    }
+    const MAX_TURN = 0.012
+    const MAX_PITCH = 0.012
+    const MAX_MOVE = 0.02
+    const clamp = (value, most) => Math.max(-most, Math.min(most, value))
+    const dh = shortest(applied.heading, head.heading)
+    const dp = head.pitch - applied.pitch
+    const dx = head.x - applied.x
+    const dy = head.y - applied.y
+    const dz = head.z - applied.z
+    const moved = Math.hypot(dx, dy, dz)
+    applied.heading = (applied.heading + clamp(dh, MAX_TURN) + 1) % 1
+    applied.pitch += clamp(dp, MAX_PITCH)
+    applied.x += clamp(dx, MAX_MOVE)
+    applied.y += clamp(dy, MAX_MOVE)
+    applied.z += clamp(dz, MAX_MOVE)
+    applyHead()
+    const left =
+      Math.abs(dh) > MAX_TURN || Math.abs(dp) > MAX_PITCH || moved > MAX_MOVE
+    // A timer, not a frame: this page runs hidden under the cab, where the browser may leave no frames to be
+    // asked for (its sound is what has to keep up).
+    if (left) smoothing = setTimeout(stepHead, 16)
+  }
   const placeHead = () => {
     if (!audio || !head) return
     const turn = (a, b) => Math.abs(((a - b + 1.5) % 1) - 0.5)
@@ -111,21 +170,8 @@ window.westplayCabSound = (media, say) => {
     )
       return
     placed = { ...head }
-    const { listener, currentTime } = audio.context
-    const across = head.heading * 2 * Math.PI
-    const up = head.pitch * 2 * Math.PI
-    const values = {
-      positionX: head.x,
-      positionY: head.y,
-      positionZ: head.z,
-      forwardX: -Math.sin(across) * Math.cos(up),
-      forwardY: Math.sin(up),
-      forwardZ: -Math.cos(across) * Math.cos(up),
-      upX: Math.sin(across) * Math.sin(up),
-      upY: Math.cos(up),
-      upZ: Math.cos(across) * Math.sin(up),
-    }
-    for (const [name, value] of Object.entries(values)) listener[name].setTargetAtTime(value, currentTime, 0.06)
+    if (!applied) applied = { ...head }
+    if (!smoothing) smoothing = setTimeout(stepHead, 16)
   }
   const wire = () => {
     const video = media()
@@ -250,6 +296,7 @@ window.westplayCabSound = (media, say) => {
     }
     // A way made anew (its context's listener perhaps new too): the head placed whatever it last was.
     placed = null
+    applied = null
     placeHead()
   }
   // How loud the speakers play now in each ear, 0 to 1 (the loudness of the last moment of sound), and how

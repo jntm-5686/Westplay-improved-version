@@ -912,14 +912,59 @@
       // Its player refused (not there yet): applied on the next pass.
     }
   }
+  // Where the video played, and whether it played: kept in the page's own session as it goes, and read at the
+  // start. A page loaded anew (WestPlay loading it again after its process failed, `resilience` in the host) keeps
+  // the watch state already (`WATCH`); its place in the video is kept here, and put back once it has data.
+  const PLACE = 'westplay.bilibili.place'
+  const resumePlace = () => {
+    try {
+      const saved = JSON.parse(store.get(PLACE) ?? 'null')
+      store.set(PLACE, null)
+      return saved && Date.now() - Number(saved.savedAt ?? 0) < 60000 ? saved : null
+    } catch {
+      return null
+    }
+  }
+  const savePlace = () => {
+    try {
+      const said = control()
+      const at = Number(said.time?.()) || 0
+      if (!(at > 0)) return
+      store.set(PLACE, JSON.stringify({ at, playing: !said.paused?.(), savedAt: Date.now() }))
+    } catch {
+      // Its player isn't there: nothing to keep.
+    }
+  }
+  setInterval(() => {
+    try {
+      if (!control().paused?.()) savePlace()
+    } catch {
+      // Not there yet.
+    }
+  }, 2000)
+  addEventListener('pagehide', savePlace)
+  addEventListener('beforeunload', savePlace)
+  let place = resumePlace()
   const resumeIfWanted = () => {
     if (!store.get(WATCH) || pausedByApp) return
+    // The video's place and play state from the page that went: back there once it has data (a pause kept too).
+    const saved = place
+    place = null
     // The page's own player may start itself (autoplay, muted): a paused one is started, once it has data.
     try {
       const said = control()
-      if (said.paused()) said.play()
+      if (said.paused() && (!saved || saved.playing)) said.play()
     } catch {
       // Its player refused (not there yet).
+    }
+    if (saved && Number(saved.at) > 3) {
+      setTimeout(() => {
+        try {
+          control().seek(Math.max(0, Number(saved.at) || 0))
+        } catch {
+          // Its player refused: the video plays from where it is.
+        }
+      }, 1500)
     }
   }
 

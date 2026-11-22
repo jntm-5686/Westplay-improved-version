@@ -924,13 +924,16 @@ impl Safari {
                 }
             }
             // A page's process gone: the page loaded again; the browser's, every page gone with it.
-            match tab.view.take_failure() {
-                Some(webview::Failure::Page) => {
-                    log!("[safari] a page's process failed: loaded again");
-                    let _ = tab.view.reload();
+            if let Some(failure) = tab.view.take_failure() {
+                match failure.outcome() {
+                    Some(webview::Outcome::Recreate) => self.browser_gone = true,
+                    Some(webview::Outcome::Reload) => {
+                        log!("[safari] {}", failure.line());
+                        let _ = tab.view.reload();
+                    }
+                    // WebView2 restarts that process itself (its GPU's, a utility's, a frame's).
+                    None => log!("[safari] {}", failure.line()),
                 }
-                Some(webview::Failure::Browser) => self.browser_gone = true,
-                None => {}
             }
             let (closed, downloads, dialog) = {
                 let mut events = tab.events.borrow_mut();

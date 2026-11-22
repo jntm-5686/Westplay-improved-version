@@ -193,6 +193,49 @@ function status(): HostStatus {
             : { state: 'queued' },
       },
     ],
+    // `?webviews=failed`: the screen recovering from a failed process, and Spotify stopped after a few.
+    webviews:
+      query.get('webviews') === 'failed'
+        ? [
+            {
+              name: 'cabin',
+              state: 'ok',
+              failures: 0,
+              lastKind: null,
+              lastReason: null,
+              lastExitCode: null,
+              lastAgoSeconds: null,
+            },
+            {
+              name: 'spotify',
+              state: 'stopped',
+              failures: 3,
+              lastKind: "the page's process",
+              lastReason: 'crashed',
+              lastExitCode: -1073741819,
+              lastAgoSeconds: 42,
+            },
+          ]
+        : [
+            {
+              name: 'cabin',
+              state: 'ok',
+              failures: 0,
+              lastKind: null,
+              lastReason: null,
+              lastExitCode: null,
+              lastAgoSeconds: null,
+            },
+            {
+              name: 'youtube',
+              state: 'recovering',
+              failures: 1,
+              lastKind: "the page's process",
+              lastReason: 'crashed',
+              lastExitCode: -1073741819,
+              lastAgoSeconds: 4,
+            },
+          ],
     error: null,
   }
 }

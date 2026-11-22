@@ -61,7 +61,7 @@ pub async fn add_wallpapers(
             let _ = window.emit("customize-adding", ());
             customize::add_wallpapers(&dir, &files)
         };
-        added.map(Some).map_err(|e| e.to_string())
+        added.map(Some).map_err(|e| crate::failed("Couldn't add the wallpapers", e))
     })
     .await?;
     if added.as_ref().is_some_and(|added| !added.added.is_empty()) {
@@ -92,7 +92,7 @@ pub async fn add_icon_set(
         } else {
             customize::add_icon_set_from_folder(&dir, &source)
         };
-        added.map(Some).map_err(|e| e.to_string())
+        added.map(Some).map_err(|e| crate::failed("Couldn't add the icon set", e))
     })
     .await?;
     if added.as_ref().is_some_and(|added| !added.added.is_empty()) {
@@ -111,7 +111,10 @@ pub async fn remove_wallpaper(
 ) -> Result<(), String> {
     let dir = customize.dir.clone();
     let target = id.clone();
-    blocking(move || customize::remove_wallpaper(&dir, &target).map_err(|e| e.to_string())).await?;
+    blocking(move || {
+        customize::remove_wallpaper(&dir, &target).map_err(|e| crate::failed("Couldn't remove the wallpaper", e))
+    })
+    .await?;
     customize.changed();
     forget(&store, &app, |look| {
         if look.wallpaper.as_deref() == Some(id.as_str()) {
@@ -130,7 +133,10 @@ pub async fn remove_icon_set(
 ) -> Result<(), String> {
     let dir = customize.dir.clone();
     let target = name.clone();
-    blocking(move || customize::remove_icon_set(&dir, &target).map_err(|e| e.to_string())).await?;
+    blocking(move || {
+        customize::remove_icon_set(&dir, &target).map_err(|e| crate::failed("Couldn't remove the icon set", e))
+    })
+    .await?;
     customize.changed();
     forget(&store, &app, |look| {
         if look.icon_set.as_deref() == Some(name.as_str()) {
@@ -151,7 +157,7 @@ fn forget(
     if settings.look == before {
         return Ok(());
     }
-    store.file.save(&settings).map_err(|e| format!("Couldn't save the settings: {e}"))?;
+    store.file.save(&settings).map_err(|e| crate::failed("Couldn't save the settings", e))?;
     store.shared.set(settings.clone());
     let _ = app.emit("settings-changed", &settings);
     Ok(())

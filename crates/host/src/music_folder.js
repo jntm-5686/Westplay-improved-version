@@ -120,6 +120,81 @@
     },
   }
 
+  // What plays, its place, and whether it played: kept in the page's own session as it goes, and read at its
+  // start. A page loaded anew (WestPlay loading it again after its process failed, `resilience` in the host)
+  // plays the song on from where it was; the session keeps it across a reload of this WebView, and never across
+  // a WebView of its own (a player closed and opened again starts with nothing playing).
+  const RESUME_KEY = 'westplay.player.resume'
+  const RESUME_FOR = 60000
+  const resumeSave = () => {
+    try {
+      const file = current()
+      if (!file) return
+      sessionStorage.setItem(
+        RESUME_KEY,
+        JSON.stringify({
+          file,
+          asked,
+          queue,
+          index,
+          at: Number(audio.currentTime) || 0,
+          playing: !audio.paused,
+          volume: audio.volume,
+          shuffle,
+          repeat,
+          savedAt: Date.now(),
+        }),
+      )
+    } catch {
+      // The page's storage refused: the song isn't resumed, and plays no less.
+    }
+  }
+  const resumeRead = () => {
+    try {
+      const saved = JSON.parse(sessionStorage.getItem(RESUME_KEY) ?? 'null')
+      sessionStorage.removeItem(RESUME_KEY)
+      if (!saved?.file || !Array.isArray(saved.queue) || Date.now() - Number(saved.savedAt ?? 0) > RESUME_FOR) return null
+      return saved
+    } catch {
+      return null
+    }
+  }
+  const resumeNow = () => {
+    const saved = resumeRead()
+    if (!saved) return
+    try {
+      const files = (list) => (Array.isArray(list) ? list.filter((file) => typeof file === 'string') : [])
+      asked = files(saved.asked).includes(saved.file) ? files(saved.asked) : [saved.file]
+      queue = files(saved.queue).includes(saved.file) ? files(saved.queue) : [saved.file]
+      index = Math.max(0, queue.indexOf(saved.file))
+      shuffle = Boolean(saved.shuffle)
+      repeat = ['off', 'all', 'one'].includes(saved.repeat) ? saved.repeat : 'off'
+      audio.volume = Math.min(1, Math.max(0, Number(saved.volume) || 1))
+      const at = Math.max(0, Number(saved.at) || 0)
+      audio.src = url(saved.file)
+      // Where it was, once the song's own length is known (seeking before it is ignored).
+      const seek = () => {
+        try {
+          audio.currentTime = at
+        } catch {
+          // Its kind can't be sought: it plays from its start.
+        }
+      }
+      if (audio.readyState >= 1) seek()
+      else audio.addEventListener('loadedmetadata', seek, { once: true })
+      if (saved.playing) audio.play().catch(() => tell())
+      tell()
+    } catch {
+      // A marker the page can't use: the player still plays what the app asks for next.
+    }
+  }
+  // Kept as it plays (once a second), and as the page goes (which a reload says first).
+  setInterval(() => {
+    if (!audio.paused) resumeSave()
+  }, 1000)
+  addEventListener('pagehide', resumeSave)
+  addEventListener('beforeunload', resumeSave)
+
   audio.addEventListener('ended', () => {
     if (repeat === 'one') {
       audio.currentTime = 0
@@ -152,7 +227,9 @@
     else CONTROLS[data?.action]?.(data)
   })
 
-  // Ready (a page loaded anew: the host tells it the cab again).
+  // The song played when the page went, on from where it was (a page loaded anew: WestPlay loaded it again after
+  // its process failed), then ready for the host (which tells the cab again).
+  resumeNow()
   post({ ready: true })
   tell()
 })()

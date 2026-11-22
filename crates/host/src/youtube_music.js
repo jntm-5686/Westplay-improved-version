@@ -1138,6 +1138,61 @@
     spectrum: (data) => cab?.spectrum(data.on),
   }
 
+  // What plays, its place and whether it plays: kept in the page's own session as it goes, and read at its start.
+  // A page loaded anew (WestPlay loading it again after its process failed, `resilience` in the host) plays the
+  // song on from where it was: the page's own player is asked for the video again (its queue and radio are the
+  // page's, and a video asked for by itself plays as YouTube Music plays one), and only when nothing plays.
+  const RESUME_KEY = 'westplay.youtube-music.resume'
+  const RESUME_FOR = 60000
+  const resumeSave = () => {
+    try {
+      const p = player()
+      const video = p?.getVideoData?.()?.video_id
+      if (!video) return
+      sessionStorage.setItem(
+        RESUME_KEY,
+        JSON.stringify({
+          video,
+          at: Number(p.getCurrentTime?.()) || 0,
+          playing: p.getPlayerState?.() === PLAYING,
+          savedAt: Date.now(),
+        }),
+      )
+    } catch {
+      // The page's storage refused: the song isn't resumed, and plays no less.
+    }
+  }
+  const resumePlay = () => {
+    let saved = null
+    try {
+      saved = parse(sessionStorage.getItem(RESUME_KEY) ?? 'null')
+      sessionStorage.removeItem(RESUME_KEY)
+    } catch {
+      saved = null
+    }
+    if (!saved?.video || Date.now() - Number(saved.savedAt ?? 0) > RESUME_FOR) return
+    const p = player()
+    if (!p || p.getVideoData?.()?.video_id) return
+    try {
+      p.loadVideoById({ videoId: saved.video, startSeconds: Math.max(0, Number(saved.at) || 0) })
+      // Its place kept: played on if it played, and held paused if it was paused (YouTube Music starts a video it
+      // loads itself).
+      if (saved.playing) {
+        p.playVideo()
+      } else {
+        setTimeout(() => player()?.pauseVideo?.(), 400)
+      }
+    } catch {
+      // Its player refused: the page is still the app's to play on.
+    }
+  }
+  // Kept as it plays (every two seconds), and as the page goes (which a reload says first).
+  setInterval(() => {
+    if (isPlaying()) resumeSave()
+  }, 2000)
+  addEventListener('pagehide', resumeSave)
+  addEventListener('beforeunload', resumeSave)
+
   window.chrome?.webview?.addEventListener('message', ({ data }) => {
     if (CAB[data?.action]) CAB[data.action](data)
     else if (data?.action === 'ask') answer(data.id, data.question)
@@ -1176,8 +1231,10 @@
   }, 60000)
 
   ready.then(() => {
-    // This page is ready (a page loaded anew: the questions it missed are asked again).
+    // This page is ready (a page loaded anew: the questions it missed are asked again, and the song it played
+    // goes on from where it was).
     post({ ready: true })
+    resumePlay()
     const p = player()
     const STATES = {
       [UNSTARTED]: 'unstarted',

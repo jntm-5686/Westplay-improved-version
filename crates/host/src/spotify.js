@@ -1174,6 +1174,64 @@
     spectrum: (data) => cab?.spectrum(data.on),
   }
 
+  // What plays, its place and whether it plays: kept in the page's own session as it goes, and read at its start.
+  // A page loaded anew (WestPlay loading it again after its process failed, `resilience` in the host) has
+  // Spotify restore its own session (the song, and where it was): the place is put back, and the play state too
+  // (a page loading says nothing of a pause). Nothing is asked of Spotify for a song it doesn't play itself.
+  const RESUME_KEY = 'westplay.spotify.resume'
+  const RESUME_FOR = 60000
+  const resumeSave = () => {
+    try {
+      const state = player.state
+      if (!state?.track) return
+      sessionStorage.setItem(
+        RESUME_KEY,
+        JSON.stringify({
+          track: state.track,
+          at: (Number(state.position) || 0) / 1000,
+          playing: Boolean(state.playing),
+          savedAt: Date.now(),
+        }),
+      )
+    } catch {
+      // The page's storage refused: the song isn't resumed, and plays no less.
+    }
+  }
+  const resumeNow = () => {
+    let saved = null
+    try {
+      saved = JSON.parse(sessionStorage.getItem(RESUME_KEY) ?? 'null')
+      sessionStorage.removeItem(RESUME_KEY)
+    } catch {
+      saved = null
+    }
+    if (!saved?.track || Date.now() - Number(saved.savedAt ?? 0) > RESUME_FOR) return
+    const started = Date.now()
+    const timer = setInterval(() => {
+      const state = player.state
+      // Spotify's own session picked another song, or said nothing of one (signed out, a page that won't play):
+      // nothing of the page that went is put back.
+      if (!state || state.track !== saved.track || Date.now() - started > 30000) {
+        clearInterval(timer)
+        return
+      }
+      clearInterval(timer)
+      const at = Math.max(0, Number(saved.at) || 0)
+      const here = Math.max(0, (Number(state.position) || 0) / 1000)
+      if (at > 2 && Math.abs(here - at) > 3) CONTROLS.seek({ seconds: at }).catch?.(() => {})
+      // Its play state: played on if it played, paused if it was paused (as the page's own state has it now).
+      if (saved.playing && !state.playing) toggleHere(true, 'resume').catch(() => {})
+      if (!saved.playing && state.playing) toggleHere(false, 'pause').catch(() => {})
+    }, 500)
+  }
+  // Kept as it plays (every two seconds), and as the page goes (which a reload says first).
+  setInterval(() => {
+    if (player.state?.playing) resumeSave()
+  }, 2000)
+  addEventListener('pagehide', resumeSave)
+  addEventListener('beforeunload', resumeSave)
+  resumeNow()
+
   window.chrome?.webview?.addEventListener('message', ({ data }) => {
     if (CAB[data?.action]) CAB[data.action](data)
     else if (data?.action === 'ask') answer(data.id, data.question)

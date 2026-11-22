@@ -53,7 +53,24 @@ export interface HostStatus {
   /** Every profile's map (mirrors `westplay_host::maps::ProfileMap`): WestPlay makes one for each, one by
    * one, the profile played first. */
   profileMaps: ProfileMap[]
+  /** Each of WestPlay's WebViews running now, and how it's been (mirrors `westplay_host::resilience::HealthReport`):
+   * whole, recovering from a failed process, or stopped after failing too often. The cabin's first. */
+  webviews: WebviewHealth[]
   error: string | null
+}
+
+/** One WebView's health, as the host last saw it (the companion's diagnostics show them). */
+export interface WebviewHealth {
+  /** The page (`'cabin'`, `'youtube'`, …). */
+  name: string
+  state: 'ok' | 'recovering' | 'stopped'
+  /** How many times one of its processes failed since WestPlay started. */
+  failures: number
+  /** The last failure: which process failed, why, and its exit code (and how long ago, in seconds). */
+  lastKind: string | null
+  lastReason: string | null
+  lastExitCode: number | null
+  lastAgoSeconds: number | null
 }
 
 export interface Adapter {

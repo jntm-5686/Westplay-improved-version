@@ -1293,9 +1293,17 @@ impl Netease {
         reports
     }
 
-    /// Whether the WebView failed since the last call (it's then closed and started again when needed).
-    pub fn failed(&self) -> bool {
-        self.view.take_failure().is_some()
+    /// The WebView2 process failure since the last check, if any: which process failed, why, and with what exit
+    /// code (`crate::resilience`). A page's process failed: the page is loaded again ([`Netease::reload`]); the
+    /// browser process: the WebView is gone, and it's started again when it's next needed.
+    pub fn failure(&self) -> Option<webview::Failure> {
+        self.view.take_failure()
+    }
+
+    /// Loads its page again (its process failed), keeping what it played: its own session keeps the song and its
+    /// place, and plays it on once the page is back (`netease.js`'s `RELOAD_KEY`).
+    pub fn reload(&self) -> windows::core::Result<()> {
+        self.view.reload()
     }
 
     /// Takes the WebView off the frame; it closes as it's dropped.

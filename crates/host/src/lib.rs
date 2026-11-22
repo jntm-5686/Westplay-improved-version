@@ -28,6 +28,7 @@ mod planner;
 mod play_log;
 mod player;
 mod pointer;
+pub mod resilience;
 pub mod route;
 mod route_change;
 mod safari;
@@ -141,6 +142,10 @@ pub struct Status {
     pub map_built: Option<u64>,
     /// Every profile's map: ready, being built, to build, failed...
     pub profile_maps: Vec<maps::ProfileMap>,
+    /// Each of WestPlay's WebViews, and how it's been: whole, recovering from a failed process (a page loaded
+    /// again, or a WebView made again), or stopped after failing too often (`resilience`). The companion's
+    /// diagnostics show it, with the WebView2 version above.
+    pub webviews: Vec<resilience::HealthReport>,
     pub error: Option<String>,
 }
 
@@ -536,21 +541,25 @@ pub fn run(mut config: Config, stop: Arc<AtomicBool>) -> Result<(), Error> {
             cursor_told = Some(drawn);
             let _ = webview.post_json(&cursor_message(drawn));
         }
-        // The page's process failed (a crash, or hung): load it again, and it gets the current state again
-        // as it announces itself. The browser's: this WebView is gone, so start over (`BrowserGone`).
-        match webview.take_failure() {
-            Some(webview::Failure::Page) => {
-                startup::mark("host: the cabin page's process failed; reloading it");
-                if let Err(e) = webview.reload() {
-                    status.error = Some(format!("the cabin page couldn't be reloaded: {e}"));
-                    (config.on_status)(&status);
-                }
+        // The cabin page's WebView processes failing (`resilience`): the page's own process loaded again, at
+        // once, then after each backoff (0.5 s, 2 s, 5 s) — and past that an error of WestPlay's own on the
+        // truck's screen, rather than a page that comes back blank and spins. The browser's process: this
+        // WebView (and the whole environment it was made in) is gone, so the host starts over (`BrowserGone`).
+        // A page failing in a loop (again and again, a while apart) is stopped the same way, and said so.
+        let now = Instant::now();
+        let cabin_step = match webview.take_failure() {
+            Some(failure) => {
+                log!("[cabin] {}", failure.line());
+                Some(resilience::failed(resilience::Page::Cabin, &failure))
             }
-            Some(webview::Failure::Browser) => {
-                browser_gone = true;
-                break;
-            }
-            None => {}
+            // A retry's backoff is up: the page is loaded again.
+            None => resilience::ready(resilience::Page::Cabin, now),
+        };
+        if let Some(step) = cabin_step
+            && cabin_recovery(step, &webview, &mut status, &mut config)
+        {
+            browser_gone = true;
+            break;
         }
         if startup_pending {
             startup_pending = log_startup(&bridge, pipeline.as_ref(), screen_frame_before);
@@ -763,6 +772,23 @@ pub fn run(mut config: Config, stop: Arc<AtomicBool>) -> Result<(), Error> {
                     waited: status.dropped_total,
                 });
                 meter.second(Instant::now(), sample, &webview, &profiles);
+                // Each WebView WestPlay runs now, and how it's been (`resilience`): the companion's diagnostics
+                // show them, with the WebView2 version above.
+                let mut running = vec![resilience::Page::Cabin];
+                for (page, running_now) in [
+                    (resilience::Page::Youtube, youtube.is_some()),
+                    (resilience::Page::YoutubeMusic, youtube_music.is_some()),
+                    (resilience::Page::Spotify, spotify.is_some()),
+                    (resilience::Page::AppleMusic, apple_music.is_some()),
+                    (resilience::Page::Netease, netease.is_some()),
+                    (resilience::Page::Bilibili, bilibili.is_some()),
+                    (resilience::Page::Player, music_player.is_some()),
+                ] {
+                    if running_now {
+                        running.push(page);
+                    }
+                }
+                status.webviews = resilience::reports(&running, Instant::now());
                 (config.on_status)(&status);
                 last_frames = frames;
             }
@@ -1342,13 +1368,17 @@ pub fn run(mut config: Config, stop: Arc<AtomicBool>) -> Result<(), Error> {
             }
         }
 
-        // How YouTube's player plays, for the page; its WebView failing closes it (the page opens it again).
+        // How YouTube's player plays, for the page; its WebView's processes failing are its own page's to come
+        // back from (loaded again, the video going on where it was), and its browser's to close it (`resilience`:
+        // the page opens it again).
         if let Some(player) = &youtube {
-            if player.failed() || players_closing {
+            let restart = players_closing
+                || player_failure(resilience::Page::Youtube, player.failure(), || player.recover(), now);
+            if restart {
                 if players_closing {
                     log!("[youtube] closed with the game");
                 } else {
-                    log!("[youtube] its browser failed: closed, the page opens it again");
+                    log!("[youtube] its WebView is gone: closed, the page opens it again");
                 }
                 if let Some(line) = youtube_log.heard(None) {
                     log!("{line}");
@@ -1436,14 +1466,17 @@ pub fn run(mut config: Config, stop: Arc<AtomicBool>) -> Result<(), Error> {
             }
         }
 
-        // What Spotify's page says (signed in, playing) and its sign-in window, for the page; its WebView
-        // failing closes it (the page opens it again).
+        // What Spotify's page says (signed in, playing) and its sign-in window, for the page; its WebView's
+        // processes failing are its own page's to come back from, or its browser's to close it (`resilience`:
+        // the page opens it again).
         if let Some(player) = &spotify {
-            if player.failed() || players_closing {
+            let restart = players_closing
+                || player_failure(resilience::Page::Spotify, player.failure(), || player.reload(), now);
+            if restart {
                 if players_closing {
                     log!("[spotify] closed with the game");
                 } else {
-                    log!("[spotify] its browser failed: closed, the page opens it again");
+                    log!("[spotify] its WebView is gone: closed, the page opens it again");
                 }
                 if let Some(line) = spotify_log.heard(None) {
                     log!("{line}");
@@ -1517,13 +1550,16 @@ pub fn run(mut config: Config, stop: Arc<AtomicBool>) -> Result<(), Error> {
             }
         }
 
-        // What Apple Music's page says, and its sign-in window, for the page; its WebView failing closes it.
+        // What Apple Music's page says, and its sign-in window, for the page; its WebView's processes failing are
+        // its own page's to come back from, or its browser's to close it (`resilience`).
         if let Some(player) = &apple_music {
-            if player.failed() || players_closing {
+            let restart = players_closing
+                || player_failure(resilience::Page::AppleMusic, player.failure(), || player.reload(), now);
+            if restart {
                 if players_closing {
                     log!("[apple music] closed with the game");
                 } else {
-                    log!("[apple music] its browser failed: closed, the page opens it again");
+                    log!("[apple music] its WebView is gone: closed, the page opens it again");
                 }
                 if let Some(line) = apple_music_log.heard(None) {
                     log!("{line}");
@@ -1599,13 +1635,16 @@ pub fn run(mut config: Config, stop: Arc<AtomicBool>) -> Result<(), Error> {
 
         // What NetEase Cloud Music's page says (signed in, playing, what plays, a playlist's songs, Home, My Music's
         // own, a search, the recent songs, NetEase's rankings, the account's profile) and its sign-in window, for the
-        // page; its WebView failing closes it (the page opens it again).
+        // page; its WebView's processes failing are its own page's to come back from (its song going on from where it
+        // was), or its browser's to close it (`resilience`: the page opens it again).
         if let Some(player) = &netease {
-            if player.failed() || players_closing {
+            let restart = players_closing
+                || player_failure(resilience::Page::Netease, player.failure(), || player.reload(), now);
+            if restart {
                 if players_closing {
                     log!("[netease] closed with the game");
                 } else {
-                    log!("[netease] its browser failed: closed, the page opens it again");
+                    log!("[netease] its WebView is gone: closed, the page opens it again");
                 }
                 if let Some(failed) = netease.take() {
                     failed.close(&stage);
@@ -1754,14 +1793,17 @@ pub fn run(mut config: Config, stop: Arc<AtomicBool>) -> Result<(), Error> {
 
         // What Bilibili's page says (whether it's signed in and what plays, its feed, a search, a season, the live
         // rooms, the account's history, its favourite folders, its following feed, an UP's space, a video's page,
-        // a like/coin/favourite asked for) and its sign-in window, for the page; its WebView failing closes it (the
-        // page opens it again).
+        // a like/coin/favourite asked for) and its sign-in window, for the page; its WebView's processes failing are
+        // its own page's to come back from (the video going on where it was), or its browser's to close it
+        // (`resilience`: the page opens it again).
         if let Some(player) = &bilibili {
-            if player.failed() || players_closing {
+            let restart = players_closing
+                || player_failure(resilience::Page::Bilibili, player.failure(), || player.recover(), now);
+            if restart {
                 if players_closing {
                     log!("[bilibili] closed with the game");
                 } else {
-                    log!("[bilibili] its browser failed: closed, the page opens it again");
+                    log!("[bilibili] its WebView is gone: closed, the page opens it again");
                 }
                 if let Some(failed) = bilibili.take() {
                     failed.close(&stage);
@@ -1918,13 +1960,16 @@ pub fn run(mut config: Config, stop: Arc<AtomicBool>) -> Result<(), Error> {
             let _ = webview.post_json(&bilibili::state_message(None, false));
         }
 
-        // What Player's page says, for the page; its WebView failing closes it, as the game closing does.
+        // What Player's page says, for the page; its WebView's processes failing are its own page's to come back
+        // from (the song going on where it was), or its browser's to close it, as the game closing does.
         if let Some(player) = &music_player {
-            if player.failed() || players_closing {
+            let restart = players_closing
+                || player_failure(resilience::Page::Player, player.failure(), || player.reload(), now);
+            if restart {
                 if players_closing {
                     log!("[player] closed with the game");
                 } else {
-                    log!("[player] its browser failed: closed, the page opens it again");
+                    log!("[player] its WebView is gone: closed, the page opens it again");
                 }
                 if let Some(line) = music_player_log.heard(None) {
                     log!("{line}");
@@ -1996,13 +2041,16 @@ pub fn run(mut config: Config, stop: Arc<AtomicBool>) -> Result<(), Error> {
             }
         }
 
-        // What YouTube Music's page says, and its sign-in window, for the page; its WebView failing closes it.
+        // What YouTube Music's page says, and its sign-in window, for the page; its WebView's processes failing are
+        // its own page's to come back from (the song going on where it was), or its browser's to close it.
         if let Some(player) = &youtube_music {
-            if player.failed() || players_closing {
+            let restart = players_closing
+                || player_failure(resilience::Page::YoutubeMusic, player.failure(), || player.recover(), now);
+            if restart {
                 if players_closing {
                     log!("[youtube music] closed with the game");
                 } else {
-                    log!("[youtube music] its browser failed: closed, the page opens it again");
+                    log!("[youtube music] its WebView is gone: closed, the page opens it again");
                 }
                 if let Some(line) = youtube_music_log.heard(None) {
                     log!("{line}");
@@ -2604,6 +2652,7 @@ fn start_youtube<'a>(
         match youtube::YouTube::start(stage, config.width, config.height, &user_data) {
             Ok(started) => {
                 log!("[youtube] opened");
+                resilience::closed(resilience::Page::Youtube);
                 *youtube = Some(started)
             }
             Err(e) => startup::mark(&format!("host: YouTube couldn't start: {e}")),
@@ -2624,6 +2673,7 @@ fn start_apple_music<'a>(
         match apple_music::AppleMusic::start(stage, config.width, config.height, &user_data) {
             Ok(started) => {
                 log!("[apple music] opened");
+                resilience::closed(resilience::Page::AppleMusic);
                 *apple_music = Some(started)
             }
             Err(e) => startup::mark(&format!("host: Apple Music couldn't start: {e}")),
@@ -2644,6 +2694,7 @@ fn start_netease<'a>(
         match netease::Netease::start(stage, config.width, config.height, &user_data) {
             Ok(started) => {
                 log!("[netease] opened");
+                resilience::closed(resilience::Page::Netease);
                 *netease = Some(started)
             }
             Err(e) => startup::mark(&format!("host: NetEase Cloud Music couldn't start: {e}")),
@@ -2664,6 +2715,7 @@ fn start_bilibili<'a>(
         match bilibili::Bilibili::start(stage, config.width, config.height, &user_data) {
             Ok(started) => {
                 log!("[bilibili] opened");
+                resilience::closed(resilience::Page::Bilibili);
                 *bilibili = Some(started)
             }
             Err(e) => startup::mark(&format!("host: Bilibili couldn't start: {e}")),
@@ -2686,6 +2738,7 @@ fn start_music_player<'a>(
         match music_folder::Player::start(stage, config.width, config.height, &user_data, &page, music) {
             Ok(started) => {
                 log!("[player] opened");
+                resilience::closed(resilience::Page::Player);
                 *music_player = Some(started)
             }
             Err(e) => startup::mark(&format!("host: Player couldn't start: {e}")),
@@ -2729,6 +2782,7 @@ fn start_youtube_music<'a>(
         match youtube_music::YouTubeMusic::start(stage, config.width, config.height, &user_data) {
             Ok(started) => {
                 log!("[youtube music] opened");
+                resilience::closed(resilience::Page::YoutubeMusic);
                 *youtube_music = Some(started)
             }
             Err(e) => startup::mark(&format!("host: YouTube Music couldn't start: {e}")),
@@ -2749,6 +2803,7 @@ fn start_spotify<'a>(
         match spotify::Spotify::start(stage, config.width, config.height, &user_data) {
             Ok(started) => {
                 log!("[spotify] opened");
+                resilience::closed(resilience::Page::Spotify);
                 *spotify = Some(started)
             }
             Err(e) => startup::mark(&format!("host: Spotify couldn't start: {e}")),
@@ -2880,6 +2935,154 @@ fn cab_webview(stage: &Stage, width: u32, height: u32, user_data: &std::path::Pa
                 return Err(error);
             }
         }
+    }
+}
+
+/// Carries out a recovery of the cabin page (`resilience`): its page's process loaded again, at once and then
+/// after each backoff — and, past those, WestPlay's own error on the truck's screen rather than a page that comes
+/// back blank. `true` when the cabin's WebView is gone (its browser process exited), and the host has to start
+/// over: the whole environment it was made in went with it.
+fn cabin_recovery(
+    step: resilience::Step,
+    webview: &OffscreenWebView,
+    status: &mut Status,
+    config: &mut Config,
+) -> bool {
+    match step {
+        resilience::Step::Nothing | resilience::Step::Waiting => {
+            // WebView2 restarts that process itself; or the next try's backoff isn't up yet.
+            if let Some(due) = resilience::waiting_until(resilience::Page::Cabin) {
+                let in_seconds = due.saturating_duration_since(Instant::now()).as_secs_f32();
+                log!("[cabin] loading it again in {in_seconds:.1} s");
+            }
+            false
+        }
+        resilience::Step::Reload => {
+            startup::mark("host: the cabin page's process failed; loading it again");
+            if let Err(e) = webview.reload() {
+                log!("[cabin] it couldn't be loaded again: {e}");
+                status.error = Some(format!("the cabin page couldn't be loaded again: {e}"));
+                (config.on_status)(status);
+                // The try itself failed: the next one waits its backoff, or the page is given up on.
+                if matches!(
+                    resilience::retry(resilience::Page::Cabin, resilience::Outcome::Reload, Instant::now()),
+                    resilience::Step::Stop
+                ) {
+                    show_cabin_failure(webview, status, config);
+                }
+            }
+            false
+        }
+        resilience::Step::Recreate => true,
+        resilience::Step::Stop => {
+            show_cabin_failure(webview, status, config);
+            false
+        }
+    }
+}
+
+/// The cabin page given up on (it failed too often): WestPlay's own error on the truck's screen, in place of the
+/// page, saying what failed and that it stopped trying — the screen shows it as it shows the page, rather than a
+/// frame that was blank and came back blank. The status says so for the companion too (its diagnostics, with the
+/// page's health), and the log with it.
+fn show_cabin_failure(webview: &OffscreenWebView, status: &mut Status, config: &mut Config) {
+    let report = resilience::report(resilience::Page::Cabin, Instant::now());
+    log!("[cabin] stopped loading it again after {} failures", report.failures);
+    startup::mark("host: the cabin page stopped coming back");
+    let html = failure_page(resilience::last_failure(resilience::Page::Cabin).as_ref(), &report);
+    if let Err(e) = webview.navigate_to_string(&html) {
+        // Nothing to show, then: the status is all the player has.
+        log!("[cabin] the error couldn't be shown: {e}");
+    }
+    status.error = Some(format!("the WestPlay screen stopped coming back ({} failures)", report.failures));
+    (config.on_status)(status);
+}
+
+/// The error the cabin page shows instead of a page that comes back blank: dark, in WestPlay's own look, saying
+/// which of the page's processes failed and when, and where more is written (WestPlay's own words, English: the
+/// log's). Never anything of the player's or of what played.
+fn failure_page(failure: Option<&resilience::Failure>, report: &resilience::HealthReport) -> String {
+    let last = failure.map_or_else(
+        || "One of its processes failed.".to_owned(),
+        |failure| format!("The last one: {}.", html_escape(&failure.line())),
+    );
+    let name = html_escape(report.name);
+    let failures = report.failures;
+    let log = log::place()
+        .map_or("WestPlay's own folder".to_owned(), |place| html_escape(&place.display().to_string()));
+    format!(
+        "<!doctype html><html><head><meta charset=\"utf-8\"><title>WestPlay</title><style>\
+         html,body{{height:100%;margin:0}}body{{display:flex;align-items:center;justify-content:center;\
+         background:#0b0d10;color:#e8eaed;font:14px/1.45 'Segoe UI',system-ui,sans-serif}}\
+         .card{{max-width:640px;padding:28px 32px;border:1px solid #242a31;border-radius:18px;background:#14181d}}\
+         h1{{margin:0 0 6px;font-size:19px;font-weight:600}}p{{margin:8px 0;color:#a9b1ba}}\
+         .what{{color:#e8eaed}}code{{color:#cfd6dd}}b{{color:#e8eaed}}</style></head><body><div class=\"card\">\
+         <h1>WestPlay couldn't bring this screen back</h1>\
+         <p class=\"what\">{name} failed {failures} times, and WestPlay stopped loading it again.</p>\
+         <p>{last}</p>\
+         <p>The log says more: <code>{log}</code></p>\
+         <p>Restart WestPlay to try again.</p></div></body></html>"
+    )
+}
+
+/// `text` with the characters HTML reads as markup replaced (a failure's words go on the page).
+fn html_escape(text: &str) -> String {
+    let mut escaped = String::with_capacity(text.len());
+    for character in text.chars() {
+        match character {
+            '&' => escaped.push_str("&amp;"),
+            '<' => escaped.push_str("&lt;"),
+            '>' => escaped.push_str("&gt;"),
+            '"' => escaped.push_str("&quot;"),
+            '\'' => escaped.push_str("&#39;"),
+            other => escaped.push(other),
+        }
+    }
+    escaped
+}
+
+/// A hidden player's page whose WebView's processes failed (`resilience`): its page loaded again, at once and
+/// then after each backoff, what it played going on from where it was (each page keeps it in its own session):
+/// `false`. `true` when its WebView is gone (its browser process exited) — closed, and started again when the
+/// app next uses it — and when the page failed too often to try again.
+fn player_failure(
+    page: resilience::Page,
+    failure: Option<webview::Failure>,
+    reload: impl Fn() -> windows::core::Result<()>,
+    now: Instant,
+) -> bool {
+    let step = match failure {
+        Some(failure) => {
+            log!("[{}] {}", page.name(), failure.line());
+            resilience::failed(page, &failure)
+        }
+        // Nothing failed this turn: a retry's backoff may be up (the page failed a moment ago).
+        None => match resilience::ready(page, now) {
+            Some(step) => step,
+            None => return false,
+        },
+    };
+    match step {
+        resilience::Step::Nothing | resilience::Step::Waiting => {
+            if let Some(due) = resilience::waiting_until(page) {
+                let in_seconds = due.saturating_duration_since(now).as_secs_f32();
+                log!("[{}] loading it again in {in_seconds:.1} s", page.name());
+            }
+            false
+        }
+        resilience::Step::Reload => {
+            if let Err(e) = reload() {
+                log!("[{}] it couldn't be loaded again: {e}", page.name());
+                // The try itself failed: the next one waits its backoff, or the page is given up on.
+                return matches!(
+                    resilience::retry(page, resilience::Outcome::Reload, Instant::now()),
+                    resilience::Step::Stop
+                );
+            }
+            false
+        }
+        // Its WebView is gone, or its page won't come back: closed, and started again when it's next needed.
+        resilience::Step::Recreate | resilience::Step::Stop => true,
     }
 }
 
@@ -3108,6 +3311,38 @@ pub(crate) fn is_language_tag(tag: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{PageMessage, PageRouteAction, parse_page_message, screen_message, settings_message};
+
+    /// The cabin page's error (shown when it's stopped coming back) says what failed, and the page's own words
+    /// never make markup of it.
+    #[test]
+    fn the_cabins_error_says_what_failed_without_making_markup_of_it() {
+        let failure = super::resilience::Failure {
+            process: super::resilience::Process::Renderer,
+            why: super::resilience::Why::Crashed,
+            exit_code: Some(-1073741819),
+            description: "<Renderer & \"co\">".into(),
+            at: std::time::Instant::now(),
+        };
+        let report = super::resilience::HealthReport {
+            name: "cabin",
+            state: super::resilience::HealthState::Stopped,
+            failures: 4,
+            last_kind: Some("the page's process"),
+            last_reason: Some("crashed"),
+            last_exit_code: Some(-1073741819),
+            last_ago_seconds: Some(3),
+        };
+        let page = super::failure_page(Some(&failure), &report);
+        assert!(page.contains("WestPlay couldn't bring this screen back"), "{page}");
+        assert!(page.contains("cabin failed 4 times"), "{page}");
+        assert!(page.contains("exit code 0xC0000005"), "the failure's line: {page}");
+        assert!(!page.contains("<Renderer"), "the description escaped: {page}");
+        assert!(page.contains("&lt;Renderer &amp; &quot;co&quot;&gt;"), "{page}");
+        // No failure to name (never seen): still a page, never one that comes back blank.
+        let page = super::failure_page(None, &report);
+        assert!(page.contains("One of its processes failed."), "{page}");
+        assert_eq!(super::html_escape("a<b>&\"c'd"), "a&lt;b&gt;&amp;&quot;c&#39;d");
+    }
 
     #[test]
     fn a_language_tag_is_a_language_and_up_to_two_parts() {

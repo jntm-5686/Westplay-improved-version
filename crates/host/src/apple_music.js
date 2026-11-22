@@ -1213,6 +1213,65 @@
     spectrum: (data) => cab?.spectrum(data.on),
   }
 
+  // What plays, its place and whether it plays: kept in the page's own session as it goes, and read at its start.
+  // A page loaded anew (WestPlay loading it again after its process failed, `resilience` in the host) has Apple's
+  // player restore its own session (the song, and where it was): the place is put back, and the play state too (a
+  // page loading says nothing of a pause). Nothing is asked of Apple for a song it doesn't play itself.
+  const RESUME_KEY = 'westplay.apple-music.resume'
+  const RESUME_FOR = 60000
+  const resumeSave = () => {
+    try {
+      const music = instance()
+      const item = music?.nowPlayingItem?.id
+      if (!item) return
+      sessionStorage.setItem(
+        RESUME_KEY,
+        JSON.stringify({
+          item,
+          at: Number(music.currentPlaybackTime) || 0,
+          playing: music.playbackState === 2,
+          savedAt: Date.now(),
+        }),
+      )
+    } catch {
+      // The page's storage refused: the song isn't resumed, and plays no less.
+    }
+  }
+  const resumeNow = async () => {
+    let saved = null
+    try {
+      saved = JSON.parse(sessionStorage.getItem(RESUME_KEY) ?? 'null')
+      sessionStorage.removeItem(RESUME_KEY)
+    } catch {
+      saved = null
+    }
+    if (!saved?.item || Date.now() - Number(saved.savedAt ?? 0) > RESUME_FOR) return
+    const music = await ready.catch(() => null)
+    if (!music) return
+    const started = Date.now()
+    const timer = setInterval(() => {
+      // Apple's own session picked another song, or said nothing of one (signed out, a page that won't play):
+      // nothing of the page that went is put back.
+      if (music.nowPlayingItem?.id !== saved.item || Date.now() - started > 30000) {
+        clearInterval(timer)
+        return
+      }
+      clearInterval(timer)
+      const at = Math.max(0, Number(saved.at) || 0)
+      const now = Number(music.currentPlaybackTime) || 0
+      if (at > 2 && Math.abs(now - at) > 3) music.seekToTime(at).catch?.(() => {})
+      if (saved.playing && music.playbackState !== 2) music.play().catch?.(() => {})
+      if (!saved.playing && music.playbackState === 2) music.pause().catch?.(() => {})
+    }, 500)
+  }
+  // Kept as it plays (every two seconds), and as the page goes (which a reload says first).
+  setInterval(() => {
+    if (instance()?.playbackState === 2) resumeSave()
+  }, 2000)
+  addEventListener('pagehide', resumeSave)
+  addEventListener('beforeunload', resumeSave)
+  resumeNow()
+
   window.chrome?.webview?.addEventListener('message', ({ data }) => {
     if (CAB[data?.action]) CAB[data.action](data)
     else if (data?.action === 'ask') answer(data.id, data.question)

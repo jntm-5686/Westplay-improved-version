@@ -650,6 +650,64 @@
     window.chrome?.webview?.postMessage(message),
   )
 
+  // What plays, its place and whether it plays: kept in the page's own session as it goes, and read at its start.
+  // A page loaded anew (WestPlay loading it again after its process failed, `resilience` in the host) plays the
+  // video on from where it was: the host asks for the video again as the page says it's there (`Outbox::ready`),
+  // and the place is the page's own. The session keeps it across a reload of this WebView, and never across a
+  // WebView of its own (a player closed and opened again starts with nothing playing).
+  const RESUME_KEY = 'westplay.youtube.resume'
+  const RESUME_FOR = 60000
+  const resumeSave = () => {
+    try {
+      const p = player()
+      const video = p?.getVideoData?.()?.video_id
+      if (!video) return
+      sessionStorage.setItem(
+        RESUME_KEY,
+        JSON.stringify({
+          video,
+          at: Number(p.getCurrentTime?.()) || 0,
+          playing: p.getPlayerState?.() === 1,
+          savedAt: Date.now(),
+        }),
+      )
+    } catch {
+      // The page's storage refused: the video isn't resumed, and plays no less.
+    }
+  }
+  const resumeRead = () => {
+    try {
+      const saved = JSON.parse(sessionStorage.getItem(RESUME_KEY) ?? 'null')
+      sessionStorage.removeItem(RESUME_KEY)
+      if (!saved?.video || Date.now() - Number(saved.savedAt ?? 0) > RESUME_FOR) return null
+      return saved
+    } catch {
+      return null
+    }
+  }
+  // The video of the page that went, until the video asked for is the one (a page loaded anew asks for it again).
+  let resume = resumeRead()
+  // Kept as it plays (every two seconds), and as the page goes (which a reload says first).
+  setInterval(() => {
+    if (player()?.getPlayerState?.() === 1) resumeSave()
+  }, 2000)
+  addEventListener('pagehide', resumeSave)
+  addEventListener('beforeunload', resumeSave)
+  // Nothing asked for it (the host lost the video it had, a page loaded anew): the page plays it itself, once its
+  // player is there, and only if nothing plays.
+  setTimeout(() => {
+    const p = player()
+    if (!resume || !p || p.getVideoData?.()?.video_id) return
+    const kept = resume
+    resume = null
+    try {
+      p.loadVideoById({ videoId: kept.video, startSeconds: Math.max(0, Number(kept.at) || 0) })
+      if (kept.playing) setTimeout(() => p.playVideo(), 300)
+    } catch {
+      // Its player refused: the page is still the app's to play on.
+    }
+  }, 8000)
+
   // Commands that came before they could be carried out, in order.
   const waiting = []
   // No quality held to: YouTube picks it by the player's size (the screen's) and the connection, as in a
@@ -725,11 +783,17 @@
     }
     const p = player()
     if (command.action === 'load') {
+      // The video the page that went played (a page loaded anew, WestPlay loading it again after its process
+      // failed): asked for again, it goes on from where it was, and stays paused if it was paused.
+      const kept = resume && resume.video === command.video ? resume : null
+      if (kept) resume = null
+      const start = kept ? Math.max(0, Number(kept.at) || 0) : (command.start ?? 0)
       if (p) {
-        p.loadVideoById({ videoId: command.video, startSeconds: command.start ?? 0 })
-        setTimeout(() => p.playVideo(), 300)
+        p.loadVideoById({ videoId: command.video, startSeconds: start })
+        // A video paused when the page went stays paused: its place is where it was left.
+        if (!kept || kept.playing) setTimeout(() => p.playVideo(), 300)
       } else if (app()) {
-        watch(command.video, command.start)
+        watch(command.video, start)
       } else {
         waiting.push(command)
       }

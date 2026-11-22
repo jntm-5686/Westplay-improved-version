@@ -14,11 +14,11 @@ use std::time::{Duration, Instant};
 use webview2_com::Microsoft::Web::WebView2::Win32::{
     COREWEBVIEW2_COLOR, COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_ALLOW, COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_DENY_CORS,
     COREWEBVIEW2_MOUSE_EVENT_KIND, COREWEBVIEW2_MOUSE_EVENT_VIRTUAL_KEYS, COREWEBVIEW2_PROCESS_FAILED_KIND,
-    COREWEBVIEW2_PROCESS_FAILED_KIND_BROWSER_PROCESS_EXITED, COREWEBVIEW2_PROCESS_FAILED_KIND_RENDER_PROCESS_EXITED,
-    COREWEBVIEW2_PROCESS_FAILED_KIND_RENDER_PROCESS_UNRESPONSIVE, CreateCoreWebView2EnvironmentWithOptions,
-    ICoreWebView2, ICoreWebView2_2, ICoreWebView2_3, ICoreWebView2CompositionController, ICoreWebView2Controller,
-    ICoreWebView2Controller2, ICoreWebView2Controller3, ICoreWebView2Environment, ICoreWebView2Environment3,
-    ICoreWebView2EnvironmentOptions, ICoreWebView2Settings5, ICoreWebView2Settings6,
+    COREWEBVIEW2_PROCESS_FAILED_REASON, CreateCoreWebView2EnvironmentWithOptions, ICoreWebView2, ICoreWebView2_2,
+    ICoreWebView2_3, ICoreWebView2CompositionController, ICoreWebView2Controller, ICoreWebView2Controller2,
+    ICoreWebView2Controller3, ICoreWebView2Environment, ICoreWebView2Environment3, ICoreWebView2EnvironmentOptions,
+    ICoreWebView2ProcessFailedEventArgs, ICoreWebView2ProcessFailedEventArgs2, ICoreWebView2Settings5,
+    ICoreWebView2Settings6,
 };
 use webview2_com::{
     AddScriptToExecuteOnDocumentCreatedCompletedHandler, CoTaskMemPWSTR, CoreWebView2EnvironmentOptions,
@@ -38,6 +38,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 use windows::core::{HSTRING, Interface, PCWSTR, PWSTR, w};
 use windows_numerics::Vector2;
+
+use crate::resilience::{Process, Why};
 
 pub type Error = Box<dyn std::error::Error>;
 
@@ -115,16 +117,10 @@ pub struct Cookie {
     pub same_site: i32,
 }
 
-/// A WebView2 process that failed, as far as it matters to WestPlay (the others, such as its GPU process,
-/// WebView2 restarts by itself).
-/// Ordered by how much they take to recover from.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub enum Failure {
-    /// The page's own process exited or stopped responding: the page is gone (blank) until reloaded.
-    Page,
-    /// The browser process exited: the whole WebView is gone and must be created again.
-    Browser,
-}
+/// A WebView2 process that failed, as far as it matters to WestPlay, with which process (the browser's, the
+/// page's), why, and its exit code (`resilience::Failure`): what it takes to come back from is
+/// [`Failure::outcome`](crate::resilience::Failure::outcome), an [`Outcome`].
+pub use crate::resilience::{Failure, Outcome};
 
 /// The frame the thread's WebViews render onto, `width` x `height`: one compositor, and the visual that is
 /// captured, holding each WebView's visual.
@@ -215,8 +211,8 @@ pub struct OffscreenWebView {
     webview: ICoreWebView2,
     /// JSON messages the page posted (`chrome.webview.postMessage`), until taken by `take_page_messages`.
     page_messages: Rc<RefCell<Vec<String>>>,
-    /// The worst process failure since last taken (`take_failure`).
-    failure: Rc<Cell<Option<Failure>>>,
+    /// The worst process failure since last taken (`take_failure`): a browser's outranks a page's.
+    failure: Rc<RefCell<Option<Failure>>>,
     pub version: String,
 }
 
@@ -361,16 +357,18 @@ impl OffscreenWebView {
         // SAFETY: the handler and the token are locals for the call; WebView2 keeps its own reference to the handler.
         unsafe { webview.add_WebMessageReceived(&handler, &mut token)? };
 
-        let failure = Rc::new(Cell::new(None));
+        let failure: Rc<RefCell<Option<Failure>>> = Rc::default();
         let failed = failure.clone();
         let handler = ProcessFailedEventHandler::create(Box::new(move |_webview, args| {
-            if let Some(args) = args {
-                let mut kind = COREWEBVIEW2_PROCESS_FAILED_KIND::default();
-                // SAFETY: `args` is the event's, alive through the callback; `kind` is a local it writes.
-                unsafe { args.ProcessFailedKind(&mut kind)? };
-                if let Some(this) = failure_of(kind) {
-                    // A browser failure outranks a page failure noted before it.
-                    failed.set(failed.get().max(Some(this)));
+            if let Some(args) = args
+                && let Some(failure) = read_failure(&args)
+            {
+                // A browser failure outranks a page failure noted before it.
+                let mut failed = failed.borrow_mut();
+                let worse =
+                    failed.as_ref().is_none_or(|before| failure.outcome() >= before.outcome());
+                if worse {
+                    *failed = Some(failure);
                 }
             }
             Ok(())
@@ -382,15 +380,16 @@ impl OffscreenWebView {
         Ok(Self { environment, root, host, composition, controller, webview, page_messages, failure, version })
     }
 
-    /// The worst WebView2 process failure since the last call, if any.
+    /// The worst WebView2 process failure since the last call, if any: its process, why, its exit code, and what
+    /// it takes to come back from it ([`Failure::outcome`]).
     pub fn take_failure(&self) -> Option<Failure> {
-        self.failure.take()
+        self.failure.borrow_mut().take()
     }
 
     /// Logs what happens to this WebView's page as `name`'s (`[spotify] …`): each page load, done or failed
-    /// with the browser's reason (a name not found, a connection cut: what a DNS or a VPN in the way shows),
-    /// and its processes failing (owner 2026-10-21: a player's YouTube never opened, and the log said
-    /// nothing). Of the page's address, only its host.
+    /// with the browser's reason (a name not found, a connection cut: what a DNS or a VPN in the way shows).
+    /// (Its processes failing are kept for [`take_failure`](OffscreenWebView::take_failure), and logged by
+    /// whoever loads the page again: `resilience` in the host.) Of the page's address, only its host.
     pub fn log_as(&self, name: &'static str) -> windows::core::Result<()> {
         use webview2_com::Microsoft::Web::WebView2::Win32::COREWEBVIEW2_WEB_ERROR_STATUS;
         use webview2_com::NavigationCompletedEventHandler;
@@ -420,18 +419,7 @@ impl OffscreenWebView {
         let mut token = 0;
         // SAFETY: the handler and the token are locals for the call; WebView2 keeps its own reference to the
         // handler.
-        unsafe { self.webview.add_NavigationCompleted(&loaded, &mut token)? };
-        let failed = ProcessFailedEventHandler::create(Box::new(move |_webview, args| {
-            if let Some(args) = args {
-                let mut kind = COREWEBVIEW2_PROCESS_FAILED_KIND::default();
-                // SAFETY: `args` is the event's, alive through the callback; `kind` is a local it writes.
-                unsafe { args.ProcessFailedKind(&mut kind)? };
-                log!("[{name}] browser process failed: {}", process_failure(kind));
-            }
-            Ok(())
-        }));
-        // SAFETY: as above.
-        unsafe { self.webview.add_ProcessFailed(&failed, &mut token) }
+        unsafe { self.webview.add_NavigationCompleted(&loaded, &mut token) }
     }
 
     /// Loads the page again (after its process failed).
@@ -925,16 +913,33 @@ fn fitted((room_width, room_height): (u32, u32), width: u32, height: u32) -> (u3
     ((width * grow).round() as u32, (height * grow).round() as u32, 1.0 / grow)
 }
 
-/// What a WebView2 process failure means for WestPlay (Microsoft's guidance: reload after the page's
-/// process exits or hangs, create the WebView again after the browser process exits; WebView2 restarts its
-/// other processes itself, and a frame's process is no concern of a page without frames).
-fn failure_of(kind: COREWEBVIEW2_PROCESS_FAILED_KIND) -> Option<Failure> {
-    match kind {
-        COREWEBVIEW2_PROCESS_FAILED_KIND_BROWSER_PROCESS_EXITED => Some(Failure::Browser),
-        COREWEBVIEW2_PROCESS_FAILED_KIND_RENDER_PROCESS_EXITED
-        | COREWEBVIEW2_PROCESS_FAILED_KIND_RENDER_PROCESS_UNRESPONSIVE => Some(Failure::Page),
-        _ => None,
+/// What a WebView2 process failure was, as its event has it: which process (`COREWEBVIEW2_PROCESS_FAILED_KIND`),
+/// why (`ICoreWebView2ProcessFailedEventArgs2::Reason`), its exit code, and the name WebView2 gives the process.
+/// `None` for an event WebView2 says no kind for (never seen; the kind is always read).
+fn read_failure(args: &ICoreWebView2ProcessFailedEventArgs) -> Option<Failure> {
+    let mut kind = COREWEBVIEW2_PROCESS_FAILED_KIND::default();
+    // SAFETY: `args` is the event's, alive through the callback that calls this; `kind` is a local it writes.
+    unsafe { args.ProcessFailedKind(&mut kind) }.ok()?;
+    let process = Process::of_kind(kind.0);
+    // The rest is WebView2's second take on the event's arguments: a WebView2 without it (a very old runtime)
+    // says only which process failed, and that's enough to act on.
+    let (mut reason, mut exit_code) = (COREWEBVIEW2_PROCESS_FAILED_REASON::default(), None);
+    let mut description = String::new();
+    if let Ok(args) = args.cast::<ICoreWebView2ProcessFailedEventArgs2>() {
+        let mut code = 0;
+        // SAFETY: `args` is the event's, alive through the callback; each call writes a local.
+        unsafe {
+            let _ = args.Reason(&mut reason);
+            if args.ExitCode(&mut code).is_ok() {
+                exit_code = Some(code);
+            }
+            let mut said = PWSTR::null();
+            if args.ProcessDescription(&mut said).is_ok() && !said.is_null() {
+                description = CoTaskMemPWSTR::from(said).to_string();
+            }
+        }
     }
+    Some(Failure { process, why: Why::of_reason(reason.0), exit_code, description, at: Instant::now() })
 }
 
 /// A page's address as the log gives it: only its host (`https://www.youtube.com/watch?v=…` → `www.youtube.com`).
@@ -970,20 +975,6 @@ pub(crate) fn web_error(
     name.to_owned()
 }
 
-/// Which of a WebView's processes failed, as WebView2 says it.
-fn process_failure(kind: COREWEBVIEW2_PROCESS_FAILED_KIND) -> String {
-    use webview2_com::Microsoft::Web::WebView2::Win32::*;
-    let name = match kind {
-        COREWEBVIEW2_PROCESS_FAILED_KIND_BROWSER_PROCESS_EXITED => "the browser exited",
-        COREWEBVIEW2_PROCESS_FAILED_KIND_RENDER_PROCESS_EXITED => "the page's process exited",
-        COREWEBVIEW2_PROCESS_FAILED_KIND_RENDER_PROCESS_UNRESPONSIVE => "the page stopped responding",
-        COREWEBVIEW2_PROCESS_FAILED_KIND_FRAME_RENDER_PROCESS_EXITED => "a frame's process exited",
-        COREWEBVIEW2_PROCESS_FAILED_KIND_GPU_PROCESS_EXITED => "the GPU process exited",
-        _ => return format!("kind {}", kind.0),
-    };
-    name.to_owned()
-}
-
 /// A WebView2 environment on the profile `user_data` for browsing the web (Safari): as the players' own, but a
 /// page plays sound by itself only as a browser lets it (once the player has clicked in it), not as it loads.
 pub fn browsing_environment(user_data: &Path) -> Result<ICoreWebView2Environment, Error> {
@@ -1002,6 +993,16 @@ pub fn invalid_state(error: &Error) -> bool {
     code == Some(INVALID_STATE)
 }
 
+/// What every WestPlay WebView's browser is started with, whatever page it shows: its window is never shown (the
+/// offscreen host, far off the desktop, and a page shown small in the frame), so Chromium would throttle a hidden
+/// page's timers and its rendering, and a hidden player's page (whose video still plays) would stop making its
+/// sound and its reports (`crate::resilience`: a page's process stopping to respond was what a player saw as a
+/// screen that froze). `--disable-features=CalculateNativeWinOcclusion` is merged into the one switch by
+/// [`browser_arguments`], the GPU's argument added in [`create_environment`]: these three switches are WestPlay's
+/// own browsers' only (a WebView2 of the companion's, or another app's, is untouched).
+const NO_THROTTLING_ARGUMENTS: &str = "--disable-background-timer-throttling --disable-renderer-backgrounding \
+                                       --disable-backgrounding-occluded-windows";
+
 /// The browser's arguments: the ones every hidden WebView needs (an occluded window throttled otherwise), the
 /// player's own (its sound playing without a click first), and `extra`'s — its `--disable-features` values merged
 /// into one switch with ours (two such switches carry one value only: the last written, ours lost).
@@ -1019,11 +1020,7 @@ fn browser_arguments(autoplay: bool, extra: &str) -> String {
             rest.push(word);
         }
     }
-    let mut arguments = format!(
-        "--disable-features={} --disable-background-timer-throttling \
-         --disable-renderer-backgrounding --disable-backgrounding-occluded-windows",
-        features.join(",")
-    );
+    let mut arguments = format!("--disable-features={} {NO_THROTTLING_ARGUMENTS}", features.join(","));
     if autoplay {
         arguments.push_str(" --autoplay-policy=no-user-gesture-required");
     }
@@ -1108,6 +1105,22 @@ mod tests {
         assert!(arguments.contains("--disable-web-security"), "{arguments}");
         assert!(arguments.contains("--autoplay-policy=no-user-gesture-required"), "{arguments}");
         assert!(!browser_arguments(false, "").contains("--autoplay-policy"), "no player's press: no autoplay");
+    }
+
+    /// No WestPlay WebView is throttled for being hidden (its host window is never shown): its timers, its
+    /// rendering and its page's background state stay as a shown window's, whichever page it shows.
+    #[test]
+    fn no_webview_is_throttled_for_being_hidden() {
+        for (autoplay, extra) in [(true, ""), (false, "--disable-web-security --autoplay-policy=x")] {
+            let arguments = browser_arguments(autoplay, extra);
+            for switch in [
+                "--disable-background-timer-throttling",
+                "--disable-renderer-backgrounding",
+                "--disable-backgrounding-occluded-windows",
+            ] {
+                assert_eq!(arguments.matches(switch).count(), 1, "{switch} in {arguments}");
+            }
+        }
     }
 
     #[test]
@@ -1342,21 +1355,5 @@ mod tests {
         assert!((w as f32 * scale - 160.0).abs() < 0.5 && (h as f32 * scale - 90.0).abs() < 0.5);
         // Never grown past the screen, nor shrunk below the view's own size.
         assert_eq!(fitted((1280, 720), 2000, 1000).2, 1.0);
-    }
-    use webview2_com::Microsoft::Web::WebView2::Win32::{
-        COREWEBVIEW2_PROCESS_FAILED_KIND_FRAME_RENDER_PROCESS_EXITED,
-        COREWEBVIEW2_PROCESS_FAILED_KIND_GPU_PROCESS_EXITED,
-    };
-
-    #[test]
-    fn reloads_after_the_page_fails_and_starts_over_after_the_browser_does() {
-        assert_eq!(failure_of(COREWEBVIEW2_PROCESS_FAILED_KIND_RENDER_PROCESS_EXITED), Some(Failure::Page));
-        assert_eq!(failure_of(COREWEBVIEW2_PROCESS_FAILED_KIND_RENDER_PROCESS_UNRESPONSIVE), Some(Failure::Page));
-        assert_eq!(failure_of(COREWEBVIEW2_PROCESS_FAILED_KIND_BROWSER_PROCESS_EXITED), Some(Failure::Browser));
-        // WebView2 restarts its GPU process itself; the page has no frames.
-        assert_eq!(failure_of(COREWEBVIEW2_PROCESS_FAILED_KIND_GPU_PROCESS_EXITED), None);
-        assert_eq!(failure_of(COREWEBVIEW2_PROCESS_FAILED_KIND_FRAME_RENDER_PROCESS_EXITED), None);
-        // The browser failing outranks the page failing.
-        assert_eq!(Some(Failure::Page).max(Some(Failure::Browser)), Some(Failure::Browser));
     }
 }
