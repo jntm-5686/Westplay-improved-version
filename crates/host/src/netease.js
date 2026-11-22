@@ -637,6 +637,16 @@
   // A rescue, one level at a time (`level`: 1, 2 or 3): each says its own moment and the player's own state then.
   const rescue = (level) => {
     watch.level = level
+    // A song that reached its end isn't stuck: the page's own next takes it on (a reload there only broke the
+    // page's player, and the music stayed out for seconds: owner 2026-11-22, the player's own log).
+    const endedNow = atSongEnd()
+    if (endedNow) {
+      stepLine(`rescue${level} ended next`)
+      click(S.next)
+      sayTiming(null, { rescue: level, ended: true })
+      if (level >= 3) stopWatch()
+      return
+    }
     const state = elementState()
     const facts = state ? JSON.stringify(state) : 'no-element'
     const currentId = trackId() ?? watch.id
@@ -794,7 +804,22 @@
   // Playing on: its own play button when its own state says it's paused; a player that says it plays while its sound
   // doesn't is taken into the watch's own ladder at once (its own player's way, not its button's: a button would pause
   // what the ladder just started).
+  // Whether the song has just ended (`ended`, or its clock at its length): a pause at that moment must go on to the
+  // next song, never restart this one.
+  const atSongEnd = () => {
+    const element = soundingNow()
+    if (!element) return false
+    const duration = Number(element.duration)
+    return element.ended === true || (Number.isFinite(duration) && duration > 0 && element.currentTime >= duration - 0.8)
+  }
   const resume = () => {
+    if (atSongEnd()) {
+      // The song ended while paused (the game's menu over its last moment): its own next button, watched as a skip.
+      click(S.next)
+      timePlay('next', { id: null, expectedId: queue?.ids?.length ? queue.ids[(queue.index + 1) % queue.ids.length] : null, queue: Boolean(queue?.ids?.length) })
+      setTimeout(() => tell(true), 250)
+      return true
+    }
     const playing = isPlaying()
     if (wantedVolume !== null) for (const element of media) element.volume = wantedVolume
     const sounding = Boolean(audioState().playing)

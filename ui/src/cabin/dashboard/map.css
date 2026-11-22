@@ -301,7 +301,6 @@
   }
 }
 
-
 /* The rest pill, at the map's top: the time to the driver's next mandatory break, and the distance to the nearest
    rest stop, one at a time, changing every ten seconds (RestPill.tsx). */
 .rest-pill {
@@ -377,7 +376,6 @@
   color: #fff;
 }
 
-
 .appearance-light .view-switch {
   color: #14161a;
 }
@@ -424,7 +422,6 @@
 .view-thumb[data-flat='true'] {
   transform: translateY(54px);
 }
-
 
 /* The pinyin IME's candidates, under the map's search field: the places the letters could be. */
 .ime-candidates {

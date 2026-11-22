@@ -6,6 +6,7 @@
 #[macro_use]
 pub mod log;
 mod apple_music;
+mod bilibili;
 pub mod browser;
 mod brightness;
 mod camera;
@@ -128,6 +129,10 @@ pub struct Status {
     /// (QR code) window open.
     pub netease_signed_in: Option<bool>,
     pub netease_signing_in: bool,
+    /// The same of Bilibili: signed in or not (`None`: not known, Bilibili not run yet), its sign-in (QR code)
+    /// window open.
+    pub bilibili_signed_in: Option<bool>,
+    pub bilibili_signing_in: bool,
     /// The map of the profile played: ready, being built, waiting for the game to close...
     pub map: maps::MapStatus,
     /// The map the cab shows: its folder in WestPlay's maps, and when it was built (the companion's
@@ -139,14 +144,15 @@ pub struct Status {
     pub error: Option<String>,
 }
 
-/// The companion window's requests to sign YouTube, Spotify, Apple Music or NetEase Cloud Music in or out (or to
-/// know whether it is), from any thread, for the host to carry out as the cab's apps would.
+/// The companion window's requests to sign YouTube, Spotify, Apple Music, NetEase Cloud Music or Bilibili in or
+/// out (or to know whether it is), from any thread, for the host to carry out as the cab's apps would.
 #[derive(Debug, Default)]
 pub struct AccountRequests {
     pub youtube: AccountRequest,
     pub spotify: AccountRequest,
     pub apple_music: AccountRequest,
     pub netease: AccountRequest,
+    pub bilibili: AccountRequest,
 }
 
 /// One service's request, the latest not carried out yet.
@@ -461,6 +467,16 @@ pub fn run(mut config: Config, stop: Arc<AtomicBool>) -> Result<(), Error> {
     let mut netease_idle_since: Option<std::time::Instant> = None;
     let mut netease_idle_close = false;
     const NETEASE_IDLE_FOR: std::time::Duration = std::time::Duration::from_secs(30 * 60);
+    // Bilibili's web player, the same way (on a WebView2 profile of its own: signing out forgets its cookies
+    // alone).
+    let mut bilibili: Option<bilibili::Bilibili> = None;
+    let mut bilibili_state: Option<bilibili::State> = None;
+    let (mut bilibili_window_open, mut bilibili_confirming) = (false, false);
+    // Its page, idle (nothing playing) for a long while, is closed: a hidden page costs memory, and the app opens
+    // it again when it's next used (its cookies stay, so it's still signed in).
+    let mut bilibili_idle_since: Option<std::time::Instant> = None;
+    let mut bilibili_idle_close = false;
+    const BILIBILI_IDLE_FOR: std::time::Duration = std::time::Duration::from_secs(30 * 60);
     // YouTube Music's web player, the same way (on the cabin page's profile, sharing YouTube's sign-in).
     let mut youtube_music: Option<youtube_music::YouTubeMusic> = None;
     let mut youtube_music_state: Option<youtube_music::State> = None;
@@ -590,6 +606,15 @@ pub fn run(mut config: Config, stop: Arc<AtomicBool>) -> Result<(), Error> {
                 AccountAction::SignIn => netease::Command::SignIn,
                 AccountAction::SignOut => netease::Command::SignOut,
                 AccountAction::Check => netease::Command::Start,
+            });
+        }
+        if let Some(action) = config.accounts.bilibili.take()
+            && let Some(player) = start_bilibili(&mut bilibili, &stage, &config)
+        {
+            let _ = player.command(&match action {
+                AccountAction::SignIn => bilibili::Command::SignIn,
+                AccountAction::SignOut => bilibili::Command::SignOut,
+                AccountAction::Check => bilibili::Command::Start,
             });
         }
 
@@ -726,6 +751,9 @@ pub fn run(mut config: Config, stop: Arc<AtomicBool>) -> Result<(), Error> {
                 }
                 if let Some(netease) = &netease {
                     profiles.push((performance::Profile::Netease, netease.view().environment()));
+                }
+                if let Some(bilibili) = &bilibili {
+                    profiles.push((performance::Profile::Bilibili, bilibili.view().environment()));
                 }
                 let sample = status.game_connected.then(|| performance::Sample {
                     game_frames: plugin.heartbeat.load(Ordering::Relaxed),
@@ -1075,6 +1103,38 @@ pub fn run(mut config: Config, stop: Arc<AtomicBool>) -> Result<(), Error> {
                         // Nothing to pause: NetEase Cloud Music isn't running.
                     } else if let Some(player) = start_netease(&mut netease, &stage, &config) {
                         let _ = player.command(&command);
+                    }
+                }
+                Some(PageMessage::Bilibili { command }) => {
+                    bilibili_idle_since = None;
+                    // Done with it: its page goes (it opens again when the app is next used).
+                    if command == bilibili::Command::Close {
+                        if let Some(closing) = bilibili.take() {
+                            log!("[bilibili] closed (the app is done with it)");
+                            closing.close(&stage);
+                        }
+                        bilibili_state = None;
+                        (bilibili_window_open, bilibili_confirming) = (false, false);
+                        if status.bilibili_signed_in.is_some() {
+                            status.bilibili_signed_in = None;
+                            (config.on_status)(&status);
+                        }
+                        let _ = webview.post_json(&bilibili::state_message(None, false));
+                    } else if bilibili.is_none()
+                        && matches!(
+                            command,
+                            bilibili::Command::Pause
+                                | bilibili::Command::Resume
+                                | bilibili::Command::Next
+                                | bilibili::Command::Prev
+                                | bilibili::Command::Hide
+                        )
+                    {
+                        // Nothing to pause, resume, play next or hide: Bilibili isn't running.
+                    } else if let Some(player) = start_bilibili(&mut bilibili, &stage, &config) {
+                        if let Err(e) = player.command(&command) {
+                            log!("[bilibili] couldn't do what the cab asked: {e}");
+                        }
                     }
                 }
                 Some(PageMessage::Player { command }) => {
@@ -1692,6 +1752,172 @@ pub fn run(mut config: Config, stop: Arc<AtomicBool>) -> Result<(), Error> {
             let _ = webview.post_json(&netease::state_message(None, false));
         }
 
+        // What Bilibili's page says (whether it's signed in and what plays, its feed, a search, a season, the live
+        // rooms, the account's history, its favourite folders, its following feed, an UP's space, a video's page,
+        // a like/coin/favourite asked for) and its sign-in window, for the page; its WebView failing closes it (the
+        // page opens it again).
+        if let Some(player) = &bilibili {
+            if player.failed() || players_closing {
+                if players_closing {
+                    log!("[bilibili] closed with the game");
+                } else {
+                    log!("[bilibili] its browser failed: closed, the page opens it again");
+                }
+                if let Some(failed) = bilibili.take() {
+                    failed.close(&stage);
+                }
+                bilibili_state = None;
+                (bilibili_window_open, bilibili_confirming) = (false, false);
+                status.bilibili_signed_in = None;
+                status.bilibili_signing_in = false;
+                (config.on_status)(&status);
+                let _ = webview.post_json(&bilibili::state_message(None, false));
+            } else {
+                let mut state_changed = false;
+                for report in player.take_reports() {
+                    match report {
+                        bilibili::Report::Spectrum(bars) => {
+                            let _ = webview.post_json(&speakers::spectrum_message(&bars));
+                        }
+                        bilibili::Report::State(state) => {
+                            if status.bilibili_signed_in != Some(state.signed_in) {
+                                status.bilibili_signed_in = Some(state.signed_in);
+                                (config.on_status)(&status);
+                            }
+                            bilibili_state = Some(*state);
+                            state_changed = true;
+                        }
+                        // Whether its page is signed in, and the account's name and picture: straight to the page
+                        // (never logged).
+                        bilibili::Report::Account(account) => {
+                            let _ = webview.post_json(&bilibili::account_message(&account));
+                            if status.bilibili_signed_in != Some(account.signed_in) {
+                                status.bilibili_signed_in = Some(account.signed_in);
+                                (config.on_status)(&status);
+                            }
+                        }
+                        // The app's lists and pages: straight on to it (never logged).
+                        bilibili::Report::Home(home) => {
+                            let _ = webview.post_json(&bilibili::home_message(&home));
+                        }
+                        // The account's own followers or the accounts it follows: straight on to it.
+                        bilibili::Report::Relations(relations) => {
+                            let _ = webview.post_json(&bilibili::relations_message(&relations));
+                        }
+                        bilibili::Report::Popular(popular) => {
+                            let _ = webview.post_json(&bilibili::popular_message(&popular));
+                        }
+                        bilibili::Report::Ranking(ranking) => {
+                            let _ = webview.post_json(&bilibili::ranking_message(&ranking));
+                        }
+                        bilibili::Report::Search(search) => {
+                            // Its counts, for the app's own reason when it shows nothing (never the words only).
+                            log!(
+                                "[bilibili] search {} {:?}: {} results{}",
+                                search.kind,
+                                search.query,
+                                search.total,
+                                if search.items.is_empty() && search.users.is_empty() { " (none)" } else { "" },
+                            );
+                            let _ = webview.post_json(&bilibili::search_message(&search));
+                        }
+                        bilibili::Report::Bangumi(bangumi) => {
+                            let _ = webview.post_json(&bilibili::bangumi_message(&bangumi));
+                        }
+                        bilibili::Report::Season(season) => {
+                            let _ = webview.post_json(&bilibili::season_message(&season));
+                        }
+                        bilibili::Report::Live(live) => {
+                            let _ = webview.post_json(&bilibili::live_message(&live));
+                        }
+                        bilibili::Report::History(history) => {
+                            let _ = webview.post_json(&bilibili::history_message(&history));
+                        }
+                        bilibili::Report::Favorites(favorites) => {
+                            let _ = webview.post_json(&bilibili::favorites_message(&favorites));
+                        }
+                        bilibili::Report::FavoriteItems(items) => {
+                            let _ = webview.post_json(&bilibili::favorite_items_message(&items));
+                        }
+                        bilibili::Report::Dynamic(dynamic) => {
+                            let _ = webview.post_json(&bilibili::dynamic_message(&dynamic));
+                        }
+                        bilibili::Report::Space(space) => {
+                            let _ = webview.post_json(&bilibili::space_message(&space));
+                        }
+                        bilibili::Report::Detail(detail) => {
+                            let _ = webview.post_json(&bilibili::detail_message(&detail));
+                        }
+                        // A like, a coin or a favourite asked for: its answer goes to the page (the app's buttons).
+                        bilibili::Report::Like(like) => {
+                            let _ = webview.post_json(&bilibili::like_message(&like));
+                        }
+                        bilibili::Report::Coin(coin) => {
+                            let _ = webview.post_json(&bilibili::coin_message(&coin));
+                        }
+                        bilibili::Report::Favorite(favorite) => {
+                            let _ = webview.post_json(&bilibili::favorite_message(&favorite));
+                        }
+                        // An interface that refused (signed out, risk control): the app says why its list is
+                        // empty. Bilibili's own code, never anything of the account.
+                        bilibili::Report::Failed(failed) => {
+                            log!(
+                                "[bilibili] {} was refused: {} ({})",
+                                failed.action,
+                                failed.message,
+                                failed.code
+                            );
+                            let _ = webview.post_json(&bilibili::failed_message(&failed));
+                        }
+                        bilibili::Report::SignInWindow(open) => {
+                            let _ = webview.post_json(&bilibili::sign_in_message(open));
+                            bilibili_window_open = open;
+                            state_changed = true;
+                        }
+                        // Whether the picture's layer is really shown (the app's own handshake): `true` only once
+                        // the page's video is ready, `false` while it loads or navigates.
+                        bilibili::Report::Showing(on) => {
+                            let _ = webview.post_json(&bilibili::showing_message(on));
+                        }
+                        // The cab shows it signing in until the page here says it's signed in (not signed out for
+                        // a moment as it loads again).
+                        bilibili::Report::Confirming(confirming) => {
+                            bilibili_confirming = confirming;
+                            state_changed = true;
+                        }
+                    }
+                }
+                if state_changed {
+                    let signing_in = bilibili_window_open || bilibili_confirming;
+                    if status.bilibili_signing_in != signing_in {
+                        status.bilibili_signing_in = signing_in;
+                        (config.on_status)(&status);
+                    }
+                    let message = bilibili::state_message(bilibili_state.as_ref(), signing_in);
+                    let _ = webview.post_json(&message);
+                }
+                let playing = bilibili_state.as_ref().is_some_and(|state| state.playing);
+                if playing {
+                    bilibili_idle_since = None;
+                } else if bilibili_idle_since.get_or_insert_with(std::time::Instant::now).elapsed()
+                    >= BILIBILI_IDLE_FOR
+                {
+                    bilibili_idle_close = true;
+                }
+            }
+        }
+        if bilibili_idle_close {
+            bilibili_idle_close = false;
+            bilibili_idle_since = None;
+            if let Some(idle) = bilibili.take() {
+                log!("[bilibili] idle for a while: closed (it opens again when the app is)");
+                idle.close(&stage);
+            }
+            bilibili_state = None;
+            (bilibili_window_open, bilibili_confirming) = (false, false);
+            let _ = webview.post_json(&bilibili::state_message(None, false));
+        }
+
         // What Player's page says, for the page; its WebView failing closes it, as the game closing does.
         if let Some(player) = &music_player {
             if player.failed() || players_closing {
@@ -1927,6 +2153,10 @@ pub fn run(mut config: Config, stop: Arc<AtomicBool>) -> Result<(), Error> {
                 let _ = player.menu(menu_up);
             }
             if let Some(player) = &netease {
+                let _ = player.cab(truck_speakers, head, outside, distance, equalizer, spectrum);
+                let _ = player.menu(menu_up);
+            }
+            if let Some(player) = &bilibili {
                 let _ = player.cab(truck_speakers, head, outside, distance, equalizer, spectrum);
                 let _ = player.menu(menu_up);
             }
@@ -2422,6 +2652,26 @@ fn start_netease<'a>(
     netease.as_ref()
 }
 
+/// Bilibili's web player, started as the page first asks something of it (on a WebView2 profile of its own:
+/// signing out of Bilibili forgets nothing else), or `None` if it couldn't start.
+fn start_bilibili<'a>(
+    bilibili: &'a mut Option<bilibili::Bilibili>,
+    stage: &Stage,
+    config: &Config,
+) -> Option<&'a bilibili::Bilibili> {
+    if bilibili.is_none() {
+        let user_data = config.data_dir.join("webview2-bilibili");
+        match bilibili::Bilibili::start(stage, config.width, config.height, &user_data) {
+            Ok(started) => {
+                log!("[bilibili] opened");
+                *bilibili = Some(started)
+            }
+            Err(e) => startup::mark(&format!("host: Bilibili couldn't start: {e}")),
+        }
+    }
+    bilibili.as_ref()
+}
+
 /// Player's own player, started as the page first plays (on the cabin page's profile, as YouTube Music's), the
 /// songs of `music` served to it; or `None` if it couldn't start.
 fn start_music_player<'a>(
@@ -2678,6 +2928,9 @@ enum PageMessage {
     YoutubeMusic { command: youtube_music::Command },
     /// A command for NetEase Cloud Music's web player (`netease`): its sign-in, its controls, a playlist's songs.
     Netease { command: netease::Command },
+    /// A command for Bilibili's web player (`bilibili`): its sign-in, what plays, its lists, like/coin/favourite,
+    /// and where its picture goes.
+    Bilibili { command: bilibili::Command },
     /// A command for Player's own player (`player`): what to play from the music folder, its controls.
     Player { command: music_folder::Command },
     /// What the Safari app asks of its pages (`safari`): a tab shown, loaded, typed into, and so on.
@@ -3158,6 +3411,83 @@ mod tests {
         assert!(parse_page_message(r#"{"type":"netease","kind":"command","command":{"action":"explode"}}"#).is_none());
         // Its state (the host's to the cabin page) is no command of the cabin page's: nothing to carry out.
         assert!(parse_page_message(r#"{"type":"netease","kind":"state","state":{}}"#).is_none());
+    }
+
+    /// Bilibili's app's own protocol (`bilibili` in ui/src/cabin/apps/bilibili): its commands read as the host's,
+    /// its `kind` (the app's own) not in the way; anything else is no message at all.
+    #[test]
+    fn reads_the_bilibili_apps_commands() {
+        assert_eq!(
+            parse_page_message(r#"{"type":"bilibili","kind":"command","command":{"action":"home"}}"#).unwrap(),
+            PageMessage::Bilibili { command: super::bilibili::Command::Home { page: None, fresh: None } }
+        );
+        assert_eq!(
+            parse_page_message(
+                r#"{"type":"bilibili","kind":"command","command":{"action":"home","page":2,"fresh":true}}"#
+            )
+            .unwrap(),
+            PageMessage::Bilibili {
+                command: super::bilibili::Command::Home { page: Some(2), fresh: Some(true) }
+            }
+        );
+        assert_eq!(
+            parse_page_message(
+                r#"{"type":"bilibili","kind":"command","command":{"action":"relations","kind":"followers","page":1}}"#
+            )
+            .unwrap(),
+            PageMessage::Bilibili {
+                command: super::bilibili::Command::Relations {
+                    kind: super::bilibili::RelationKind::Followers,
+                    page: Some(1),
+                }
+            }
+        );
+        // The dashboard's own buttons: what plays' next (or previous).
+        assert_eq!(
+            parse_page_message(r#"{"type":"bilibili","kind":"command","command":{"action":"next"}}"#).unwrap(),
+            PageMessage::Bilibili { command: super::bilibili::Command::Next }
+        );
+        assert_eq!(
+            parse_page_message(r#"{"type":"bilibili","kind":"command","command":{"action":"prev"}}"#).unwrap(),
+            PageMessage::Bilibili { command: super::bilibili::Command::Prev }
+        );
+        assert_eq!(
+            parse_page_message(
+                r#"{"type":"bilibili","kind":"command","command":{"action":"play","value":"BV1GJ411x7h7","kind":"video"}}"#
+            )
+            .unwrap(),
+            PageMessage::Bilibili {
+                command: super::bilibili::Command::Play {
+                    value: "BV1GJ411x7h7".into(),
+                    kind: Some(super::bilibili::PlayKind::Video),
+                    page: None,
+                }
+            }
+        );
+        assert_eq!(
+            parse_page_message(
+                r#"{"type":"bilibili","kind":"command","command":{"action":"like","value":"BV1GJ411x7h7","on":true}}"#
+            )
+            .unwrap(),
+            PageMessage::Bilibili {
+                command: super::bilibili::Command::Like { value: "BV1GJ411x7h7".into(), on: true }
+            }
+        );
+        // A command Bilibili's page doesn't know: no message (never a guess).
+        assert!(parse_page_message(r#"{"type":"bilibili","kind":"command","command":{"action":"explode"}}"#).is_none());
+        // Its state (the host's to the cabin page) is no command of the cabin page's: nothing to carry out.
+        assert!(parse_page_message(r#"{"type":"bilibili","kind":"state","state":{}}"#).is_none());
+    }
+
+    /// The companion's status says whether Bilibili is signed in (`None` until it's known), as the others'.
+    #[test]
+    fn reports_bilibilis_sign_in_to_the_companion() {
+        let status = super::Status { bilibili_signed_in: None, bilibili_signing_in: true, ..Default::default() };
+        let json = serde_json::to_value(&status).unwrap();
+        assert_eq!((json["bilibiliSignedIn"].is_null(), json["bilibiliSigningIn"].as_bool()), (true, Some(true)));
+        let status = super::Status { bilibili_signed_in: Some(true), ..Default::default() };
+        let json = serde_json::to_value(&status).unwrap();
+        assert_eq!(json["bilibiliSignedIn"], serde_json::json!(true));
     }
 
     #[test]

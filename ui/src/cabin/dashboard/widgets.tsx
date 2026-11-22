@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { type Backdrop, type Look, useWordsOver, wordsClass } from '../apps/music/contrast'
 import { Crossfade } from '../apps/music/Crossfade'
 import { VideoWidget } from '../apps/youtube/VideoWidget'
@@ -19,6 +20,7 @@ import {
 } from '../apps/youtubeMusic/youtubeMusic'
 import { playOrPause as playOrPausePlayer, skip as skipPlayer, usePlayer, usePlayerSource } from '../apps/player/player'
 import { playPause as playPauseNetease, skip as skipNetease, useNeteaseSource } from '../apps/netease/netease'
+import { nextBilibili, playPauseBilibili, useBilibiliSource } from '../apps/bilibili/bilibili'
 import type { MediaAction, MediaSource } from '../../shared/media'
 import { useLook } from '../state/hooks'
 import { go, useCabin } from '../state/store'
@@ -39,10 +41,11 @@ import { cabClock } from '../../shared/host'
  */
 export function NowPlayingWidget() {
   const shown = useCabin((state) => state.dashboardWidgets.nowPlaying)
-  const { showing, spotify, appleMusic, netease, youtubeMusic, player } = useNowPlaying()
+  const { showing, spotify, appleMusic, netease, youtubeMusic, player, bilibili } = useNowPlaying()
   return (
     <div className={`widget-slot${shown ? ' open' : ''}`}>
       {shown && showing === 'video' && <VideoWidget />}
+      {shown && showing === 'bilibili' && bilibili && <BilibiliWidget bilibili={bilibili} />}
       {shown && showing === 'spotify' && spotify && <SpotifyWidget spotify={spotify} />}
       {shown && showing === 'appleMusic' && appleMusic && <AppleMusicWidget appleMusic={appleMusic} />}
       {shown && showing === 'netease' && netease && <NeteaseWidget netease={netease} />}
@@ -51,6 +54,37 @@ export function NowPlayingWidget() {
       {shown && showing === null && <MusicWidget source={null} artwork={null} onControl={() => {}} />}
     </div>
   )
+}
+
+/** Bilibili's video: what plays (its cover, its title, its UP主 and how far in it is), its play/pause and its next
+ * (the next related video, or the next episode), opening the app on Now Playing. */
+function BilibiliWidget({ bilibili }: { bilibili: NonNullable<ReturnType<typeof useBilibiliSource>> }) {
+  const progress = useSourceProgress(bilibili.source)
+  return (
+    <MusicWidget
+      source={bilibili.source}
+      artwork={bilibili.artwork}
+      progress={progress}
+      onOpen={() => go({ type: 'openApp', app: 'bilibili' })}
+      onControl={(action) => {
+        if (action === 'playPause') playPauseBilibili()
+        else if (action === 'next') nextBilibili()
+      }}
+    />
+  )
+}
+
+/** How far through a source is now (0..1), ticking while it plays; `null` without a length (a live room). */
+function useSourceProgress(source: MediaSource | null): number | null {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    if (!source || source.status !== 'playing' || source.durationMs <= 0) return
+    const timer = setInterval(() => setNow(Date.now()), 500)
+    return () => clearInterval(timer)
+  }, [source])
+  if (!source || source.durationMs <= 0) return null
+  const at = source.status === 'playing' ? source.positionMs + (now - source.positionAt) : source.positionMs
+  return Math.max(0, Math.min(1, at / source.durationMs))
 }
 
 /** Apple Music's music (the Music app's): what plays, its controls, opening Music on Now Playing. */
@@ -161,11 +195,14 @@ const WIDGET_BACKDROPS: Record<Look, Backdrop> = {
 function MusicWidget({
   source,
   artwork,
+  progress,
   onOpen,
   onControl,
 }: {
   source: MediaSource | null
   artwork: string | null
+  /** How far through it is (0..1): shown as a line under the title where a player gives it (Bilibili's video). */
+  progress?: number | null
   onOpen?(): void
   onControl(action: MediaAction): void
 }) {
@@ -206,6 +243,11 @@ function MusicWidget({
           )}
         />
       </button>
+      {progress !== undefined && progress !== null && (
+        <div className="np-progress" aria-hidden>
+          <span style={{ width: `${Math.round(progress * 100)}%` }} />
+        </div>
+      )}
       <div className="controls">
         <button
           type="button"

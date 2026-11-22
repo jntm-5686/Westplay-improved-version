@@ -9,6 +9,8 @@ import {
   type HostStatus,
   appleMusicSignIn,
   appleMusicSignOut,
+  bilibiliSignIn,
+  bilibiliSignOut,
   neteaseSignIn,
   neteaseSignOut,
   spotifySignIn,
@@ -69,9 +71,19 @@ const SERVICES: Record<
     // Its onboarding step's words: what it's for, and where its own sign-in finishes.
     words: (words) => words.netease,
   },
+  bilibili: {
+    name: 'Bilibili',
+    app: 'bilibili',
+    glow: GLOW.bilibili,
+    signIn: bilibiliSignIn,
+    signOut: bilibiliSignOut,
+    signingIn: (status) => status?.bilibiliSigningIn ?? false,
+    // Its own sign-in is Bilibili's passport page in a window on the desktop: the accounts scene's words cover it.
+    words: (words) => ({ finishInWindow: words.accounts.finishInWindow, signingIn: words.accounts.signingIn }),
+  },
 }
 
-const ORDER: Service[] = ['youtube', 'spotify', 'appleMusic', 'netease']
+const ORDER: Service[] = ['youtube', 'spotify', 'appleMusic', 'netease', 'bilibili']
 
 /**
  * The services WestPlay plays from, each signed in (in its own window, on the desktop) or not. WestPlay only

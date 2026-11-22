@@ -11,6 +11,8 @@ const ROLES: AppIconRole[] = [
   'maps',
   'music',
   'spotify',
+  'netease',
+  'bilibili',
   'podcasts',
   'messages',
   'phone',
@@ -35,6 +37,10 @@ describe('appIcon', () => {
     // The liquid glass theme: its picture, the same on both looks, for the roles it covers.
     expect(appIcon('phone', 'light', 'glass')).toBe('/icons/westplay/glass-phone.png')
     expect(appIcon('phone', 'dark', 'glass')).toBe(appIcon('phone', 'light', 'glass'))
+    // Bilibili's own little TV: light and dark, and its glass picture.
+    expect(appIcon('bilibili', 'light')).toBe('/icons/westplay/bilibili.light.svg')
+    expect(appIcon('bilibili', 'dark')).toBe('/icons/westplay/bilibili.dark.svg')
+    expect(appIcon('bilibili', 'dark', 'glass')).toBe('/icons/westplay/glass-bilibili.png')
     // Every role has its glass picture now, Podcasts' included.
     expect(appIcon('podcasts', 'dark', 'glass')).toBe('/icons/westplay/glass-podcasts.png')
   })

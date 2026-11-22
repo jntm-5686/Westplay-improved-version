@@ -501,6 +501,7 @@ export const strings: Strings = {
     music: 'Musikk',
     spotify: 'Spotify',
     netease: 'NetEase Music',
+    bilibili: 'Bilibili',
     youtube: 'YouTube',
     youtubeMusic: 'YouTube Music',
     player: 'Player',

@@ -64,6 +64,7 @@ pub enum Profile {
     Spotify,
     AppleMusic,
     Netease,
+    Bilibili,
 }
 
 /// What the host knows each second while the game runs.
@@ -361,6 +362,7 @@ fn parts_of(
                 Profile::Spotify => "Spotify",
                 Profile::AppleMusic => "Apple Music",
                 Profile::Netease => "NetEase",
+                Profile::Bilibili => "Bilibili",
                 Profile::Cab => match kind {
                     COREWEBVIEW2_PROCESS_KIND_BROWSER => "browser",
                     COREWEBVIEW2_PROCESS_KIND_GPU => "GPU",

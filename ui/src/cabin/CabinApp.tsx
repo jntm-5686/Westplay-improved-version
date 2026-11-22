@@ -9,6 +9,8 @@ import { pauseYouTubeMusicWithGame, youtubeMusicPlayer } from './apps/youtubeMus
 import { pausePlayerWithGame, playerAppPlayer } from './apps/player/pauseWithGame'
 import { pauseSafariWithGame, safariPlayer } from './apps/safari/pauseWithGame'
 import { neteasePlayer, pauseNeteaseWithGame, useNeteaseBridge as useNeteaseBridgeHere } from './apps/netease/netease'
+import { bilibiliPlayer, pauseBilibiliWithGame } from './apps/bilibili/withGame'
+import { useBilibiliBridge as useBilibiliBridgeHere } from './apps/bilibili/bilibili'
 import { AppScreen } from './apps/AppScreen'
 import { BootScreen } from './boot/BootScreen'
 import { Dashboard } from './dashboard/Dashboard'
@@ -34,7 +36,16 @@ import { followTimeZone } from './state/timeZone'
 const FOLLOW_POWER = isInHost() || new URLSearchParams(location.search).has('power')
 
 /** The cab's music players, and Safari's pages' sound (it plays one at a time with them, owner 2026-11-07). */
-const PLAYERS = [youtubePlayer, spotifyPlayer, appleMusicPlayer, neteasePlayer, youtubeMusicPlayer, playerAppPlayer, safariPlayer]
+const PLAYERS = [
+  youtubePlayer,
+  spotifyPlayer,
+  appleMusicPlayer,
+  neteasePlayer,
+  bilibiliPlayer,
+  youtubeMusicPlayer,
+  playerAppPlayer,
+  safariPlayer,
+]
 
 /** The in-cabin screen: the shell around the screen for the current route, after the boot sequence. */
 export function CabinApp() {
@@ -50,9 +61,11 @@ export function CabinApp() {
   useEffect(() => pausePlayerWithGame(), [])
   useEffect(() => pauseSafariWithGame(), [])
   useEffect(() => pauseNeteaseWithGame(), [])
-  // Its page's state, heard in every app of the cab: its music plays on while another app shows, and the game's
-  // menu pauses it and plays it back on as inside the app (the page itself runs when its app opens).
+  useEffect(() => pauseBilibiliWithGame(), [])
+  // Its page's state, heard in every app of the cab: its video plays on while another app shows (and the Dashboard
+  // shows it), and the game's menu pauses it and plays it back on as inside the app.
   useNeteaseBridgeHere(false)
+  useBilibiliBridgeHere(false)
   // One of them at a time: the newest to start plays on, the others pause (apps/oneAtATime.ts).
   useEffect(() => oneAtATime(PLAYERS), [])
   // The player's keybinds pressed in the game: the music's volume, or play/pause (apps/keybinds.ts).

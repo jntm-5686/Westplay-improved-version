@@ -496,6 +496,7 @@ export const strings: Strings = {
     music: '音乐',
     spotify: 'Spotify',
     netease: '网易云音乐',
+    bilibili: '哔哩哔哩',
     youtube: 'YouTube',
     youtubeMusic: 'YouTube Music',
     player: 'Player',

@@ -125,7 +125,7 @@ window.westplayCabSound = (media, say) => {
       upY: Math.cos(up),
       upZ: Math.cos(across) * Math.sin(up),
     }
-    for (const [name, value] of Object.entries(values)) listener[name].setTargetAtTime(value, currentTime, 0.03)
+    for (const [name, value] of Object.entries(values)) listener[name].setTargetAtTime(value, currentTime, 0.06)
   }
   const wire = () => {
     const video = media()

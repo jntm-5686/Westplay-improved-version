@@ -521,6 +521,7 @@ export const strings: Strings = {
     music: 'Glazba',
     spotify: 'Spotify',
     netease: 'NetEase Music',
+    bilibili: 'Bilibili',
     youtube: 'YouTube',
     youtubeMusic: 'YouTube Music',
     player: 'Player',

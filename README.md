@@ -59,6 +59,8 @@ WestPlay 把一块车机风格的屏幕放进卡车自己的仪表台，在游�
 
 14. **新增网易云音乐车机版 V1.3**（原版没有）：车机里独立 App，仿桌面版现代界面、大字号精简布局；登录在伴生程序的「账号」页扫码完成；**接入了车内空间音效**（按卡车喇叭位置分频定位 + 头部追踪，车外与 Esc 菜单自动静音）；首页每日推荐、榜单、按账号同步的我的歌单/最近播放、在线搜索（歌曲/艺人/歌单）、红心同步；**滚动歌词**（未展开三行、可展开全屏跟唱、点句跳转、纯音乐标记、中文界面显示翻译）；**艺人页**（热门 50 首 / 全部歌曲分页 / 专辑分页 / 资料统计）；**播放模式**（列表循环 / 随机 / 单曲循环）；按所在列表顺序切歌；沉浸式正在播放（iOS 式展开与收起动画）；长列表分页浏览、回到原滚动位置；界面风格可选「跟随体系 / 网易云红」，浅色深色自动跟随。
 
+15. **新增哔哩哔哩车机版 V1**：车机里独立 App，自绘大字号界面，登录在伴生程序扫码；首页推荐流（刷新/无限下拉/多封面轮播）、搜索（视频/番剧/UP 主）、视频简介页与番剧选集（标会员/免费）、严格比例的播放页（含真全屏、双击暂停、倍速、点赞/投币/收藏）、历史/收藏夹/关注动态/粉丝与关注列表、UP 主主页、仪表盘正在播放（可暂停/下一个），声音接入车内空间音效。评论与弹幕不做。
+
 ## YTHQ 平板
 
 > 本版的「YTHQ 平板分流」需要先安装 YTHQ Tablet 模组；只认创意工坊位置，把 `.scs` 拷到 `Documents\...\mod` 不生效。
@@ -254,6 +256,8 @@ WestPlay puts a CarPlay-style screen on your truck's own dashboard display, insi
 14. **NetEase Cloud Music V1.3** is a new app in this edition (the original has none): a standalone app on the truck's screen, in a simplified desktop-style layout with large type; sign in from the companion's Accounts page (QR code); **its sound plays through the truck's own speakers** (split by band and placed at each speaker, following the driver's head, silent outside the cab and under the game's menu); the day's recommendations, charts, the account's playlists and recent songs, online search (songs, artists, playlists), and likes synced to the account; **scrolling lyrics** (three lines on the player, expandable to a full page that follows the song, tap a line to seek, an instrumental mark, translations in Chinese); **artist pages** (their 50 popular songs, all songs and albums paged, with their numbers); **play modes** (repeat list / shuffle / repeat one) and next/previous following the list a song was played from; an iOS-style full-screen now playing that opens and closes with its own motion; long lists paged and kept where they were read; the look can follow WestPlay or use NetEase's red, in light and dark.
 
 ![WestPlay's NetEase Cloud Music app](images/netease.png)
+
+15. **Bilibili in the cab, V1**: a standalone app in the cab's own large-type UI, signed in from the companion (QR code): the home feed (refresh, endless scroll, rotating banners), search (videos, anime, creators), a video page and anime episode lists (with 会员/free marks), a player that shows the video whole at its own aspect ratio (true full screen, double-tap pause, speed, like/coin/favourite), history/favourites/following/followers, creator pages, and a Dashboard now-playing (pause/next); its sound uses the truck's speakers. No comments or danmaku.
 
 ### Requirements and installation
 

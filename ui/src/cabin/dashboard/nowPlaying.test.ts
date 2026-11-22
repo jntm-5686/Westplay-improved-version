@@ -1,13 +1,24 @@
 import { describe, expect, it } from 'vitest'
 import { type NowPlayingSource, shownSource } from './nowPlaying'
 
-const none: Record<NowPlayingSource, boolean> = { video: false, spotify: false, appleMusic: false, netease: false, youtubeMusic: false, player: false }
+const none: Record<NowPlayingSource, boolean> = {
+  video: false,
+  bilibili: false,
+  spotify: false,
+  appleMusic: false,
+  netease: false,
+  youtubeMusic: false,
+  player: false,
+}
 const only = (...sources: NowPlayingSource[]) => ({ ...none, ...Object.fromEntries(sources.map((s) => [s, true])) })
 
 describe("the Dashboard's Now Playing", () => {
   it('shows what plays, the video first when two do', () => {
     expect(shownSource(only('appleMusic'), only('video', 'appleMusic'), null)).toBe('appleMusic')
     expect(shownSource(only('video', 'appleMusic'), only('video', 'appleMusic'), null)).toBe('video')
+    // Bilibili is a video too: after YouTube's, before the music players.
+    expect(shownSource(only('bilibili', 'spotify'), only('bilibili', 'spotify'), null)).toBe('bilibili')
+    expect(shownSource(only('video', 'bilibili'), only('video', 'bilibili'), null)).toBe('video')
   })
 
   it('keeps the song between two songs, not the paused video under it', () => {

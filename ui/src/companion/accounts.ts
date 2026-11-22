@@ -1,5 +1,12 @@
 import { useEffect, useState } from 'react'
-import { type HostStatus, appleMusicCheck, neteaseCheck, spotifyCheck, youtubeCheck } from './useHostStatus'
+import {
+  type HostStatus,
+  appleMusicCheck,
+  bilibiliCheck,
+  neteaseCheck,
+  spotifyCheck,
+  youtubeCheck,
+} from './useHostStatus'
 
 /**
  * Whether each service is signed in, as the companion last knew: shown at once when it opens, kept up to date
@@ -12,11 +19,12 @@ export interface SignedIn {
   spotify: boolean | null
   appleMusic: boolean | null
   netease: boolean | null
+  bilibili: boolean | null
 }
 
 export type Service = keyof SignedIn
 
-const SERVICES: Service[] = ['youtube', 'spotify', 'appleMusic', 'netease']
+const SERVICES: Service[] = ['youtube', 'spotify', 'appleMusic', 'netease', 'bilibili']
 
 const KEY = 'westplay.companion.signedIn'
 
@@ -33,6 +41,7 @@ function kept(): SignedIn {
     spotify: known('spotify'),
     appleMusic: known('appleMusic'),
     netease: known('netease'),
+    bilibili: known('bilibili'),
   }
 }
 
@@ -52,6 +61,7 @@ export function useSignedIn(status: HostStatus | null): SignedIn {
     spotify: status?.spotifySignedIn ?? null,
     appleMusic: status?.appleMusicSignedIn ?? null,
     netease: status?.neteaseSignedIn ?? null,
+    bilibili: status?.bilibiliSignedIn ?? null,
   }
   useEffect(() => {
     if (SERVICES.every((service) => now[service] === null)) return
@@ -61,15 +71,17 @@ export function useSignedIn(status: HostStatus | null): SignedIn {
       spotify: now.spotify ?? before.spotify,
       appleMusic: now.appleMusic ?? before.appleMusic,
       netease: now.netease ?? before.netease,
+      bilibili: now.bilibili ?? before.bilibili,
     })
-    // Keyed by the four answers (`now` itself is new at every render).
+    // Keyed by the answers (`now` itself is new at every render).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [now.youtube, now.spotify, now.appleMusic, now.netease])
+  }, [now.youtube, now.spotify, now.appleMusic, now.netease, now.bilibili])
   return {
     youtube: now.youtube ?? known.youtube,
     spotify: now.spotify ?? known.spotify,
     appleMusic: now.appleMusic ?? known.appleMusic,
     netease: now.netease ?? known.netease,
+    bilibili: now.bilibili ?? known.bilibili,
   }
 }
 
@@ -81,5 +93,6 @@ export function useAskOnce(): void {
     if (known.spotify === null) spotifyCheck().catch(() => {})
     if (known.appleMusic === null) appleMusicCheck().catch(() => {})
     if (known.netease === null) neteaseCheck().catch(() => {})
+    if (known.bilibili === null) bilibiliCheck().catch(() => {})
   }, [])
 }

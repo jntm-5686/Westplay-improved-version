@@ -206,6 +206,24 @@
   padding: 0 24px;
 }
 
+/* A video's own progress (Bilibili's Now Playing): a thin line under its title, filled as it plays. */
+.now-playing .np-progress {
+  height: 4px;
+  margin: 0 2px;
+  border-radius: 2px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--text) 16%, transparent);
+}
+
+.now-playing .np-progress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--text);
+  opacity: 0.72;
+  transition: width 480ms linear;
+}
+
 .now-playing .controls button {
   display: grid;
   place-items: center;

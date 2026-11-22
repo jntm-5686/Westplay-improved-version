@@ -1002,22 +1002,45 @@ pub fn invalid_state(error: &Error) -> bool {
     code == Some(INVALID_STATE)
 }
 
-/// `autoplay`: pages play sound without being clicked first (WestPlay's own players, which play as the cab asks).
-fn create_environment(user_data: &Path, autoplay: bool, extra: &str) -> Result<ICoreWebView2Environment, Error> {
-    let options = CoreWebView2EnvironmentOptions::default();
-    // Chromium throttles or stops rendering for hidden or occluded windows; ours is never shown.
-    let mut arguments = "--disable-features=CalculateNativeWinOcclusion --disable-background-timer-throttling \
-                         --disable-renderer-backgrounding --disable-backgrounding-occluded-windows"
-        .to_string();
+/// The browser's arguments: the ones every hidden WebView needs (an occluded window throttled otherwise), the
+/// player's own (its sound playing without a click first), and `extra`'s — its `--disable-features` values merged
+/// into one switch with ours (two such switches carry one value only: the last written, ours lost).
+fn browser_arguments(autoplay: bool, extra: &str) -> String {
+    let mut features = vec!["CalculateNativeWinOcclusion".to_owned()];
+    let mut rest = Vec::new();
+    for word in extra.split_whitespace() {
+        if let Some(value) = word.strip_prefix("--disable-features=") {
+            for feature in value.split(',').filter(|feature| !feature.is_empty()) {
+                if !features.iter().any(|kept| kept == feature) {
+                    features.push(feature.to_owned());
+                }
+            }
+        } else if !word.is_empty() {
+            rest.push(word);
+        }
+    }
+    let mut arguments = format!(
+        "--disable-features={} --disable-background-timer-throttling \
+         --disable-renderer-backgrounding --disable-backgrounding-occluded-windows",
+        features.join(",")
+    );
     if autoplay {
         arguments.push_str(" --autoplay-policy=no-user-gesture-required");
     }
+    for word in rest {
+        arguments.push(' ');
+        arguments.push_str(word);
+    }
+    arguments
+}
+
+/// `autoplay`: pages play sound without being clicked first (WestPlay's own players, which play as the cab asks).
+fn create_environment(user_data: &Path, autoplay: bool, extra: &str) -> Result<ICoreWebView2Environment, Error> {
+    let options = CoreWebView2EnvironmentOptions::default();
+    let mut arguments = browser_arguments(autoplay, extra);
     // The GPU it draws on (graphics.rs).
     if let Some(gpu) = GPU_ARGUMENT.lock().unwrap_or_else(|e| e.into_inner()).as_deref() {
         arguments = format!("{arguments} {gpu}");
-    }
-    if !extra.trim().is_empty() {
-        arguments = format!("{arguments} {extra}");
     }
     // SAFETY: the options object is ours and alive; the arguments are a plain string.
     unsafe {
@@ -1068,6 +1091,24 @@ fn create_composition_controller(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A page's own Chromium features kept off go beside ours, in the one switch Chromium reads: a second
+    /// `--disable-features` would carry its value alone, our window's own throttling left on again.
+    #[test]
+    fn keeps_a_pages_own_chromium_features_off_beside_ours() {
+        let arguments = browser_arguments(
+            true,
+            "--disable-web-security --disable-features=LocalNetworkAccessChecks,CalculateNativeWinOcclusion",
+        );
+        assert!(
+            arguments.contains("--disable-features=CalculateNativeWinOcclusion,LocalNetworkAccessChecks"),
+            "{arguments}"
+        );
+        assert_eq!(arguments.matches("--disable-features=").count(), 1, "one switch: {arguments}");
+        assert!(arguments.contains("--disable-web-security"), "{arguments}");
+        assert!(arguments.contains("--autoplay-policy=no-user-gesture-required"), "{arguments}");
+        assert!(!browser_arguments(false, "").contains("--autoplay-policy"), "no player's press: no autoplay");
+    }
 
     #[test]
     fn only_invalid_state_is_a_failure_starting_again_cant_help() {

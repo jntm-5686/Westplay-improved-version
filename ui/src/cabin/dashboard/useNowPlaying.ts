@@ -5,6 +5,7 @@ import { playOrPause as playOrPauseAppleMusic, useAppleMusicSource } from '../ap
 import { playOrPause as playOrPauseYouTubeMusic, useYouTubeMusicSource } from '../apps/youtubeMusic/youtubeMusic'
 import { playOrPause as playOrPausePlayer, usePlayerSource } from '../apps/player/player'
 import { playPause as playPauseNetease, useNeteaseSource } from '../apps/netease/netease'
+import { playPauseBilibili, useBilibiliSource } from '../apps/bilibili/bilibili'
 import { type NowPlayingSource, shownSource } from './nowPlaying'
 
 /** What Now Playing last showed playing, kept while the screens showing it come and go (nowPlaying.ts). */
@@ -18,10 +19,12 @@ export function useNowPlaying() {
   const netease = useNeteaseSource()
   const youtubeMusic = useYouTubeMusicSource()
   const player = usePlayerSource()
+  const bilibili = useBilibiliSource()
   const video = useYouTube((store) => store.current)
   const videoPlaying = useYouTube((store) => store.state?.state === 1 && store.state.video === store.current?.video)
   const playing = {
     video: video !== null && videoPlaying,
+    bilibili: bilibili?.source.status === 'playing',
     spotify: spotify?.source.status === 'playing',
     appleMusic: appleMusic?.source.status === 'playing',
     netease: netease?.source.status === 'playing',
@@ -30,6 +33,7 @@ export function useNowPlaying() {
   }
   const has = {
     video: video !== null,
+    bilibili: Boolean(bilibili),
     spotify: Boolean(spotify),
     appleMusic: Boolean(appleMusic),
     netease: Boolean(netease),
@@ -41,7 +45,7 @@ export function useNowPlaying() {
   useEffect(() => {
     if (showing !== null && showingPlays) lastPlayed = showing
   }, [showing, showingPlays])
-  return { showing, playing, spotify, appleMusic, netease, youtubeMusic, player, video }
+  return { showing, playing, spotify, appleMusic, netease, youtubeMusic, player, video, bilibili }
 }
 
 /** The track Now Playing shows, as one line of a list draws it (the Equalizer's): its title, who it's by, its
@@ -53,7 +57,7 @@ export function useNowPlayingTrack(): {
   playing: boolean
   playPause: (() => void) | null
 } | null {
-  const { showing, playing, spotify, appleMusic, netease, youtubeMusic, player, video } = useNowPlaying()
+  const { showing, playing, spotify, appleMusic, netease, youtubeMusic, player, video, bilibili } = useNowPlaying()
   const music = (
     player: { source: { title: string; artist: string; controls: { playPause: boolean } }; artwork: string | null },
     playPause: () => void,
@@ -80,6 +84,8 @@ export function useNowPlayingTrack(): {
       return spotify ? music(spotify, playOrPause, playing.spotify) : null
     case 'appleMusic':
       return appleMusic ? music(appleMusic, playOrPauseAppleMusic, playing.appleMusic) : null
+    case 'bilibili':
+      return bilibili ? music(bilibili, playPauseBilibili, playing.bilibili) : null
     case 'netease':
       return netease ? music(netease, playPauseNetease, playing.netease) : null
     case 'youtubeMusic':

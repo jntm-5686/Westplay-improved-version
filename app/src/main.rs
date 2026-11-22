@@ -146,6 +146,25 @@ fn netease_check(accounts: State<Accounts>) {
     accounts.0.netease.request(AccountAction::Check);
 }
 
+/// Opens Bilibili's sign-in (its passport page's QR code) in a window on the desktop (the status then says when
+/// it's done).
+#[tauri::command]
+fn bilibili_sign_in(accounts: State<Accounts>) {
+    accounts.0.bilibili.request(AccountAction::SignIn);
+}
+
+/// Signs Bilibili out.
+#[tauri::command]
+fn bilibili_sign_out(accounts: State<Accounts>) {
+    accounts.0.bilibili.request(AccountAction::SignOut);
+}
+
+/// Runs Bilibili's web player (hidden), so the status says whether it's signed in.
+#[tauri::command]
+fn bilibili_check(accounts: State<Accounts>) {
+    accounts.0.bilibili.request(AccountAction::Check);
+}
+
 /// The maker's Afdian (爱发电) page, where players support WestPlay's development.
 const SUPPORT_PAGE: &str = "https://ifdian.net/a/jntm5686";
 
@@ -245,6 +264,9 @@ fn main() {
             netease_sign_in,
             netease_sign_out,
             netease_check,
+            bilibili_sign_in,
+            bilibili_sign_out,
+            bilibili_check,
             open_support_page,
             open_social,
             app_log_place,

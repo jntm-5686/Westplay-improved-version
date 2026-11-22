@@ -41,6 +41,9 @@ export interface HostStatus {
   /** The same of NetEase Music: signed in or not (`null`: not known yet), and its sign-in open. */
   neteaseSignedIn: boolean | null
   neteaseSigningIn: boolean
+  /** The same of Bilibili: signed in or not (`null`: not known yet), and its sign-in window open. */
+  bilibiliSignedIn: boolean | null
+  bilibiliSigningIn: boolean
   /** The map of the profile played (mirrors `westplay_host::maps::MapStatus`). */
   map: MapStatus
   /** The map the cab shows: its folder in WestPlay's maps, and when it was built (seconds since 1970;
@@ -191,6 +194,21 @@ export function neteaseSignOut(): Promise<void> {
 /** Runs NetEase Music's hidden page, so the status says whether it's signed in. */
 export function neteaseCheck(): Promise<void> {
   return call('netease_check')
+}
+
+/** Opens Bilibili's sign-in window on the desktop (its own QR-code page). */
+export function bilibiliSignIn(): Promise<void> {
+  return call('bilibili_sign_in')
+}
+
+/** Signs Bilibili out (its cookies cleared, its hidden page reloaded). */
+export function bilibiliSignOut(): Promise<void> {
+  return call('bilibili_sign_out')
+}
+
+/** Runs Bilibili's hidden page, so the status says whether it's signed in. */
+export function bilibiliCheck(): Promise<void> {
+  return call('bilibili_check')
 }
 
 /** Opens or closes WestPlay on the truck's screen (the status then reports it, once the cabin has). */

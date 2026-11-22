@@ -6,6 +6,7 @@ import { useLaunchStyle, whenTransitionEnds } from '../state/launch'
 import { CalendarApp } from './calendar/CalendarApp'
 import { useLanguage, useText } from '../state/text'
 import { isCopied, noteOpened, openedBefore, saveCopy, savedCopy } from './launchCopies'
+import { BilibiliApp } from './bilibili/BilibiliApp'
 import { MusicApp } from './music/MusicApp'
 import { NeteaseApp } from './netease/NeteaseApp'
 import { PlayerApp } from './player/PlayerApp'
@@ -87,6 +88,8 @@ function AppContent({ app }: { app: AppId }) {
       return <SpotifyApp />
     case 'netease':
       return <NeteaseApp />
+    case 'bilibili':
+      return <BilibiliApp />
     case 'youtubeMusic':
       return <YouTubeMusicApp />
     case 'settings':
@@ -114,8 +117,8 @@ function NotBuiltYet({ app }: { app: AppId }) {
   return (
     <section className="app-panel not-built" aria-label={text.apps[app]}>
       <span className="app-icon">
-                <img src={icon} alt="" />
-              </span>
+        <img src={icon} alt="" />
+      </span>
       <div className="name">{text.apps[app]}</div>
       <div className="note">{text.notBuiltYet}</div>
     </section>

@@ -109,6 +109,16 @@ pub const NETEASE: Site = Site {
     not_yet: None,
     page_says: Some(include_str!("netease_sign_in.js")),
 };
+
+/// Bilibili's sign-in: its passport's own QR code page (`passport.bilibili.com/login`), which is its sign-in page
+/// as it opens; its page says when the account's own cookie is there (`bilibili_sign_in.js`), and only that.
+pub const BILIBILI: Site = Site {
+    sign_in: "https://passport.bilibili.com/login",
+    title: "Sign in to Bilibili - WestPlay",
+    home: "https://www.bilibili.com/",
+    not_yet: None,
+    page_says: Some(include_str!("bilibili_sign_in.js")),
+};
 const CLASS: windows::core::PCWSTR = w!("WestPlaySignIn");
 const SIZE: (i32, i32) = (520, 760);
 /// Windows' message for the mouse leaving a window that asked to be told (its value, from WinUser.h).

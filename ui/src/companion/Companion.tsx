@@ -441,13 +441,15 @@ function SectionList({
       signedIn.youtube === null &&
       signedIn.spotify === null &&
       signedIn.appleMusic === null &&
-      signedIn.netease === null
+      signedIn.netease === null &&
+      signedIn.bilibili === null
         ? ''
         : [
             signedIn.youtube && 'YouTube',
             signedIn.spotify && 'Spotify',
             signedIn.appleMusic && 'Apple Music',
             signedIn.netease && 'NetEase Music',
+            signedIn.bilibili && 'Bilibili',
           ]
             .filter(Boolean)
             .join(', ') || cw.values.none,

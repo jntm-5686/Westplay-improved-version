@@ -11,6 +11,7 @@ export type AppIconRole =
   | 'music'
   | 'spotify'
   | 'netease'
+  | 'bilibili'
   | 'podcasts'
   | 'messages'
   | 'phone'
@@ -28,6 +29,7 @@ const FILES: Record<AppIconRole, string> = {
   music: 'music',
   spotify: 'spotify',
   netease: 'netease',
+  bilibili: 'bilibili',
   podcasts: 'podcasts',
   messages: 'messages',
   phone: 'phone',
@@ -54,6 +56,7 @@ const GLASS: Partial<Record<AppIconRole, string>> = {
   settings: 'glass-settings.png',
   spotify: 'glass-spotify.png',
   netease: 'glass-netease.png',
+  bilibili: 'glass-bilibili.png',
   youtube: 'glass-youtube.png',
   youtubeMusic: 'glass-youtubeMusic.png',
   player: 'glass-player.png',
@@ -65,11 +68,7 @@ const GLASS: Partial<Record<AppIconRole, string>> = {
 export type IconTheme = 'original' | 'glass'
 
 /** WestPlay's own icon for `role`, in `theme`, for a light or a dark screen. */
-export function appIcon(
-  role: AppIconRole,
-  look: 'light' | 'dark' = 'light',
-  theme: IconTheme = 'original',
-): string {
+export function appIcon(role: AppIconRole, look: 'light' | 'dark' = 'light', theme: IconTheme = 'original'): string {
   const glass = theme === 'glass' ? GLASS[role] : undefined
   if (glass) return `/icons/westplay/${glass}`
   return `/icons/westplay/${FILES[role]}.${look}.svg`
