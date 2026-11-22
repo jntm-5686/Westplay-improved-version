@@ -7,6 +7,7 @@ mod customize;
 mod maps;
 mod setup;
 mod update;
+mod watchdog;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -240,13 +241,35 @@ fn main() {
     if let Some(code) = westplay_setup::plugin::run_as_administrator_copy(&args) {
         std::process::exit(code);
     }
+    // Software rendering, asked for by the watchdog after the companion window failed twice: the marker is read
+    // before any window (or WebView2) exists, and the browser arguments are set for this process and its children.
+    // It is WestPlay-wide: the cabin page and the players' WebViews draw without the GPU too.
+    let software_rendering = watchdog::software_rendering_requested();
+    let software_marker = watchdog::software_rendering_marker();
+    let software_arguments = software_rendering.then(watchdog::apply_software_rendering_env);
+    // The process the watchdog started waits for this one to let go of the instance (this one is exiting).
+    let restarted = args.iter().any(|argument| argument == watchdog::RESTART_ARGUMENT);
     // One WestPlay at a time: a second only says so (held until the app ends). Before the log starts: a second
     // making the log anew would empty the running one's.
-    let Some(_instance) = westplay_host::Instance::claim() else {
+    let Some(_instance) = watchdog::claim_instance(restarted) else {
         westplay_host::tell_already_running();
         return;
     };
     westplay_host::log::init();
+    if restarted {
+        westplay_host::log!(
+            "[companion] started again after its window kept failing{}",
+            if software_rendering { " (software rendering)" } else { "" }
+        );
+    }
+    if let Some(arguments) = &software_arguments {
+        westplay_host::log!(
+            "[companion] software rendering is on (marker: {}): WebView2 draws without the GPU for this window \
+             and WestPlay's screens (the cabin page and the players too), which is slower but still draws; \
+             WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS={arguments}",
+            software_marker.as_ref().map_or_else(|| "?".into(), |path| path.display().to_string())
+        );
+    }
     westplay_host::startup::mark("app: started");
     let open_request = Arc::new(OpenRequest::default());
     let accounts = Arc::new(AccountRequests::default());
@@ -255,10 +278,15 @@ fn main() {
         .manage(update::Updates::default())
         .manage(WestplayOpen(open_request.clone()))
         .manage(Accounts(accounts.clone()))
+        .manage(watchdog::Watchdog::new(software_rendering, software_marker.clone()))
         .register_asynchronous_uri_scheme_protocol(maps::SCHEME, maps::serve)
         .register_asynchronous_uri_scheme_protocol(maps::CUSTOMIZE_SCHEME, maps::serve_customize)
         .invoke_handler(tauri::generate_handler![
             companion_ready,
+            watchdog::companion_heartbeat,
+            watchdog::companion_diagnostics,
+            watchdog::companion_set_software_rendering,
+            watchdog::companion_reset_gpu,
             window_in_front,
             room_held,
             set_westplay_open,
@@ -304,6 +332,10 @@ fn main() {
         ])
         .setup(move |app| {
             westplay_host::startup::mark("app: window set up");
+            // The companion's page beats every second; the watchdog notices when it stops, and recovers (see
+            // watchdog.rs). Started here, with the window made, so its startup grace counts from now.
+            let companion = app.state::<watchdog::Watchdog>().inner().clone();
+            companion.start(app.handle().clone());
             // A page that never says it's ready (it failed to load) still shows, rather than nothing at all.
             if let Some(window) = app.get_webview_window("main") {
                 std::thread::spawn(move || {
@@ -330,6 +362,7 @@ fn main() {
                 shared.clone(),
                 setup.game(),
                 Looks { config_dir: config_dir.clone(), customize_changed: customize.changed.clone() },
+                companion,
             )?;
             app.manage(customize);
             app.manage(SettingsStore { file, shared });
@@ -341,16 +374,23 @@ fn main() {
         .build(tauri::generate_context!())
         .expect("failed to build the WestPlay app");
 
-    app.run(|app, event| {
-        if let RunEvent::Exit = event {
-            stop_host(app);
+    app.run(|app, event| match event {
+        // The watchdog closes the old companion window to make it again: the last window going must not end
+        // WestPlay before the new one exists.
+        RunEvent::ExitRequested { api, code: None, .. } => {
+            if app.state::<watchdog::Watchdog>().inner().holds_window_open() {
+                westplay_host::log!("[companion] its window is being made again: WestPlay stays up");
+                api.prevent_exit();
+            }
         }
+        RunEvent::Exit => stop_host(app),
+        _ => {}
     });
 }
 
-/// Stops the host, so its WebView2 shuts down cleanly with the app (it quitting, or an update's installer
-/// about to replace it). Once: a stopped host has nothing left to stop.
-fn stop_host(app: &AppHandle) {
+/// Stops the host, so its WebView2 shuts down cleanly with the app (it quitting, an update's installer about to
+/// replace it, or the watchdog starting WestPlay again). Once: a stopped host has nothing left to stop.
+pub(crate) fn stop_host(app: &AppHandle) {
     if let Some(host) = app.try_state::<std::sync::Mutex<Host>>() {
         let mut host = host.lock().unwrap_or_else(|e| e.into_inner());
         host.stop.store(true, Ordering::Relaxed);
@@ -390,6 +430,7 @@ fn start_host(
     settings: Arc<SharedSettings>,
     game: Arc<SetUpGame>,
     looks: Looks,
+    companion: watchdog::Watchdog,
 ) -> Result<Host, Box<dyn std::error::Error>> {
     let content = cabin_content(app);
     let data_dir = app.path().app_local_data_dir()?;
@@ -414,6 +455,7 @@ fn start_host(
             let (open_request, settings, stop) = (open_request.clone(), settings.clone(), thread_stop.clone());
             let (accounts, game, map_builder) = (accounts.clone(), game.clone(), map_builder.clone());
             let status_events = events.clone();
+            let status_companion = companion.clone();
             let (settings_events, settings_dir) = (events.clone(), looks.config_dir.clone());
             let customize_changed = looks.customize_changed.clone();
             let run = std::thread::Builder::new().name("westplay-host".into()).spawn(move || {
@@ -428,6 +470,8 @@ fn start_host(
                     game,
                     map_builder,
                     on_status: Box::new(move |status| {
+                        // The companion's diagnostics show the WebView2 version the host sees.
+                        status_companion.note_webview_version(&status.webview_version);
                         let _ = status_events.emit("host-status", status);
                     }),
                     // The cab's own Settings changed one (its wallpaper): kept, and the companion told.

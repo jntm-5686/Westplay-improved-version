@@ -83,7 +83,20 @@ export const words: CompanionWords = {
     profilesFailed:
       'No se pudieron cambiar {n} de tus perfiles, que todavía incluyen WestPlay. Quítalo de ellos en el Gestor de mods.',
   },
-  about: { ...spain.about, sub: 'Datos en vivo de WestPlay y del juego, por si algo no va bien.' },
+  about: {
+    ...spain.about,
+    sub: 'Datos en vivo de WestPlay y del juego, por si algo no va bien.',
+    softwareRendering: 'Software rendering',
+    softwareOn: 'On',
+    softwareOff: 'Off',
+    softwareNote:
+      'WebView2 draws without the graphics card. Turn it on when the companion window keeps crashing; restart WestPlay to apply.',
+    crashes: 'Companion window crashes',
+    lastCrash: 'Last crash',
+    never: 'Never',
+    resetGpu: 'Reset to hardware rendering',
+    restartToApply: 'Restart WestPlay to apply.',
+  },
   customize: {
     ...spain.customize,
     add: 'Agregar',

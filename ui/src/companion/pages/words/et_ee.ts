@@ -257,6 +257,16 @@ export const words: CompanionWords = {
     doneSub: 'Aitäh ja head teed!',
   },
   about: {
+    softwareRendering: 'Software rendering',
+    softwareOn: 'On',
+    softwareOff: 'Off',
+    softwareNote:
+      'WebView2 draws without the graphics card. Turn it on when the companion window keeps crashing; restart WestPlay to apply.',
+    crashes: 'Companion window crashes',
+    lastCrash: 'Last crash',
+    never: 'Never',
+    resetGpu: 'Reset to hardware rendering',
+    restartToApply: 'Restart WestPlay to apply.',
     title: 'Teave WestPlay kohta',
     sub: 'WestPlay ja mängu andmed reaalajas, juhuks kui midagi on valesti.',
     version: 'Versioon',

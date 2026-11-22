@@ -261,6 +261,16 @@ export const words: CompanionWords = {
     doneSub: 'Köszönjük a közös kilométereket. Jó utat!',
   },
   about: {
+    softwareRendering: 'Software rendering',
+    softwareOn: 'On',
+    softwareOff: 'Off',
+    softwareNote:
+      'WebView2 draws without the graphics card. Turn it on when the companion window keeps crashing; restart WestPlay to apply.',
+    crashes: 'Companion window crashes',
+    lastCrash: 'Last crash',
+    never: 'Never',
+    resetGpu: 'Reset to hardware rendering',
+    restartToApply: 'Restart WestPlay to apply.',
     title: 'A WestPlay névjegye',
     sub: 'Élő adatok a WestPlaytől és a játéktól, ha valami nem stimmel.',
     version: 'Verzió',

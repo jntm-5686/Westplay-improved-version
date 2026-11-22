@@ -200,6 +200,17 @@ export interface CompanionWords {
     log: string
     /** The app's own log (app.log), with where it is: Documents, or WestPlay's folder where Documents refused it. */
     appLog: string
+    /** The companion window's own recovery (watchdog): whether WebView2 draws without the GPU, how often the
+     * window's page stopped answering, and the switch/reset for the next start. */
+    softwareRendering: string
+    softwareOn: string
+    softwareOff: string
+    softwareNote: string
+    crashes: string
+    lastCrash: string
+    never: string
+    resetGpu: string
+    restartToApply: string
     copy: string
     copied: { title: string; text: string }
   }

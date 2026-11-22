@@ -13,7 +13,20 @@ export const words: CompanionWords = {
     ...france.uninstall,
     steps: { ...france.uninstall.steps, plugin: 'Suppression du plugiciel' },
   },
-  about: { ...france.about, log: 'Journal du plugiciel' },
+  about: {
+    ...france.about,
+    log: 'Journal du plugiciel',
+    softwareRendering: 'Software rendering',
+    softwareOn: 'On',
+    softwareOff: 'Off',
+    softwareNote:
+      'WebView2 draws without the graphics card. Turn it on when the companion window keeps crashing; restart WestPlay to apply.',
+    crashes: 'Companion window crashes',
+    lastCrash: 'Last crash',
+    never: 'Never',
+    resetGpu: 'Reset to hardware rendering',
+    restartToApply: 'Restart WestPlay to apply.',
+  },
   update: {
     ...france.update,
     finish: {

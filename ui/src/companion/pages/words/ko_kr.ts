@@ -256,6 +256,16 @@ export const words: CompanionWords = {
     doneSub: '그동안 이용해 주셔서 고마워요.',
   },
   about: {
+    softwareRendering: 'Software rendering',
+    softwareOn: 'On',
+    softwareOff: 'Off',
+    softwareNote:
+      'WebView2 draws without the graphics card. Turn it on when the companion window keeps crashing; restart WestPlay to apply.',
+    crashes: 'Companion window crashes',
+    lastCrash: 'Last crash',
+    never: 'Never',
+    resetGpu: 'Reset to hardware rendering',
+    restartToApply: 'Restart WestPlay to apply.',
     title: 'WestPlay 정보',
     sub: '문제가 생겼을 때 볼 수 있는 WestPlay와 게임의 실시간 정보예요.',
     version: '버전',

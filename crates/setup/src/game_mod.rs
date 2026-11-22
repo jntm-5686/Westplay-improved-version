@@ -23,7 +23,6 @@ use std::path::{Path, PathBuf};
 
 use westplay_mapdata::archive::Archive;
 use westplay_mapdata::files::{GameFiles, Mount};
-use westplay_mapdata::pmg::Pmg;
 use westplay_mapdata::save;
 use westplay_shared::{
     CAB_MARK_HEIGHT, CAB_MARK_WIDTH, PARKING_MARK_HEIGHT, PARKING_MARK_WIDTH, SCREEN_HEIGHT, SCREEN_WIDTH,
@@ -61,6 +60,13 @@ const TABLET_LAYER: u32 = SCREEN_LAYER - 1;
 /// the layout's of the screen it takes over. Its unit name is as long as the screen's (`_nameless.westplay.screen`,
 /// which the game takes; the bridge's first, 27 characters long, was refused as malformed, 2026-11-16).
 const TABLET_OVERLAY: &str = "_nameless.westplay.tablet";
+
+/// The part of a YTHQ Tablet screen script's window its tablets' models show: the middle of it. Each of its models'
+/// screen face (its third piece) covers that band of whatever texture its material samples (`u` 0.0001..0.9999, `v`
+/// 0.1922..0.8078 of it, its archive's models 2026-11-22, its displays cropping the rest), and WestPlay's picture goes
+/// on that part alone there, so its whole page shows on a tablet rather than the middle of it. Symmetrical about the
+/// middle, so the same whichever way the game's rows run.
+const YTHQ_TABLET_SHOWN: ShownPart = ShownPart { left: 0.0, right: 1.0, top: 0.1922, bottom: 0.8078 };
 
 /// A screen of WestPlay's own making, for interiors the game gives the same screen script as others: the Smart
 /// Dash Advanced (12.9") includes the same screens file as the 10.1" (`computers_2025.sui`, naming one GPS
@@ -291,14 +297,19 @@ pub struct Built {
     /// with YTHQ Tablet installed (none if it isn't).
     pub ythq: Vec<&'static str>,
     /// The tablet-only copies of YTHQ Tablet's screen scripts the mod carries ([`YTHQ_TABLET_DIR`]): WestPlay's tablet
-    /// picture on them, which its tablets draw ([`ythq_accessories`] have their `ui_path`s).
+    /// picture on them, which its tablets draw ([`ythq_accessories`] have their `ui_path`s). European Truck Simulator
+    /// 2's alone: American Truck Simulator's one screen script carries both pictures itself, which its tablets draw as
+    /// its trucks' screens do (none).
     pub ythq_tablets: Vec<String>,
-    /// YTHQ Tablet's tablets' definitions the mod carries, their `ui_path`s the copies'.
+    /// YTHQ Tablet's tablets' definitions the mod carries, their `ui_path`s the copies'. European Truck Simulator 2's
+    /// alone: American Truck Simulator's tablets keep its own (none), their `ui_path`s the script the mod patches at
+    /// its own path.
     pub ythq_accessories: Vec<String>,
-    /// YTHQ Tablet's tablets' models' screen materials the mod carries copies of ([`YTHQ_TABLET_UI`]): its automat
-    /// materials their screens sample, pointed at its tablets' own UI texture (so a tablet shows its own UI, not the
-    /// factory screen's picture). American Truck Simulator's are carried at paths of the mod's own, its YTHQ Tablet's
-    /// being the Ford cars' too (`ats-ythq-ford`: their screens sample WestPlay's tablet texture there).
+    /// YTHQ Tablet's tablets' models' screen materials the mod carries copies of: its automat materials their screens
+    /// sample. European Truck Simulator 2's pointed at its tablets' own UI texture ([`YTHQ_TABLET_UI`], which the
+    /// tablets' scripts' copies draw into); American Truck Simulator's kept as YTHQ has them (the trucks' own screens'
+    /// texture, [`YTHQ_FACTORY_UI`]) but carried at paths of the mod's own: its YTHQ Tablet's screen materials are the
+    /// Ford cars' too (`ats-ythq-ford`: their screens sample WestPlay's tablet texture there).
     pub ythq_tablet_materials: Vec<String>,
     /// Why some of YTHQ Tablet's screen scripts aren't in the mod, if any aren't: a version without one, or one laid
     /// out otherwise than [`patch_gps_script`] expects. None if YTHQ Tablet isn't installed, or all are in.
@@ -330,8 +341,7 @@ impl std::error::Error for BuildError {}
 /// workshop's Ford Mustang '67 and Ford Victoria '06 cars (whose models' screen faces showed WestPlay's frame
 /// cut and upside down, their UVs sampling YTHQ's old dashboard texture's middle band: `ats-ythq-ford`), kept
 /// byte for byte as their makers built them (owner 2026-11-16; the cars 2026-11-17), save American Truck
-/// Simulator's YTHQ tablet models' screen faces, whose `v`s are turned for its tablets' own UI texture
-/// ([`unflip_ythq_tablet_screens`]).
+/// Simulator's YTHQ tablet models, left out (YTHQ's own show its tablets' UI: [`ythq_screen_files`]).
 const ADDONS: &[u8] = include_bytes!("../assets/patches.zip");
 
 /// `script` with the add-ons' opaque backdrop made clear: the Fords' centre screens carry a black fill at layer 100
@@ -468,14 +478,17 @@ fn lift_parking(script: &str) -> String {
 pub fn addons_digest() -> u64 {
     use std::hash::{Hash, Hasher};
     // Bumped whenever the code turns the add-ons into files (a script made clear, a path changed): a mod built with
-    // the older turn of them is made again. 13: American Truck Simulator's YTHQ Tablet's own one screen script is read
-    // and patched (`YTHQ_SCREENS_ATS`), its tablets' definitions pointed at copies of it, their screen materials at its
+    // the older turn of them is made again. 14: American Truck Simulator's YTHQ Tablet keeps its own tablets'
+    // definitions (`ui_path`, `ui_drawable_texture_path`: the script the mod patches in place, the trucks' own screens'
+    // texture) and its own tablet models (the add-ons' left out), and its tablets' screen materials sample the trucks'
+    // own screens' texture again, at paths of the mod's own: built before them, its tablets' screens showed WestPlay's
+    // tablet picture directly, YTHQ's UI never drawn there (the tablets black while the app's "truck screen" is
+    // chosen). 13: American Truck Simulator's YTHQ Tablet's own one screen script is read and patched
+    // (`YTHQ_SCREENS_ATS`), its tablets' definitions pointed at copies of it, their screen materials at its
     // tablets' own UI texture (`ythq_tablet_materials`), at paths of the mod's own where YTHQ's are other vehicles'
-    // too, and their models' screen faces' `v`s turned for that render target (`unflip_ythq_tablet_screens`), where the
-    // add-ons laid them out for WestPlay's tablet texture (an ordinary one): a mod built before them has no UI addon of
-    // its own (the game failed to load it, the tablets' screens then black), or leaves YTHQ's own UI when the app's
-    // "truck screen" is chosen, or shows both upside down. 12: YTHQ Tablet's tablets' definitions and their models'
-    // screen materials are pointed at its tablets' own UI texture
+    // too: a mod built before them has no UI addon of its own (the game failed to load it, the tablets' screens then
+    // black), or leaves YTHQ's own UI when the app's "truck screen" is chosen. 12: YTHQ Tablet's tablets' definitions
+    // and their models' screen materials are pointed at its tablets' own UI texture
     // (`YTHQ_TABLET_UI`, `ythq_tablet_materials`), not the trucks' own screens' (`/vehicle/truck/share/gps.tobj`, which
     // both screens' models sample: built before them, "truck screen" chosen showed WestPlay's picture on the tablets
     // and "WestPlay tablet" left them YTHQ's UI with none of WestPlay's). 11: YTHQ Tablet's tablets have screen scripts
@@ -487,7 +500,7 @@ pub fn addons_digest() -> u64 {
     // own UI. 9: YTHQ Tablet's own screen scripts, read from its archive and patched for the trucks' factory screens
     // (see `ythq_screens`): a mod built before them keeps YTHQ's screen instead. 8: the Ford Mustang '67 and Victoria
     // '06's YTHQ tablet models (`ats-ythq-ford`), whose screen faces were stretched over WestPlay's tablet texture.
-    const FORMAT: u64 = 13;
+    const FORMAT: u64 = 14;
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     ADDONS.hash(&mut hasher);
     FORMAT.hash(&mut hasher);
@@ -514,61 +527,18 @@ fn addons(kind: crate::game::Kind) -> Vec<(String, Vec<u8>)> {
         if std::io::Read::read_to_end(&mut entry, &mut bytes).is_err() {
             continue;
         }
-        // American Truck Simulator's YTHQ tablet models: their screen faces turned for its tablets' own UI texture
-        // ([`unflip_ythq_tablet_screens`]). The cars' (`ats-ythq-ford`) keep theirs: their materials sample WestPlay's
-        // tablet texture itself.
+        // American Truck Simulator's YTHQ tablet models: not carried. Its YTHQ Tablet's own models show the band of the
+        // trucks' own screens' texture their screens were made for (`YTHQ_TABLET_SHOWN`), which its tablets' screen
+        // materials sample again (`ythq_screen_files`), where these were laid out for WestPlay's tablet texture itself
+        // (the whole of it, its `v` the other way): a tablet showing them would show the texture's middle only, or the
+        // trucks' UI upside down. The cars' YTHQ tablets (`ats-ythq-ford`) are its others: theirs stay, their own
+        // screens' materials sampling WestPlay's tablet texture.
         if group == "ats-ythq" && path.ends_with(".pmg") {
-            bytes = unflip_ythq_tablet_screens(bytes);
+            continue;
         }
         files.push((path.to_owned(), clear_backdrop(bytes)));
     }
     files
-}
-
-/// An American Truck Simulator YTHQ Tablet model (`pmg`: one of the `ats-ythq` add-ons') with its screen face's `v`s
-/// turned: their maker stretched the face over WestPlay's tablet *texture* (an ordinary texture, its first row the
-/// image's top) with the `v` flipped to suit it, and the mod's tablets now draw their own UI texture instead
-/// ([`YTHQ_TABLET_UI`], a render target: the game's rows run the other way, as YTHQ's own models have them), so both
-/// WestPlay's picture and YTHQ's own UI would show upside down. Only the face's `v`s change: the pieces that cover the
-/// whole texture (the body's and the case's leave bands of theirs). None if the model isn't one this reads, or a face
-/// isn't found (the add-ons changed): the model as it was.
-fn unflip_ythq_tablet_screens(pmg: Vec<u8>) -> Vec<u8> {
-    let faces = {
-        let Some(model) = Pmg::read(&pmg) else { return pmg };
-        let mut faces = Vec::new();
-        for index in 0..model.piece_count().unwrap_or(0) {
-            let Some(piece) = model.piece(index) else { continue };
-            let Some(coordinates) = piece.coordinates else { continue };
-            let (mut min, mut max) = ([f32::INFINITY; 2], [f32::NEG_INFINITY; 2]);
-            for vertex in 0..piece.vertices {
-                let Some(uv) = model.coordinate(&piece, vertex) else { continue };
-                for axis in 0..2 {
-                    min[axis] = min[axis].min(uv[axis]);
-                    max[axis] = max[axis].max(uv[axis]);
-                }
-            }
-            // The screen face: the piece the add-ons stretched over the whole texture.
-            if min[0] <= 0.01 && max[0] >= 0.99 && min[1] <= 0.01 && max[1] >= 0.99 {
-                faces.push((coordinates, piece.coordinate_stride, piece.vertices));
-            }
-        }
-        faces
-    };
-    if faces.is_empty() {
-        return pmg;
-    }
-    let mut turned = pmg;
-    for (coordinates, stride, vertices) in faces {
-        for vertex in 0..vertices {
-            let at = coordinates + vertex * stride + 4;
-            let Some(bytes) = turned.get(at..at + 4).and_then(|bytes| <[u8; 4]>::try_from(bytes).ok()) else {
-                continue;
-            };
-            let v = f32::from_le_bytes(bytes);
-            turned[at..at + 4].copy_from_slice(&(1.0 - v).to_le_bytes());
-        }
-    }
-    turned
 }
 
 /// YTHQ Tablet's Workshop item id, per game: its folder in that game's Workshop content folder
@@ -588,7 +558,9 @@ fn ythq_item(kind: crate::game::Kind) -> &'static str {
 /// window whole: [`ythq_shown`]) and carried in this mod at the same path, which is mounted over YTHQ's. Its tablets
 /// (UI accessories whose `ui_path` names these same scripts) are pointed at copies of their own ([`YTHQ_TABLET_DIR`]:
 /// the app's "WestPlay tablet" picture there, YTHQ's own UI otherwise), on a screen texture of their own
-/// ([`YTHQ_TABLET_UI`]): the factory screens keep the truck screens' pictures alone.
+/// ([`YTHQ_TABLET_UI`]): the factory screens keep the truck screens' pictures alone. American Truck Simulator's one
+/// script is its tablets' too, as YTHQ has them (both its displays draw the trucks' own screens' texture): WestPlay's
+/// tablet picture goes on it ([`YTHQ_TABLET_SHOWN`]), its definitions and models kept.
 ///
 /// ETS2's (read from YTHQ Tablet, 2026-11-18): the Volvo FH 2021 and 2024's km/h and mph screens (one script each),
 /// the Renault T 2024's (its `computers_2024*.sui`), the Iveco S-Way's, and the Scania S and R's Smart Dash 10.1"
@@ -613,12 +585,15 @@ const YTHQ_SCREENS_ETS2: &[(&str, &str)] = &[
 /// American Truck Simulator's YTHQ Tablet (read from its own Workshop item, 2026-11-22, not ETS2's): a different mod,
 /// with one screen script for every truck. Its `def/vehicle/truck/*/interior/computers*.sui` name
 /// `ythq_tablet_gps_mirror_h.sii` as the factory screen's `gps_path`, and every one of its tablets (its definitions'
-/// `ui_path`, `def/vehicle/truck/*/accessory/{toyac,set_glass,toystand,set_dashbrd}/*.sii`) names the same script: its
-/// 1024 x 1024 window is the whole surface both its displays show (its tablets' `ui_drawable_size`s (1024, 1024)).
-/// ETS2's names (`_nfb`, `_h_nfb`, the `uk_` ones, the Renault T 2024's) aren't in its files at all. Its layout is
-/// the stock GPS screen's (`generic`, `ui/gps.sii`), whose script YTHQ's takes the factory screens' place over; but
-/// American Truck Simulator's own screens aren't layouts of WestPlay's (`westplay_shared::SHARED_LAYOUT_TRUCKS`), so
-/// its factory screens keep YTHQ's picture and its tablets' copies alone show WestPlay's.
+/// `ui_path`, `def/vehicle/truck/*/accessory/{toyac,set_glass,toystand,set_dashbrd}/*.sii`) names the same script and
+/// draws it into the trucks' own screens' texture (`/vehicle/truck/share/gps.tobj`, which their models' screens
+/// sample): its 1024 x 1024 window is the whole surface both its displays show, its tablets' screen faces covering the
+/// middle band of it ([`YTHQ_TABLET_SHOWN`], its `ui_drawable_size`s (1024, 1024)). ETS2's names (`_nfb`, `_h_nfb`,
+/// the `uk_` ones, the Renault T 2024's) aren't in its files at all. Its layout is the stock GPS screen's (`generic`,
+/// `ui/gps.sii`), whose script YTHQ's takes the factory screens' place over; but American Truck Simulator's own screens
+/// aren't layouts of WestPlay's (`westplay_shared::SHARED_LAYOUT_TRUCKS`), so its factory screens keep YTHQ's picture
+/// and its tablets show WestPlay's only where the app's "WestPlay tablet" is chosen: WestPlay's tablet picture goes on
+/// that one script, on the part its tablets' screens show.
 const YTHQ_SCREENS_ATS: &[(&str, &str)] = &[("ui/dashboard/ythq_tablet_gps_mirror_h.sii", "generic")];
 
 /// YTHQ Tablet's screen scripts of the game `kind` ([`YTHQ_SCREENS_ETS2`], [`YTHQ_SCREENS_ATS`]).
@@ -644,7 +619,9 @@ fn ythq_shown(kind: crate::game::Kind, layout: &str) -> Option<&'static ShownPar
 /// of the truck screen's. Those definitions ([`ythq_accessories`]) are pointed at them, so a tablet shows the app's
 /// "WestPlay tablet" picture where it's chosen and YTHQ's own UI otherwise: the plugin fills the tablet layout's
 /// texture there alone, and clears it as the app's "truck screen" is chosen. YTHQ's factory screen scripts keep the
-/// truck screens' picture alone ([`patch_gps_script`]), which its tablets never draw: its tablets cover them.
+/// truck screens' picture alone ([`patch_gps_script`]), which its tablets never draw: its tablets cover them. European
+/// Truck Simulator 2's alone: American Truck Simulator's tablets draw the factory screens' script itself
+/// ([`ythq_screen_files`]).
 const YTHQ_TABLET_DIR: &str = "ui/dashboard/westplay_ythq";
 
 /// The texture object YTHQ Tablet's tablets draw the UI their scripts have into, and their models' screen materials
@@ -653,6 +630,8 @@ const YTHQ_TABLET_DIR: &str = "ui/dashboard/westplay_ythq";
 /// draws the factory screen's script into it: "truck screen" chosen showed WestPlay's own picture stretched over the
 /// tablets, and "WestPlay tablet" left them YTHQ's UI with none of WestPlay's). Its tablets' definitions are pointed at
 /// this one, and their models' screen materials too ([`ythq_tablet_materials`]), leaving the factory screens' own.
+/// European Truck Simulator 2's alone: American Truck Simulator's tablets keep drawing the trucks' own screens' texture
+/// ([`YTHQ_FACTORY_UI`]), its one script carrying WestPlay's tablet picture itself.
 const YTHQ_TABLET_UI: &str = "vehicle/truck/upgrade/interior_decors/toyac/ythq_tablet_ui.tobj";
 /// The trucks' own screens' texture object: what the game's interiors' screen materials have, and what YTHQ Tablet's
 /// tablets' models' materials had before [`YTHQ_TABLET_UI`] (both screens' models sampling it is why a tablet showed
@@ -664,8 +643,9 @@ const YTHQ_FACTORY_UI: &str = "vehicle/truck/share/gps.tobj";
 /// coaches' (the MAN Lion's Coach's, the Scania Touring's, the Volvo 9700's) `ythq_tablet_gps_mirror_bus.sii`, which is
 /// their factory screen too (the coaches' own screens being ones WestPlay patches, only the Volvo 9700's factory screen
 /// can still load it: YTHQ's own UI then, the add-ons' copies of these two left out of the mod as their tablets draw
-/// copies of their own — so no WestPlay picture of the tablet's goes on a factory screen). Tablet copies alone are made
-/// of these ([`YTHQ_TABLET_DIR`]): nothing of them is patched for a factory screen.
+/// copies of their own, so no WestPlay picture of the tablet's goes on a factory screen). Tablet copies alone are made
+/// of these ([`YTHQ_TABLET_DIR`]): nothing of them is patched for a factory screen. ETS2's tablets alone: American
+/// Truck Simulator's name none of these.
 const YTHQ_TABLETS: &[&str] = &["ui/dashboard/ythq_tablet_gps.sii", "ui/dashboard/ythq_tablet_gps_mirror_bus.sii"];
 
 /// Where YTHQ Tablet's tablets' definitions are, in its archive: each vehicle's accessories, a folder a slot (`toyac`,
@@ -673,9 +653,11 @@ const YTHQ_TABLETS: &[&str] = &["ui/dashboard/ythq_tablet_gps.sii", "ui/dashboar
 const YTHQ_VEHICLES: &[&str] = &["def/vehicle/truck/", "def/vehicle/bus/"];
 
 /// YTHQ Tablet's screens as a build takes them: its own screens' scripts patched for the truck screens they take the
-/// game's place on (the truck's picture alone), copies of its screen scripts for its tablets alone
-/// ([`YTHQ_TABLET_DIR`]), its tablets' definitions pointed at them and their models' screen materials at its tablets'
-/// own UI texture ([`YTHQ_TABLET_UI`]). Nothing of its if it isn't installed.
+/// game's place on (the truck's picture on them). European Truck Simulator 2's also get copies of its screen scripts
+/// for its tablets alone ([`YTHQ_TABLET_DIR`]), its tablets' definitions pointed at them and their models' screen
+/// materials at its tablets' own UI texture ([`YTHQ_TABLET_UI`]); American Truck Simulator's one screen script carries
+/// WestPlay's tablet picture itself, and its tablets keep its own definitions and models, their screens' materials as
+/// YTHQ has them (the trucks' own screens' texture, [`YTHQ_FACTORY_UI`]). Nothing of its if it isn't installed.
 #[derive(Default)]
 struct YthqScreens {
     /// What the mod carries of its, by path in the game.
@@ -686,8 +668,11 @@ struct YthqScreens {
     tablets: Vec<String>,
     /// Its tablets' definitions, their `ui_path`s the copies'.
     accessories: Vec<String>,
-    /// Its tablets' models' screen materials, pointed at its tablets' own UI texture.
+    /// Its tablets' models' screen materials, carried at paths of the mod's own.
     materials: Vec<String>,
+    /// Its tablets' models whose screens sample its screens' texture (YTHQ's own models: the add-ons' of them are left
+    /// out of the mod, [`addons`]).
+    models: Vec<String>,
     /// Why some of it isn't in the mod (a version laid out otherwise, its archive not read), if any.
     problems: Vec<String>,
 }
@@ -707,20 +692,36 @@ fn ythq_archives(workshop: Option<&Path>, kind: crate::game::Kind) -> Vec<Archiv
 }
 
 /// YTHQ Tablet's screen scripts of the game `kind` ([`ythq_screens`]) each patched for the layout of the screen it
-/// takes over (WestPlay's picture on the part of it the display shows, as the game's own script has), its screen
-/// scripts' copies for its tablets alone ([`YTHQ_TABLET_DIR`], WestPlay's tablet picture on them whole), and its
-/// tablets' definitions pointed at them. Quietly none if YTHQ Tablet isn't installed (nothing of its to take over),
-/// and quietly the rest if any of its scripts aren't as expected; its tablets' definitions not read as expected leave
-/// its scripts as the mod had them before the copies (WestPlay's tablet picture on the factory screens' scripts too,
-/// which its tablets draw), so that no tablet goes blank. Its tablets' models' screen materials are pointed at its
-/// tablets' own UI texture ([`YTHQ_TABLET_UI`]): a tablet's own screen then shows the UI its copy's script has, not
-/// the factory screen's picture (with which both screens' models sample one texture).
+/// takes over (WestPlay's picture on the part of it the display shows, as the game's own script has). European Truck
+/// Simulator 2's also get copies of their own for its tablets ([`YTHQ_TABLET_DIR`], WestPlay's tablet picture on them
+/// whole, [`YTHQ_TABLET_UI`] the texture they draw into), its tablets' definitions pointed at them. American Truck
+/// Simulator's one screen script carries WestPlay's tablet picture itself, on the part of its window its tablets'
+/// screens show ([`YTHQ_TABLET_SHOWN`]), and its tablets keep its own definitions (their `ui_path` that script, their
+/// `ui_drawable_texture_path` the trucks' own screens' texture). Quietly none if YTHQ Tablet isn't installed (nothing
+/// of its to take over), and quietly the rest if any of its scripts aren't as expected; European Truck Simulator 2's
+/// tablets' definitions not read as expected leave its scripts as the mod had them before the copies (WestPlay's
+/// tablet picture on the factory screens' scripts too, which its tablets draw), so that no tablet goes blank.
+///
+/// Its tablets' models' screen materials are carried at paths of the mod's own ([`ythq_tablet_material_path`]: YTHQ's
+/// own are other vehicles' too, the Ford cars' of `ats-ythq-ford`, whose screens sample WestPlay's tablet texture
+/// there), pointed at its tablets' own UI texture in European Truck Simulator 2 ([`YTHQ_TABLET_UI`]: a tablet's own
+/// screen then shows the UI its copy's script has, not the factory screen's picture, which both screens' models sample
+/// as long as they all sample the trucks' own screen's texture), and kept as YTHQ has them in American Truck Simulator
+/// ([`YTHQ_FACTORY_UI`]: its tablets draw what the game draws on the trucks' screens, YTHQ's own UI and WestPlay's
+/// picture over it, its own models and definitions kept).
 fn ythq_screen_files(workshop: Option<&Path>, kind: crate::game::Kind) -> YthqScreens {
     let archives = ythq_archives(workshop, kind);
     if archives.is_empty() {
         return YthqScreens::default();
     }
     let mut made = YthqScreens::default();
+    // American Truck Simulator's YTHQ Tablet: its one screen script is the trucks' factory screens' and its tablets'
+    // alike (its tablets' definitions draw it into the trucks' own screens' texture), so WestPlay's tablet picture goes
+    // on that script, on the part its tablets' screens show, and its tablets keep its own definitions. Copies of the
+    // script for the tablets alone, as European Truck Simulator 2's have, are what a player's truck showed black on
+    // them (2026-11-22: the game draws the screens it has, and none of YTHQ's UI was drawn into a tablet's own copy,
+    // WestPlay's picture over nothing while the app's "truck screen" left the copy clear).
+    let together = matches!(kind, crate::game::Kind::Ats);
     // WestPlay's tablet picture's texture, which the plugin knows the tablet layout by (its size).
     let tablet = texture_name(&screen_layouts()[tablet_layout()]);
     // Its own screens' scripts as its archive has them: the script, the layout of the screen it takes over, the text.
@@ -758,42 +759,49 @@ fn ythq_screen_files(workshop: Option<&Path>, kind: crate::game::Kind) -> YthqSc
             }
         }
     }
-    // The copies: WestPlay's tablet picture, a child of each script's window over the whole of it.
+    // The copies: WestPlay's tablet picture, a child of each script's window over the whole of it. European Truck
+    // Simulator 2's alone: American Truck Simulator's tablets draw the factory screens' script itself.
     let mut copies: Vec<(String, Vec<u8>)> = Vec::new();
-    for (script, text) in screens
-        .iter()
-        .map(|(script, _, text)| (*script, text.as_str()))
-        .chain(tablets_only.iter().map(|(script, text)| (script.as_str(), text.as_str())))
-    {
-        match patch_ythq_tablet_script(text, &tablet) {
-            Ok(patched) => copies.push((ythq_tablet_path(script), patched.into_bytes())),
-            Err(problem) => {
-                made.problems.push(format!("{script}: {problem}"));
-                split = false;
+    if !together {
+        for (script, text) in screens
+            .iter()
+            .map(|(script, _, text)| (*script, text.as_str()))
+            .chain(tablets_only.iter().map(|(script, text)| (script.as_str(), text.as_str())))
+        {
+            match patch_ythq_tablet_script(text, &tablet, None) {
+                Ok(patched) => copies.push((ythq_tablet_path(script), patched.into_bytes())),
+                Err(problem) => {
+                    made.problems.push(format!("{script}: {problem}"));
+                    split = false;
+                }
             }
         }
     }
-    // Its tablets' models' screen materials: pointed at its tablets' own UI texture so their screens show the UI
-    // their copies' scripts have (YTHQ's, WestPlay's tablet picture over it) rather than the factory screen's picture
-    // (which both screens' models sample as long as they all sample the trucks' own screen's texture).
-    let materials = if split {
-        ythq_tablet_materials(&archives, &tablets.models, kind == crate::game::Kind::Ats)
+    // Its tablets' models' screen materials: carried at paths of the mod's own, pointed at its tablets' own UI texture
+    // (European Truck Simulator 2: the one its copies' scripts draw into) or kept as YTHQ has them (American Truck
+    // Simulator: the trucks' own screens' texture, which its tablets' screens draw the factory screens' script into).
+    let ui = if together { YTHQ_FACTORY_UI } else { YTHQ_TABLET_UI };
+    let materials = if split || together {
+        ythq_tablet_materials(&archives, &tablets.models, kind == crate::game::Kind::Ats, ui)
     } else {
         YthqMaterials::default()
     };
     made.problems.extend(materials.problems.iter().cloned());
-    // Its factory screens' scripts: the truck screen's picture alone, or, its tablets' definitions not pointed at
-    // copies (as before them), WestPlay's tablet picture too, which its tablets draw.
+    // Its factory screens' scripts: the truck screen's picture, and, American Truck Simulator's, WestPlay's tablet
+    // picture too (on the part its tablets' screens show), or, European Truck Simulator 2's tablets' definitions not
+    // pointed at copies (as before them), WestPlay's tablet picture over the whole window, which its tablets draw.
     for (script, layout, text) in &screens {
         let Some(index) = screen_layouts().iter().position(|found| found.id == *layout) else { continue };
         let texture = texture_name(&screen_layouts()[index]);
         let rows = ScreenLayout::texture_height(index);
         let shown = ythq_shown(kind, layout);
         let patched = patch_gps_script(text, &texture, shown, rows).and_then(|patched| {
-            if split {
+            if together {
+                patch_ythq_tablet_script(&patched, &tablet, Some(&YTHQ_TABLET_SHOWN))
+            } else if split {
                 Ok(patched)
             } else {
-                patch_ythq_tablet_script(&patched, &tablet)
+                patch_ythq_tablet_script(&patched, &tablet, None)
             }
         });
         match patched {
@@ -804,7 +812,7 @@ fn ythq_screen_files(workshop: Option<&Path>, kind: crate::game::Kind) -> YthqSc
             Err(problem) => made.problems.push(format!("{script}: {problem}")),
         }
     }
-    if split {
+    if split && !together {
         made.tablets = copies.iter().map(|(path, _)| path.clone()).collect();
         made.tablets.sort();
         made.files.extend(copies);
@@ -839,6 +847,9 @@ fn ythq_screen_files(workshop: Option<&Path>, kind: crate::game::Kind) -> YthqSc
         made.accessories = definitions.iter().map(|(path, _)| path.clone()).collect();
         made.accessories.sort();
         made.files.extend(definitions);
+    }
+    if split || together {
+        made.models = materials.models.iter().cloned().collect();
         made.materials = materials.screens;
         made.materials.sort();
         made.files.extend(materials.files);
@@ -966,14 +977,15 @@ fn ythq_quoted(text: &str, key: &str) -> Option<String> {
 }
 
 /// YTHQ Tablet's tablet models' screen materials, as a build takes them: each model the tablets' definitions name, read
-/// from its archive, its materials read, and those sampling the trucks' own screens' texture object
-/// ([`YTHQ_FACTORY_UI`]) pointed at its tablets' own ([`YTHQ_TABLET_UI`]) — so a tablet's screen shows its own script's
-/// UI (`ui_drawable_texture_path` its own too) rather than the factory screen's picture. `isolate`: each carried at a
-/// path of the mod's own ([`ythq_tablet_material_path`]), each model's descriptor changed to those paths (the same
-/// length, in place), as American Truck Simulator needs: its YTHQ Tablet's screen materials are the Ford cars' of
-/// `ats-ythq-ford` too, whose screens sample WestPlay's tablet texture at YTHQ's own paths, and are to keep doing so.
-/// Without, at YTHQ's own paths (ETS2, whose YTHQ Tablet has those materials to itself). The models whose screens show
-/// its tablets' own texture; and why one couldn't be, if one couldn't.
+/// from its archive, its materials read, and those sampling its screens' texture object (the trucks' own screens',
+/// [`YTHQ_FACTORY_UI`], or its tablets' own, [`YTHQ_TABLET_UI`]) carried with their screens sampling `ui`: its tablets'
+/// own UI texture, so a tablet's screen shows its own script's UI (`ui_drawable_texture_path` its own too) rather than
+/// the factory screen's picture, or, American Truck Simulator's, the trucks' own screens' texture as YTHQ has it.
+/// `isolate`: each carried at a path of the mod's own ([`ythq_tablet_material_path`]), each model's descriptor changed
+/// to those paths (the same length, in place), as American Truck Simulator needs: its YTHQ Tablet's screen materials are
+/// the Ford cars' of `ats-ythq-ford` too, whose screens sample WestPlay's tablet texture at YTHQ's own paths, and are to
+/// keep doing so. Without, at YTHQ's own paths (ETS2, whose YTHQ Tablet has those materials to itself). The models whose
+/// screens show that texture; and why one couldn't be, if one couldn't.
 #[derive(Default)]
 struct YthqMaterials {
     /// What the mod carries of its, by path in the game: its tablets' models' screen materials, and, isolated, the
@@ -981,21 +993,23 @@ struct YthqMaterials {
     files: Vec<(String, Vec<u8>)>,
     /// The screen materials it carries copies of, by YTHQ's own paths in the game.
     screens: Vec<String>,
-    /// The models whose screens show its tablets' own UI texture, by path without its leading slash.
+    /// The models whose screens show its screens' texture, by path without its leading slash.
     models: std::collections::BTreeSet<String>,
     /// Why a model's screen couldn't be pointed at it.
     problems: Vec<String>,
 }
 
-fn ythq_tablet_materials(archives: &[Archive], models: &[String], isolate: bool) -> YthqMaterials {
+fn ythq_tablet_materials(archives: &[Archive], models: &[String], isolate: bool, ui: &str) -> YthqMaterials {
     let mut made = YthqMaterials::default();
-    let (factory, our_ui) = (format!("/{YTHQ_FACTORY_UI}"), format!("/{YTHQ_TABLET_UI}"));
-    if ythq_bytes(archives, YTHQ_TABLET_UI).ok().flatten().is_none() {
+    let (factory, our_ui) = (format!("/{YTHQ_FACTORY_UI}"), format!("/{ui}"));
+    // Its tablets' own screen texture is one of its files; the trucks' own screens' is the game's (YTHQ's definitions
+    // name it, its archive needn't have it).
+    if ui == YTHQ_TABLET_UI && ythq_bytes(archives, YTHQ_TABLET_UI).ok().flatten().is_none() {
         made.problems.push(format!("{YTHQ_TABLET_UI}: not in YTHQ Tablet's files (its tablets' own screen texture)"));
         return made;
     }
-    // Each material read once: whether the model samples its tablets' own UI texture through it, and where the mod
-    // carries it (its own path of YTHQ's). Its problems are said once.
+    // Each material read once: whether the model samples its screens' texture through it, and where the mod carries it
+    // (its own path of YTHQ's). Its problems are said once.
     let mut read: std::collections::BTreeMap<String, (bool, Option<String>)> = std::collections::BTreeMap::new();
     for model in models {
         let path = model.trim_start_matches('/');
@@ -1029,18 +1043,21 @@ fn ythq_tablet_materials(archives: &[Archive], models: &[String], isolate: bool)
                             return (false, None);
                         }
                     };
-                    if text.contains(&format!("\"{our_ui}\"")) {
-                        // Already its tablets' own (its own tablets of the old trucks): the model samples it.
-                        return (true, None);
-                    }
-                    if !text.contains(&format!("\"{factory}\"")) {
+                    let ours = text.contains(&format!("\"{our_ui}\""));
+                    if !ours && !text.contains(&format!("\"{factory}\"")) {
                         return (false, None);
                     }
+                    // Already its tablets' own at YTHQ's own path (its tablets of the old trucks): the model samples it.
+                    if ours && !isolate {
+                        return (true, None);
+                    }
                     let carried = if isolate { ythq_tablet_material_path(&material) } else { material.clone() };
-                    made.files.push((
-                        carried.clone(),
-                        text.replace(&format!("\"{factory}\""), &format!("\"{our_ui}\"")).into_bytes(),
-                    ));
+                    let text = if ours {
+                        text
+                    } else {
+                        text.replace(&format!("\"{factory}\""), &format!("\"{our_ui}\""))
+                    };
+                    made.files.push((carried.clone(), text.into_bytes()));
                     made.screens.push(material.clone());
                     (true, Some(carried))
                 })
@@ -1362,6 +1379,11 @@ pub fn build(
     built.ythq_tablet_materials = ythq.materials;
     built.ythq_problem = (!ythq.problems.is_empty()).then(|| ythq.problems.join("; "));
     files.extend(ythq.files);
+    // Its tablets' models whose screens' materials the mod carried at paths of its own (its screens' texture again):
+    // the add-ons' models of them are left out, YTHQ's own used, whose screens' faces are laid out for that texture.
+    let models: std::collections::BTreeSet<String> =
+        ythq.models.iter().map(|model| model.replace(".pmd", ".pmg")).collect();
+    files.retain(|(path, _)| !models.contains(path));
     // Its tablets draw copies of its screen scripts ([`YTHQ_TABLETS`]' included): the add-ons' copies of those two at
     // their own paths (WestPlay's tablet picture over YTHQ's UI) are left out, so the factory screens that can still
     // load them (the Volvo 9700's, the only coach's whose screen isn't WestPlay's) keep YTHQ's own UI rather than
@@ -1653,21 +1675,32 @@ pub fn patch_gps_script(text: &str, texture: &str, shown: Option<&ShownPart>, ro
 
 /// YTHQ Tablet's script `text` with WestPlay's tablet picture added, as well as the truck screen's
 /// ([`patch_gps_script`]): the `tablet` layout's texture (`texture`) as a second image, a child of the script's window
-/// over the whole of it and under the truck screen's ([`TABLET_LAYER`]). YTHQ Tablet's screens are UI accessories
-/// whose `ui_path` names these same scripts (`def/vehicle/truck/*/accessory/toyac/*.sii`, `ui_drawable_size`
-/// (512, 512)): the plugin draws frames into one of the two textures, the app's "WestPlay on" setting picking it, and
-/// keeps the other transparent, so the "WestPlay tablet" shows the tablet layout's picture there (the one the app lays
-/// out for the tablet) and the "truck screen" its layout's, each on the screen's own.
+/// over the whole of it, or over the part of it its tablets' screens show (`shown`: American Truck Simulator's, whose
+/// one script its tablets draw too, [`YTHQ_TABLET_SHOWN`]), and under the truck screen's ([`TABLET_LAYER`]). YTHQ
+/// Tablet's screens are UI accessories whose `ui_path` names these same scripts
+/// (`def/vehicle/truck/*/accessory/toyac/*.sii`, `ui_drawable_size` (512, 512), or American Truck Simulator's (1024,
+/// 1024)): the plugin draws frames into one of the two textures, the app's "WestPlay on" setting picking it, and keeps
+/// the other transparent, so the "WestPlay tablet" shows the tablet layout's picture there (the one the app lays out for
+/// the tablet) and the "truck screen" its layout's, each on the screen's own.
 ///
 /// The window's own coordinates: YTHQ's pictures fill the window, and so the tablet's is shown whole. (The bridge that
 /// first overlaid it drew it 5.47% wider than the window and let the window's `clip_children` crop its sides, the
 /// owner finding it a size too big: 2026-11-16, the add-ons' copies shrunk back to the window, [`YTHQ_INSET_X`].) The
 /// rest of the script stays as it is.
-fn patch_ythq_tablet_script(text: &str, texture: &str) -> Result<String, String> {
+fn patch_ythq_tablet_script(text: &str, texture: &str, shown: Option<&ShownPart>) -> Result<String, String> {
     if text.contains(TABLET_OVERLAY) {
         return Err("has the tablet's picture already".into());
     }
-    add_to_window(text, TABLET_OVERLAY, texture, TABLET_LAYER, |coords| coords)
+    match shown {
+        None => add_to_window(text, TABLET_OVERLAY, texture, TABLET_LAYER, |coords| coords),
+        // The part of the window the display shows, as the truck screen's picture goes on its own
+        // ([`patch_gps_script`]): its bounds within the window's, the texture over those whole.
+        Some(shown) => add_to_window(text, TABLET_OVERLAY, texture, TABLET_LAYER, |[left, right, top, bottom]| {
+            let across = |share: f64| left + (right - left) * share;
+            let down = |share: f64| top - (top - bottom) * share;
+            [across(shown.left), across(shown.right), down(shown.top), down(shown.bottom)]
+        }),
+    }
 }
 
 /// A GPS script's parking camera: its group with id [`PARKING_CAMERA_GROUP`], if it has one.
@@ -1982,11 +2015,14 @@ mod tests {
         assert!(ets2.iter().all(|(path, _)| !path.ends_with("manifest.sii")));
         let ats = addons(crate::game::Kind::Ats);
         assert!(ats.iter().any(|(path, _)| path == "ui/dashboard/ford_f150_gps_23.sii"), "{} files", ats.len());
+        // Its YTHQ tablet trucks': their screens' materials (its own paths WestPlay's tablet texture, which the cars'
+        // tablets sample), not their models (YTHQ's own show its UI, `the_ats_ythq_tablet_models_are_ythqs_own`).
         assert!(
-            ats.iter().any(|(path, _)| path.starts_with("vehicle/truck/upgrade/interior_decors/")),
+            ats.iter().any(|(path, _)| path.starts_with("automat/") && path.ends_with(".mat")),
             "{} files",
             ats.len()
         );
+        assert!(ats.iter().all(|(path, _)| !path.starts_with("vehicle/truck/upgrade/interior_decors/")));
         assert!(ats.iter().all(|(path, _)| path != "description.txt" && !path.ends_with("manifest.sii")));
         // The Ford Mustang '67 and Victoria '06 cars' YTHQ tablets: their models' screen faces are stretched over
         // WestPlay's whole tablet texture (the ats-ythq models' transform), so its frame isn't cut and upside down
@@ -2040,86 +2076,25 @@ mod tests {
         assert_ne!(addons_digest(), 0);
     }
 
-    /// One add-on's file as [ADDONS] has it, by its group and path in the game (as its maker built it).
-    fn addon_file(group: &str, path: &str) -> Vec<u8> {
-        let mut archive = zip::ZipArchive::new(std::io::Cursor::new(ADDONS)).expect("the add-ons");
-        let mut entry = archive.by_name(&format!("{group}/{path}")).expect("the add-on's file");
-        let mut bytes = Vec::new();
-        std::io::Read::read_to_end(&mut entry, &mut bytes).expect("the add-on's file");
-        bytes
-    }
-
-    /// The piece of a YTHQ tablet model that covers the whole texture: its screen face (the add-ons stretched it
-    /// there).
-    fn ythq_screen_piece(model: &Pmg<'_>) -> usize {
-        (0..model.piece_count().unwrap_or(0))
-            .find(|&index| {
-                let Some(piece) = model.piece(index) else { return false };
-                let (mut min, mut max) = ([f32::INFINITY; 2], [f32::NEG_INFINITY; 2]);
-                for vertex in 0..piece.vertices {
-                    let Some(uv) = model.coordinate(&piece, vertex) else { continue };
-                    for axis in 0..2 {
-                        min[axis] = min[axis].min(uv[axis]);
-                        max[axis] = max[axis].max(uv[axis]);
-                    }
-                }
-                min[0] <= 0.01 && max[0] >= 0.99 && min[1] <= 0.01 && max[1] >= 0.99
-            })
-            .expect("the screen face")
-    }
-
-    /// American Truck Simulator's YTHQ tablet models as the add-ons have them: their screen faces stretched over
-    /// WestPlay's tablet *texture* (an ordinary texture, its first row the image's top), their `v`s flipped to suit it.
-    /// The mod's tablets draw a render target now, whose rows run the other way, so the faces' `v`s are the add-ons'
-    /// flipped back there; the rest of each model, its body's and case's UVs and every position, as its maker built it.
+    /// American Truck Simulator's YTHQ tablet models: none of the add-ons' (their screen faces laid out for WestPlay's
+    /// tablet texture, the whole of it), YTHQ's own instead, which the mod's tablets draw its one script into the trucks'
+    /// own screens' texture with: its own screen faces show that texture's middle band. The cars' YTHQ tablets stay:
+    /// their screens sample WestPlay's tablet texture directly.
     #[test]
-    fn the_ats_ythq_tablet_models_screen_faces_are_turned_upright_for_its_own_ui_texture() {
-        let path = "vehicle/truck/upgrade/interior_decors/toyac/volvo.vnl2025tr/ythq_tablettb.pmg";
-        let raw = addon_file("ats-ythq", path);
-        let turned = addons(Kind::Ats).into_iter().find(|(found, _)| found == path).expect("the model").1;
-        let raw_model = Pmg::read(&raw).expect("the add-ons' model");
-        let turned_model = Pmg::read(&turned).expect("the mod's model");
-        assert_eq!(raw_model.piece_count(), turned_model.piece_count());
-        let screen = ythq_screen_piece(&raw_model);
-        assert_eq!(screen, ythq_screen_piece(&turned_model));
-        for index in 0..raw_model.piece_count().unwrap() {
-            let raw_piece = raw_model.piece(index).unwrap();
-            let turned_piece = turned_model.piece(index).unwrap();
-            for vertex in 0..raw_piece.vertices {
-                let before = raw_model.coordinate(&raw_piece, vertex).unwrap();
-                let after = turned_model.coordinate(&turned_piece, vertex).unwrap();
-                if index == screen {
-                    // The face's `v` turned (0..1 either way): its `u`, and its corners', where they were.
-                    assert!((after[0] - before[0]).abs() < 1e-6, "piece {index} vertex {vertex}: u changed");
-                    assert!(
-                        (after[1] - (1.0 - before[1])).abs() < 1e-6,
-                        "piece {index} vertex {vertex}: v {before:?} -> {after:?}, not turned"
-                    );
-                } else {
-                    assert_eq!(before, after, "piece {index} vertex {vertex}: uv changed");
-                }
-                assert_eq!(
-                    raw_model.position(&raw_piece, vertex),
-                    turned_model.position(&turned_piece, vertex),
-                    "piece {index} vertex {vertex}: moved"
-                );
-            }
-        }
-        // The face's low side is the tablet's bottom, its high side the top: the render target's v up its screen, as
-        // YTHQ's own models sample it (the add-ons' had the texture's top at the face's low side).
-        let screen_piece = turned_model.piece(screen).unwrap();
-        let (mut bottom, mut top) = ((f32::INFINITY, 0.0f32), (f32::NEG_INFINITY, 0.0f32));
-        for vertex in 0..screen_piece.vertices {
-            let y = turned_model.position(&screen_piece, vertex).unwrap()[1];
-            let v = turned_model.coordinate(&screen_piece, vertex).unwrap()[1];
-            if y < bottom.0 {
-                bottom = (y, v);
-            }
-            if y > top.0 {
-                top = (y, v);
-            }
-        }
-        assert!(bottom.1 < 0.5 && top.1 > 0.5, "the screen face's low side is {bottom:?}, its high {top:?}");
+    fn the_ats_ythq_tablet_models_are_ythqs_own_not_the_add_ons() {
+        let ats = addons(Kind::Ats);
+        assert!(
+            ats.iter().all(|(path, _)| !path.starts_with("vehicle/truck/upgrade/interior_decors/")),
+            "the add-ons' YTHQ tablet models carried: {:?}",
+            ats.iter().map(|(path, _)| path).collect::<Vec<_>>()
+        );
+        // Its screens' materials are the mod's still (YTHQ's own paths WestPlay's tablet texture, which the cars'
+        // screens sample): without them the tablets' screens keep the factory screens' picture.
+        let screen = ats.iter().find(|(path, _)| path == ATS_YTHQ_SCREEN_MAT).expect("its screen material");
+        let text = String::from_utf8_lossy(&screen.1).into_owned();
+        assert!(text.contains("screen_tablet.tobj"), "{text}");
+        // The cars' YTHQ tablets: their models, and nothing else of a car mod's.
+        assert_eq!(ats.iter().filter(|(path, _)| path.starts_with("vehicle/car/")).count(), 2);
     }
 
     use super::*;
@@ -2531,9 +2506,9 @@ mod tests {
         println!("{} vehicles: {} definitions", vehicles.len(), made.accessories.len());
     }
 
-    /// The real thing, American Truck Simulator's own YTHQ Tablet: its one screen script and its tablets read from this
-    /// PC's Workshop archive of its own item (`3598886740`), patched. `cargo test -p westplay-setup -- --ignored
-    /// --nocapture reads_ats_ythq`
+    /// The real thing, American Truck Simulator's own YTHQ Tablet: its one screen script (patched with WestPlay's two
+    /// pictures, its own UI kept) and its tablets' screen materials, read from this PC's Workshop archive of its own item
+    /// (`3598886740`). `cargo test -p westplay-setup -- --ignored --nocapture reads_ats_ythq`
     #[test]
     #[ignore = "reads the PC's game"]
     fn reads_ats_ythq_tablets_screens_from_this_pcs_workshop() {
@@ -2541,7 +2516,7 @@ mod tests {
         let workshop = game.workshop().expect("the game's Workshop folder");
         let made = ythq_screen_files(Some(&workshop), game.kind);
         println!(
-            "{} screens: {:?}\n{} tablets: {:?}\n{} definitions\n{} materials: {:?}\nproblems: {:?}",
+            "{} screens: {:?}\n{} tablets: {:?}\n{} definitions read\n{} materials: {:?}\n{} models\nproblems: {:?}",
             made.screens.len(),
             made.screens,
             made.tablets.len(),
@@ -2549,51 +2524,58 @@ mod tests {
             made.accessories.len(),
             made.materials.len(),
             made.materials,
+            made.models.len(),
             made.problems
         );
         assert!(made.problems.is_empty(), "{:?}", made.problems);
-        // Its one script for every truck's factory screen, and every tablet of its: ETS2's names aren't in its files
-        // at all (they aren't looked for), and its own is patched rather than reported missing.
+        // Its one script for every truck's factory screen and its tablets alike: its own, patched, no copies; its
+        // definitions and models its own too.
         assert_eq!(made.screens, ["ui/dashboard/ythq_tablet_gps_mirror_h.sii"]);
-        assert_eq!(made.tablets, ["ui/dashboard/westplay_ythq/ythq_tablet_gps_mirror_h.sii"]);
-        // Its tablets of every truck in its archive: every definition pointed at the copy.
-        assert!(made.accessories.len() > 60, "{} definitions", made.accessories.len());
+        assert!(made.tablets.is_empty(), "{:?}", made.tablets);
+        assert!(made.accessories.is_empty(), "{:?}", made.accessories);
+        // Its tablets' screen materials (its own automat paths), each at a path of the mod's own.
         assert_eq!(made.materials.len(), 3, "{:?}", made.materials);
         let by_path: std::collections::BTreeMap<&str, &Vec<u8>> =
             made.files.iter().map(|(path, bytes)| (path.as_str(), bytes)).collect();
         let text = |path: &str| String::from_utf8(by_path[path].clone()).unwrap();
-        // Its factory screens' script: WestPlay's generic picture over its 1024 x 1024 window whole (its displays
-        // show all of it), and none of the tablet's; its tablets' copy: the tablet's picture whole, none of the
-        // screen's.
+        // Its script: WestPlay's truck screen picture over its window whole (the trucks' own screens aren't WestPlay's
+        // in American Truck Simulator), WestPlay's tablet picture on the band its tablets' screens show, and YTHQ's own
+        // elements all kept.
         let screen = text("ui/dashboard/ythq_tablet_gps_mirror_h.sii");
         assert!(screen.contains("screen_generic.mat xscale=stretch yscale=stretch"), "{screen}");
         assert!(screen.contains(" coords_l: 0\n coords_r: 1024\n coords_t: 1024\n coords_b: 0\n"), "{screen}");
-        assert!(!screen.contains(TABLET_OVERLAY), "{screen}");
-        let tablet = text("ui/dashboard/westplay_ythq/ythq_tablet_gps_mirror_h.sii");
-        assert!(tablet.contains("screen_tablet.mat xscale=stretch yscale=stretch"), "{tablet}");
-        assert!(tablet.contains(TABLET_OVERLAY), "{tablet}");
-        assert!(!tablet.contains("_nameless.westplay.screen"), "{tablet}");
-        // Every tablet's definition: its copy, and its own UI texture (what the model's screen material samples too:
-        // the game loads a UI addon whose screen material samples its `ui_drawable_texture_path`).
-        let ui = format!("/{YTHQ_TABLET_UI}");
-        for path in &made.accessories {
-            let definition = text(path);
-            let ui_paths = ythq_ui_paths(&definition).unwrap();
-            let ours: Vec<&String> =
-                ui_paths.iter().filter(|ui_path| ui_path.starts_with(&format!("/{YTHQ_TABLET_DIR}/"))).collect();
-            assert_eq!(ours.len(), ui_paths.len(), "{path}: {ui_paths:?}");
-            assert!(definition.contains("ui_drawable_size: (1024, 1024)"), "{path}");
-            assert_eq!(ythq_texture_path(&definition).as_deref(), Some(ui.as_str()), "{path}");
+        assert!(screen.contains(TABLET_OVERLAY), "{screen}");
+        assert!(screen.contains(" coords_l: 0\n coords_r: 1024\n coords_t: 827\n coords_b: 197\n"), "{screen}");
+        for element in [
+            "_nameless._.gpsbsd",
+            "_nameless._.r_mirror",
+            "_nameless.close",
+            "_nameless._.speedlimit",
+            "_nameless._.compass",
+            "/material/ui/dashboard/bare_map.mat",
+        ] {
+            assert!(screen.contains(element), "{element} not kept: {screen}");
         }
-        // Its screen materials, each at a path of the mod's own (YTHQ's own paths are the Ford cars' too, and stay
-        // WestPlay's tablet texture): its tablets' own UI texture there.
+        // Its screen materials: the trucks' own screens' texture, as YTHQ has them (its one script draws there, its
+        // tablets' screens sample it).
         let materials: Vec<&str> =
             made.files.iter().map(|(path, _)| path.as_str()).filter(|path| path.ends_with(".mat")).collect();
         assert_eq!(materials.len(), made.materials.len(), "{materials:?}");
-        for path in materials {
+        for path in &materials {
             let material = text(path);
-            assert!(material.contains(&format!("\"{ui}\"")), "{path}: {material}");
-            assert!(!material.contains(&format!("\"/{YTHQ_FACTORY_UI}\"")), "{path}: {material}");
+            assert!(material.contains(&format!("\"/{YTHQ_FACTORY_UI}\"")), "{path}: {material}");
+            assert!(!material.contains(&format!("\"/{YTHQ_TABLET_UI}\"")), "{path}: {material}");
+        }
+        // Its tablets' models of every truck (its own, whose screens' materials the mod carries at paths of its own: the
+        // add-ons' models of them are left out), each naming one of those.
+        assert!(made.models.len() > 60, "{} models", made.models.len());
+        for model in &made.models {
+            let pmd = by_path.get(model.as_str()).unwrap_or_else(|| panic!("{model} not carried"));
+            let found = materials
+                .iter()
+                .any(|material| pmd.windows(material.len()).any(|window| window == material.as_bytes()))
+                && !pmd.windows(ATS_YTHQ_SCREEN_MAT.len()).any(|window| window == ATS_YTHQ_SCREEN_MAT.as_bytes());
+            assert!(found, "{model}: its screen material not the mod's own");
         }
     }
 
@@ -2944,11 +2926,12 @@ ui::text : _nameless._.map {
     }
 
     #[test]
-    fn ats_ythq_tablets_get_screens_of_their_own_and_their_definitions_point_at_them() {
+    fn ats_ythq_tablets_keep_their_own_screens_and_definitions_westplays_tablet_picture_over_them() {
         // Its one script for every truck's factory screen: not ETS2's names, which its files haven't.
         assert_eq!(ythq_screens(Kind::Ats), &[(ATS_YTHQ_SCRIPT_PATH, "generic")]);
         assert!(ythq_screens(Kind::Ats).iter().all(|(script, _)| !script.contains("nfb")));
-        // Its window is its displays' whole surface: the picture goes on all of it.
+        // Its window is its displays' whole surface: the truck screen's picture goes on all of it, WestPlay's tablet
+        // picture on the band its tablets' screens show ([`YTHQ_TABLET_SHOWN`]).
         assert_eq!(ythq_shown(Kind::Ats, "generic"), None);
         assert!(ythq_shown(Kind::Ets2, "volvo-fh").is_some());
         let files = [
@@ -2969,46 +2952,44 @@ ui::text : _nameless._.map {
         let game = GameFiles::new(Vec::new());
         let (bytes, built) =
             build(&game, &[], &cab_mark::Marks::default(), Kind::Ats, Some(workshop.as_path())).unwrap();
+        // Its own one script, patched; none of its tablets' definitions and copies (it keeps its own: its `ui_path` the
+        // script the mod patches, its `ui_drawable_texture_path` the trucks' own screens' texture).
         assert_eq!(built.ythq, [ATS_YTHQ_SCRIPT_PATH]);
-        assert_eq!(built.ythq_tablets, ["ui/dashboard/westplay_ythq/ythq_tablet_gps_mirror_h.sii"]);
-        assert_eq!(built.ythq_accessories, [ATS_YTHQ_DEFINITION]);
+        assert!(built.ythq_tablets.is_empty(), "{:?}", built.ythq_tablets);
+        assert!(built.ythq_accessories.is_empty(), "{:?}", built.ythq_accessories);
         assert_eq!(built.ythq_tablet_materials, [ATS_YTHQ_SCREEN_MAT]);
         assert!(built.ythq_problem.is_none(), "{:?}", built.ythq_problem);
         let out = workshop.join("westplay.scs");
         std::fs::write(&out, &bytes).unwrap();
         let archive = Archive::open(&out).unwrap();
         let text = |path: &str| String::from_utf8(archive.read(path).unwrap().unwrap()).unwrap();
-        // Its factory screens' script: WestPlay's generic picture over its window whole, and none of the tablet's.
+        // Its one script: WestPlay's generic picture over its window whole (the trucks' screens keep YTHQ's, theirs
+        // not being WestPlay's), and WestPlay's tablet picture on the band its tablets' screens show, under the
+        // screen's picture and over YTHQ's own elements.
         let screen = text(ATS_YTHQ_SCRIPT_PATH);
         assert!(screen.contains("screen_generic.mat"), "{screen}");
         assert!(screen.contains(" coords_l: 0\n coords_r: 1024\n coords_t: 1024\n coords_b: 0\n"), "{screen}");
-        assert!(!screen.contains(TABLET_OVERLAY), "{screen}");
-        // Its tablet's copy: the tablet's picture over the whole window, and none of the screen's.
-        let tablet = text("ui/dashboard/westplay_ythq/ythq_tablet_gps_mirror_h.sii");
-        assert!(tablet.contains("screen_tablet.mat"), "{tablet}");
-        assert!(tablet.contains(TABLET_OVERLAY), "{tablet}");
-        assert!(!tablet.contains("_nameless.westplay.screen"), "{tablet}");
-        // Its tablet's definition: the copy, its own UI texture, and its size as YTHQ gives it. Its screen material
-        // too (the add-ons' one at the same path replaced): its UI addon loads and its screen shows the copy's UI,
-        // YTHQ's own with WestPlay's picture over it where the app's "tablet" is chosen.
-        let definition = text(ATS_YTHQ_DEFINITION);
-        assert!(
-            definition.contains("ui_path: \"/ui/dashboard/westplay_ythq/ythq_tablet_gps_mirror_h.sii\""),
-            "{definition}"
-        );
-        assert!(
-            definition.contains(&format!("ui_drawable_texture_path: \"/{YTHQ_TABLET_UI}\"")),
-            "{definition}"
-        );
-        assert!(definition.contains("ui_drawable_size: (1024, 1024)"), "{definition}");
+        let marker = format!("ui::text : {TABLET_OVERLAY} {{");
+        let tablet = screen.split(&marker).nth(1).unwrap_or_else(|| panic!("{screen}"));
+        assert!(tablet.contains("<img src=/material/ui/westplay/screen_tablet.mat xscale=stretch yscale=stretch>"));
+        assert!(tablet.contains(&format!(" layer: {TABLET_LAYER}\n")), "{tablet}");
+        // The band its own tablet models show: v 0.1922..0.8078 of its 1024 x 1024 window.
+        assert!(tablet.contains(" coords_l: 0\n coords_r: 1024\n coords_t: 827\n coords_b: 197\n"), "{tablet}");
+        // YTHQ's own elements stay: its window and its groups, as its archive has them.
+        assert!(screen.contains("ui::window : _nameless.025feab00 {"), "{screen}");
+        assert!(screen.contains("ui::group : _nameless._.shared {"), "{screen}");
+        assert!(screen.contains("ui::group : _nameless._.gpsbsd {"), "{screen}");
+        assert!(screen.contains("id: 100"), "{screen}");
+        // Its tablets' definitions: YTHQ's own (the mod carries none), its UI addon loading what it always did.
+        assert!(archive.read(ATS_YTHQ_DEFINITION).unwrap().is_none(), "its definitions carried");
         // Its screen material at a path of the mod's own (YTHQ's own path stays WestPlay's tablet texture, which the
-        // Ford cars' of `ats-ythq-ford` sample): its tablets' own UI texture there, and its model's descriptor naming
-        // it (the same length, changed in place).
+        // Ford cars' of `ats-ythq-ford` sample), sampling the trucks' own screens' texture as YTHQ has it, and its
+        // model's descriptor naming it (the same length, changed in place).
         let isolated = ythq_tablet_material_path(ATS_YTHQ_SCREEN_MAT);
         assert_ne!(isolated, ATS_YTHQ_SCREEN_MAT);
         let screen_mat = text(&isolated);
-        assert!(screen_mat.contains(&format!("\"/{YTHQ_TABLET_UI}\"")), "{screen_mat}");
-        assert!(!screen_mat.contains(&format!("\"/{YTHQ_FACTORY_UI}\"")), "{screen_mat}");
+        assert!(screen_mat.contains(&format!("\"/{YTHQ_FACTORY_UI}\"")), "{screen_mat}");
+        assert!(!screen_mat.contains(&format!("\"/{YTHQ_TABLET_UI}\"")), "{screen_mat}");
         let shared = text(ATS_YTHQ_SCREEN_MAT);
         assert!(shared.contains("screen_tablet.tobj"), "YTHQ's own path not the add-ons': {shared}");
         let model = text(ATS_YTHQ_PMD_PATH);
@@ -3016,6 +2997,14 @@ ui::text : _nameless._.map {
         assert!(!model.contains(ATS_YTHQ_SCREEN_MAT), "{model}");
         assert!(model.contains(ATS_YTHQ_CASE_MAT), "{model}");
         assert!(archive.read(ATS_YTHQ_CASE_MAT).unwrap().is_none(), "a material of its own carried untouched");
+        // Its tablets' models the add-ons' (their screen faces laid out for WestPlay's tablet texture): left out, its
+        // own used, which show the band of the trucks' own screens' texture their screens were made for.
+        for path in [
+            "vehicle/truck/upgrade/interior_decors/toyac/volvo.vnl2025tr/ythq_tablettb.pmg",
+            "vehicle/truck/upgrade/interior_decors/toyac/volvo.vnl2025tr/ythq_tablet_smalltb.pmg",
+        ] {
+            assert!(archive.read(path).unwrap().is_none(), "{path} carried");
+        }
         drop(archive);
         // As its archive has it now: current (the app needn't build it again).
         assert!(ythq_screens_current(Kind::Ats, Some(workshop.as_path()), &out));
@@ -3027,7 +3016,7 @@ ui::text : _nameless._.map {
         let volvo = screen_layouts().iter().position(|layout| layout.id == "volvo-fh").unwrap();
         let rows = ScreenLayout::texture_height(volvo);
         let screen = patch_gps_script(YTHQ_SCRIPT, "screen_volvo_fh", None, rows).unwrap();
-        let patched = patch_ythq_tablet_script(&screen, "screen_tablet").unwrap();
+        let patched = patch_ythq_tablet_script(&screen, "screen_tablet", None).unwrap();
         // The tablet picture: the tablet layout's texture, over the window whole (its own coordinates), a child of the
         // window (the truck screen's a child of the "screen on" group).
         let marker = format!("ui::text : {TABLET_OVERLAY} {{");
@@ -3046,8 +3035,13 @@ ui::text : _nameless._.map {
         // Under the truck screen's picture: both over YTHQ's own (its highest layer is 16).
         assert!(TABLET_LAYER < SCREEN_LAYER && SCREEN_LAYER > 16);
         // Twice: said, not made twice; a script with no window to put it in: said.
-        assert!(patch_ythq_tablet_script(&patched, "screen_tablet").is_err());
-        assert!(patch_ythq_tablet_script("SiiNunit\n{\n}\n", "screen_tablet").is_err());
+        assert!(patch_ythq_tablet_script(&patched, "screen_tablet", None).is_err());
+        assert!(patch_ythq_tablet_script("SiiNunit\n{\n}\n", "screen_tablet", None).is_err());
+        // On the part of the window a tablet's screen shows ([`YTHQ_TABLET_SHOWN`], American Truck Simulator's one
+        // script): the middle of the window's 256 units, its width whole.
+        let placed = patch_ythq_tablet_script(&screen, "screen_tablet", Some(&YTHQ_TABLET_SHOWN)).unwrap();
+        let tablet = placed.split(&marker).nth(1).unwrap();
+        assert!(tablet.contains(" coords_l: 0\n coords_r: 256\n coords_t: 207\n coords_b: 49\n"), "{tablet}");
     }
 
     #[test]

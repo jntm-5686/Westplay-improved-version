@@ -369,7 +369,7 @@ fn build_mod(game: &Game) -> Result<(Vec<u8>, game_mod::Built, Vec<u64>), String
     }
     if !built.ythq_tablet_materials.is_empty() {
         log!(
-            "setup: the mod: YTHQ Tablet's tablets' screens on their own texture: {} materials: {}",
+            "setup: the mod: YTHQ Tablet's tablets' screen materials carried at paths of the mod's own: {}: {}",
             built.ythq_tablet_materials.len(),
             built.ythq_tablet_materials.join(", ")
         );

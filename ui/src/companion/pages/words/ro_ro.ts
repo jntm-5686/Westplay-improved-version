@@ -261,6 +261,16 @@ export const words: CompanionWords = {
     doneSub: 'Mulțumim că ai folosit WestPlay. Drum bun!',
   },
   about: {
+    softwareRendering: 'Software rendering',
+    softwareOn: 'On',
+    softwareOff: 'Off',
+    softwareNote:
+      'WebView2 draws without the graphics card. Turn it on when the companion window keeps crashing; restart WestPlay to apply.',
+    crashes: 'Companion window crashes',
+    lastCrash: 'Last crash',
+    never: 'Never',
+    resetGpu: 'Reset to hardware rendering',
+    restartToApply: 'Restart WestPlay to apply.',
     title: 'Despre WestPlay',
     sub: 'Informații în timp real de la WestPlay și din joc, pentru când ceva nu e în regulă.',
     version: 'Versiune',

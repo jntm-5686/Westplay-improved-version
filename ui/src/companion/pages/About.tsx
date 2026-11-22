@@ -1,6 +1,12 @@
 import { useEffect, useState } from 'react'
 import { appVersion } from '../bridge'
-import { Button, Group, Panel, Row, Status } from '../room/parts'
+import {
+  companionDiagnostics,
+  type CompanionDiagnostics,
+  companionResetGpu,
+  companionSetSoftwareRendering,
+} from '../companionDiagnostics'
+import { Button, Group, Note, Panel, Row, Status, Switch } from '../room/parts'
 import { banner } from '../room/room'
 import { GLOW, useScreenAt } from '../room/screen'
 import { lookForUpdate } from '../update'
@@ -26,6 +32,9 @@ export function About({ status, setup, cw, update, showUpdate }: PageProps) {
   const [looked, setLooked] = useState(false)
   // Where this run's app.log is; null if it couldn't be made anywhere.
   const [appLog, setAppLog] = useState<string | null>(null)
+  // The companion window's own watchdog: software rendering, crashes, recovery. Read again while the page is
+  // open (the app answers with how long ago each was).
+  const [companion, setCompanion] = useState<CompanionDiagnostics | null>(null)
   useEffect(() => {
     appVersion().then(setVersion, () => setVersion(''))
     appLogPlace().then(setAppLog, () => setAppLog(null))
@@ -35,6 +44,30 @@ export function About({ status, setup, cw, update, showUpdate }: PageProps) {
     )
   }, [])
   useEffect(() => {
+    let active = true
+    const read = () =>
+      companionDiagnostics().then(
+        (next) => active && setCompanion(next),
+        (error: unknown) => console.error('The companion diagnostics could not be read', error),
+      )
+    read()
+    const timer = window.setInterval(read, 5000)
+    return () => {
+      active = false
+      window.clearInterval(timer)
+    }
+  }, [])
+  const changeSoftware = (on: boolean) => {
+    companionSetSoftwareRendering(on).then(setCompanion, (error: unknown) =>
+      console.error('Software rendering could not be changed', error),
+    )
+  }
+  const resetSoftware = () => {
+    companionResetGpu().then(setCompanion, (error: unknown) =>
+      console.error('Software rendering could not be reset', error),
+    )
+  }
+  useEffect(() => {
     if (!copied) return
     const timer = window.setTimeout(() => setCopied(false), COPIED_MS)
     return () => window.clearTimeout(timer)
@@ -42,7 +75,7 @@ export function About({ status, setup, cw, update, showUpdate }: PageProps) {
   useScreenAt('dashboard', GLOW.dashboard, copied ? banner(w.copied) : null)
 
   const copy = () => {
-    const text = report(version, status, setup.games, appLog)
+    const text = report(version, status, setup.games, appLog, companion)
     navigator.clipboard.writeText(text).then(
       () => setCopied(true),
       (error: unknown) => console.error('The report could not be copied', error),
@@ -81,7 +114,38 @@ export function About({ status, setup, cw, update, showUpdate }: PageProps) {
         <Row title={w.dropped} value={status ? String(status.droppedTotal) : '—'} />
         <Row title={w.cabGpu} detail={status?.cabAdapter ?? '—'} />
         <Row title={w.gameGpu} detail={status?.gameAdapter ?? w.waitingForGame} />
-        <Row title={w.webview} value={status?.webviewVersion || '—'} />
+        <Row title={w.webview} value={status?.webviewVersion || companion?.webviewVersion || '—'} />
+        <Row
+          title={w.softwareRendering}
+          detail={
+            companion && companion.softwareRenderingNextRun !== companion.softwareRendering
+              ? w.restartToApply
+              : undefined
+          }
+          value={companion ? (companion.softwareRendering ? w.softwareOn : w.softwareOff) : '—'}
+          accessory={
+            companion ? (
+              <Switch on={companion.softwareRenderingNextRun} label={w.softwareRendering} change={changeSoftware} />
+            ) : undefined
+          }
+        />
+        <Row
+          title={w.crashes}
+          value={companion ? String(companion.crashes) : '—'}
+          detail={
+            companion
+              ? companion.lastCrashSecondsAgo === null
+                ? w.never
+                : ago(companion.lastCrashSecondsAgo)
+              : undefined
+          }
+        />
+        <Row
+          title={w.lastCrash}
+          detail={companion?.lastCrashReason ?? w.never}
+          value={companion?.lastAction ?? undefined}
+        />
+        {companion?.softwareRenderingNextRun && <Row title={w.resetGpu} link onClick={resetSoftware} />}
         {/* Each WebView WestPlay runs, and how it's been: whole, recovering from a failed process (the host
             loads the page again, or makes the WebView again), or stopped after failing too often. */}
         {status?.webviews?.map((view) => (
@@ -95,6 +159,7 @@ export function About({ status, setup, cw, update, showUpdate }: PageProps) {
         <Row title={w.log} detail="Documents\WestPlay\logs\plugin.log" />
         <Row title={w.appLog} detail={appLog ?? '—'} />
       </Group>
+      <Note tone="calm">{w.softwareNote}</Note>
     </Panel>
   )
 }
@@ -128,7 +193,13 @@ function ago(seconds: number): string {
 }
 
 /** The report to copy: plain facts, in English (for whoever helps), nothing of the player's accounts. */
-function report(version: string, status: HostStatus | null, games: GameInfo[], appLog: string | null): string {
+function report(
+  version: string,
+  status: HostStatus | null,
+  games: GameInfo[],
+  appLog: string | null,
+  companion: CompanionDiagnostics | null,
+): string {
   return [
     `WestPlay ${version}`,
     ...(games.length
@@ -142,7 +213,23 @@ function report(version: string, status: HostStatus | null, games: GameInfo[], a
     `GPU: ${status?.cabAdapter ?? '—'} (game: ${status?.gameAdapter ?? '—'}; all: ${
       status?.adapters.map((adapter) => adapter.name).join(', ') || '—'
     })`,
-    `WebView2: ${status?.webviewVersion || '—'}`,
+    `WebView2: ${status?.webviewVersion || companion?.webviewVersion || '—'}`,
+    `Software rendering: ${companion?.softwareRendering ? 'on' : 'off'}${
+      companion && companion.softwareRenderingNextRun !== companion.softwareRendering
+        ? ' (changed for the next start)'
+        : ''
+    }`,
+    `Companion window: ${
+      companion
+        ? `${companion.crashes} crashes${
+            companion.lastCrashSecondsAgo === null ? '' : `, last ${ago(companion.lastCrashSecondsAgo)}`
+          }${companion.lastCrashReason ? ` (${companion.lastCrashReason})` : ''}; ${
+            companion.recoveries
+          } recoveries, ${companion.restarts} restarts; heartbeat ${
+            companion.heartbeatSecondsAgo === null ? 'never' : `${companion.heartbeatSecondsAgo} s ago`
+          }`
+        : '—'
+    }`,
     `WebViews: ${
       status?.webviews
         ?.map((view) => `${view.name} ${view.state}${healthDetail(view) ? ` (${healthDetail(view)})` : ''}`)

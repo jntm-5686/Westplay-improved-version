@@ -1,6 +1,7 @@
 import { type CSSProperties, type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { type SignedIn, useAskOnce, useSignedIn } from './accounts'
 import { appVersion, call, PREVIEW_TUTORIAL } from './bridge'
+import { startHeartbeat } from './heartbeat'
 import { Onboarding } from './onboarding/Onboarding'
 import { chosenLanguage, percent, type Words, wordsFor } from './onboarding/words'
 import { About } from './pages/About'
@@ -42,6 +43,8 @@ import { DEFAULT_KEY, type SettingsState, useSettings } from './useSettings'
  * screen what it's about (its app, its banner, the cursor using it), as the onboarding's steps did.
  */
 export function Companion() {
+  // The app's watchdog knows the window's page is alive by this (and loads it again when it stops answering).
+  useEffect(() => startHeartbeat(), [])
   const status = useHostStatus()
   const settings = useSettings()
   const [setup, setSetup] = useState<SetupState | null>(null)

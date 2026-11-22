@@ -259,6 +259,16 @@ export const words: CompanionWords = {
     doneSub: 'გმადლობთ ერთად გავლილი გზისთვის!',
   },
   about: {
+    softwareRendering: 'Software rendering',
+    softwareOn: 'On',
+    softwareOff: 'Off',
+    softwareNote:
+      'WebView2 draws without the graphics card. Turn it on when the companion window keeps crashing; restart WestPlay to apply.',
+    crashes: 'Companion window crashes',
+    lastCrash: 'Last crash',
+    never: 'Never',
+    resetGpu: 'Reset to hardware rendering',
+    restartToApply: 'Restart WestPlay to apply.',
     title: 'WestPlay-ის შესახებ',
     sub: 'ცოცხალი მონაცემები WestPlay-იდან და თამაშიდან, იმ შემთხვევისთვის, თუ რამე რიგზე არ არის.',
     version: 'ვერსია',

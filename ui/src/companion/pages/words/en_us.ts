@@ -254,6 +254,16 @@ export const words: CompanionWords = {
     doneSub: 'Thanks for driving with it.',
   },
   about: {
+    softwareRendering: 'Software rendering',
+    softwareOn: 'On',
+    softwareOff: 'Off',
+    softwareNote:
+      'WebView2 draws without the graphics card. Turn it on when the companion window keeps crashing; restart WestPlay to apply.',
+    crashes: 'Companion window crashes',
+    lastCrash: 'Last crash',
+    never: 'Never',
+    resetGpu: 'Reset to hardware rendering',
+    restartToApply: 'Restart WestPlay to apply.',
     title: 'About WestPlay',
     sub: 'Live details from WestPlay and the game, for when something isn’t right.',
     version: 'Version',

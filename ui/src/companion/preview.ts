@@ -22,6 +22,8 @@ import type { Settings } from './useSettings'
  * - `?elevated`: the game run as administrator (WestPlay can't read its route, guidance or weather).
  * - `?updated` (or `?updated=admin`): WestPlay updated since it was set up: the new plugin goes into the game
  *   once it's closed (with `admin`, Windows' permission is asked for first).
+ * - `?software`: the companion window started with software rendering on (the About page's switch changes the
+ *   next start, as in the app).
  *
  * Nothing here is ever in the app.
  */
@@ -137,6 +139,26 @@ const ADAPTERS = [
   { id: '10de:2860:00000000:161', name: 'NVIDIA GeForce RTX 4070 Laptop GPU' },
   { id: '8086:a7a0:00000000:4', name: 'Intel(R) Iris(R) Xe Graphics' },
 ]
+
+// The companion window's own watchdog (the app's): `?software` starts it with software rendering on; the switch
+// changes only the next start, as in the app.
+let companionHealth = {
+  softwareRendering: query.has('software'),
+  softwareRenderingNextRun: query.has('software'),
+  softwareRenderingMarker: query.has('software')
+    ? 'C:\\Users\\Player\\AppData\\Local\\app.westplay\\software-rendering'
+    : null,
+  webviewVersion: '141.0.3537.71',
+  crashes: 0,
+  crashesInWindow: 0,
+  lastCrashSecondsAgo: null as number | null,
+  lastCrashReason: null as string | null,
+  lastAction: null as string | null,
+  recoveries: 0,
+  restarts: 0,
+  heartbeatSecondsAgo: 0,
+  watchdogRunning: true,
+}
 
 function status(): HostStatus {
   const live = gameState === 'live'
@@ -483,7 +505,28 @@ export function answer(command: string, args?: Record<string, unknown>): Promise
       return later(undefined)
     case 'companion_ready':
     case 'room_held':
+    case 'companion_heartbeat':
       return later(undefined, 0)
+    case 'companion_diagnostics':
+      return later({ ...companionHealth, heartbeatSecondsAgo: 0 }, 60)
+    case 'companion_set_software_rendering':
+      companionHealth = {
+        ...companionHealth,
+        softwareRenderingNextRun: Boolean(args?.enabled),
+        softwareRenderingMarker: args?.enabled
+          ? 'C:\\Users\\Player\\AppData\\Local\\app.westplay\\software-rendering'
+          : null,
+        lastAction: args?.enabled ? 'software rendering requested' : 'software rendering reset',
+      }
+      return later({ ...companionHealth, heartbeatSecondsAgo: 0 }, 80)
+    case 'companion_reset_gpu':
+      companionHealth = {
+        ...companionHealth,
+        softwareRenderingNextRun: false,
+        softwareRenderingMarker: null,
+        lastAction: 'software rendering reset',
+      }
+      return later({ ...companionHealth, heartbeatSecondsAgo: 0 }, 80)
     case 'customize_list':
       return later(structuredClone(custom), 150)
     case 'add_wallpapers': {
